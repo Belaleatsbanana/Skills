@@ -1,0 +1,31 @@
+# TTS Pipeline Configuration
+
+# Cluster and execution settings (shared across all stages)
+cluster: eos
+container: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/containters/nemo-25.11.sqsh
+partition: batch
+mount_paths: /lustre:/lustre
+output_dir: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/tmp/nv_tts_eval_full_a3
+
+# NeMo code path
+nemo_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/experimenta/tts_eval/NeMo
+
+# Generation settings (ns eval arguments)
+generation:
+  benchmarks: nv_tts.libritts_seen,nv_tts.libritts_test_clean,nv_tts.riva_hard_digits,nv_tts.riva_hard_letters,nv_tts.riva_hard_money,nv_tts.riva_hard_short,nv_tts.vctk
+  model: nvidia/magpie_tts_multilingual_357m
+  server_type: generic
+  server_gpus: 1
+  server_entrypoint: python -m nemo_skills.inference.server.serve_unified
+  server_args: --backend magpie_tts --codec_model nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps --batch_size 32 --batch_timeout 0.1 --use_cfg --cfg_scale 2.5
+  data_dir: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/tmp/data_dir
+  num_chunks: 2
+  extra_args: ++server.server_type=vllm_multimodal
+
+# Scoring settings
+scoring:
+  sv_model: titanet
+  asr_model_name: nvidia/parakeet-tdt-1.1b
+  language: en
+  with_utmosv2: true
+  gpus: 1

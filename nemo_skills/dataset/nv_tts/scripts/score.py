@@ -51,11 +51,15 @@ def run_scoring(
         if not os.path.exists(output_jsonl):
             continue
 
+        metrics_path = os.path.join(benchmark_dir, "metrics.json")
+        if os.path.exists(metrics_path):
+            print(f"Skipping {benchmark}: metrics.json already exists")
+            continue
+
         print(f"\nScoring: {benchmark}")
         metrics = score_benchmark(output_jsonl, scoring_cfg)
 
         # Save metrics.json
-        metrics_path = os.path.join(benchmark_dir, "metrics.json")
         with open(metrics_path, "w") as f:
             json.dump(metrics, f, indent=2)
         print(f"Saved: {metrics_path}")
