@@ -372,6 +372,12 @@ def eval(
         None,
         help="Number of chunks to split the dataset into. If None, will not chunk the dataset.",
     ),
+    gpus_per_node: int = typer.Option(
+        1,
+        help="Number of GPUs per node for multi-instance mode. "
+        "When > 1, launches multiple server instances (one per GPU) within a single job. "
+        "Requires num_chunks to be a multiple of gpus_per_node.",
+    ),
     chunk_ids: str = typer.Option(
         None,
         help="List of explicit chunk ids to run. Separate with , or .. to specify range. "
@@ -581,6 +587,7 @@ def eval(
         eval_requires_judge=eval_requires_judge,
         generation_type=generation_type,
         generation_module=generation_module,
+        gpus_per_node=gpus_per_node,
     )
 
     sbatch_kwargs = parse_kwargs(sbatch_kwargs, exclusive=exclusive, qos=qos, time_min=time_min)
@@ -605,8 +612,13 @@ def eval(
                 job_server_address,
                 job_server_command,
                 job_sandbox_env_overrides,
+                job_gpus_per_node,
             ) = job_args
             prev_tasks = _task_dependencies
+
+            # Add gpus_per_node to server config for multi-instance mode
+            if job_server_config and job_gpus_per_node > 1:
+                job_server_config["gpus_per_node"] = job_gpus_per_node
 
             for _ in range(dependent_jobs + 1):
                 has_tasks = True
@@ -617,6 +629,7 @@ def eval(
                     log_dir=log_dir,
                     container=cluster_config["containers"]["nemo-skills"],
                     cluster_config=cluster_config,
+                    num_tasks=job_gpus_per_node,
                     partition=partition,
                     server_config=job_server_config,
                     with_sandbox=job_needs_sandbox or with_sandbox,

@@ -127,7 +127,7 @@ class CustomJobDetails(SlurmJobDetails):
 
     @property
     def srun_stdout(self) -> Path:
-        return Path(self.folder) / f"{self.srun_prefix}%j_srun.log"
+        return Path(self.folder) / f"{self.srun_prefix}%j_%t_srun.log"
 
     @property
     def stderr(self) -> Path:
@@ -135,7 +135,7 @@ class CustomJobDetails(SlurmJobDetails):
 
     @property
     def srun_stderr(self) -> Path:
-        return Path(self.folder) / f"{self.srun_prefix}%j_srun.log"
+        return Path(self.folder) / f"{self.srun_prefix}%j_%t_srun.log"
 
     @property
     def ls_term(self) -> str:
@@ -144,7 +144,7 @@ class CustomJobDetails(SlurmJobDetails):
         The command used to list the files is ls -1 {ls_term} 2> /dev/null
         """
         assert self.folder
-        return os.path.join(self.folder, "*%j_srun.log")
+        return os.path.join(self.folder, "*%j_*_srun.log")
 
 
 @dataclass(kw_only=True)
@@ -314,7 +314,7 @@ def get_executor(
     srun_args = [
         "--no-container-mount-home",
         "--mpi=pmix",
-        "--wait=10",
+        "--wait=240",  # wait up to 4 minutes for slower tasks to complete (important for multi-instance mode)
         # we need to be explicit about this in srun as commands might need to run in parallel
         f"--ntasks-per-node={tasks_per_node}",
         f"--nodes={num_nodes}",

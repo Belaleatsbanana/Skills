@@ -120,6 +120,7 @@ def get_server_command(
     server_port: int,
     server_args: str = "",
     server_entrypoint: str | None = None,
+    gpus_per_node: int = 1,
 ):
     num_tasks = num_gpus
 
@@ -209,15 +210,29 @@ def get_server_command(
     elif server_type == "generic":
         if not server_entrypoint:
             raise ValueError("For 'generic' server type, 'server_entrypoint' must be specified.")
-        server_start_cmd = (
-            f"{server_entrypoint} "
-            f"    --model {model_path} "
-            f"    --num_gpus {num_gpus} "
-            f"    --num_nodes {num_nodes} "
-            f"    --port {server_port} "
-            f"    {server_args} "
-        )
-        num_tasks = 1
+        if gpus_per_node > 1:
+            # Multi-instance mode: each SLURM task gets its own GPU and port
+            server_start_cmd = (
+                f"echo 'SLURM_LOCALID='$SLURM_LOCALID' SLURM_PROCID='$SLURM_PROCID && "
+                f"export CUDA_VISIBLE_DEVICES=${{SLURM_LOCALID:-0}} && "
+                f"{server_entrypoint} "
+                f"    --model {model_path} "
+                f"    --num_gpus 1 "
+                f"    --num_nodes 1 "
+                f"    --port $(({server_port} + ${{SLURM_LOCALID:-0}})) "
+                f"    {server_args} "
+            )
+            num_tasks = gpus_per_node
+        else:
+            server_start_cmd = (
+                f"{server_entrypoint} "
+                f"    --model {model_path} "
+                f"    --num_gpus {num_gpus} "
+                f"    --num_nodes {num_nodes} "
+                f"    --port {server_port} "
+                f"    {server_args} "
+            )
+            num_tasks = 1
     else:
         raise ValueError(f"Server type '{server_type}' not supported for model inference.")
 

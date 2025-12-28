@@ -267,10 +267,19 @@ def prepare_eval_commands(
     eval_requires_judge,
     generation_type=None,
     generation_module=None,
+    gpus_per_node: int = 1,
 ):
     # TODO: there is a bit too much code duplication here and logic is quite dense, should try to refactor
 
     # TODO: should we allow setting num chunks per benchmark when not using groups? Maybe benchmark:rs_num:num_chunks?
+
+    # Validate gpus_per_node for multi-instance mode
+    if gpus_per_node > 1:
+        if num_chunks is None:
+            raise ValueError("gpus_per_node > 1 requires num_chunks to be specified")
+        if num_chunks % gpus_per_node != 0:
+            raise ValueError(f"num_chunks ({num_chunks}) must be a multiple of gpus_per_node ({gpus_per_node})")
+        LOG.info(f"Multi-instance mode: {gpus_per_node} GPUs per node, {num_chunks // gpus_per_node} jobs")
 
     if generation_type is not None:
         if generation_module is not None:
@@ -354,7 +363,12 @@ def prepare_eval_commands(
             rerun_done=rerun_done,
         )
         for seed_idx, (seed, benchmark_chunk_ids) in enumerate(benchmark_args.remaining_jobs.items()):
-            total_evals += len(benchmark_chunk_ids)
+            # Multi-instance mode: count unique base chunks (each base chunk = 1 job)
+            if gpus_per_node > 1:
+                base_chunks = set((cid // gpus_per_node) * gpus_per_node for cid in benchmark_chunk_ids)
+                total_evals += len(base_chunks)
+            else:
+                total_evals += len(benchmark_chunk_ids)
 
     if num_jobs < 0:
         # if num_jobs is -1, we run all benchmarks in parallel
@@ -376,6 +390,7 @@ def prepare_eval_commands(
         **server_parameters,
         extra_arguments=extra_arguments,
         get_random_port=get_random_port,
+        gpus_per_node=gpus_per_node,
     )
 
     cur_eval = 0
@@ -398,7 +413,18 @@ def prepare_eval_commands(
                     random_seed=seed,
                     chunk_id=None,
                 )
-            for chunk_id in benchmark_chunk_ids:
+            # Multi-instance mode: compute which base chunks need to run
+            # If ANY chunk in a batch is incomplete, we run the entire batch (base_chunk)
+            if gpus_per_node > 1:
+                base_chunks_to_run = set()
+                for cid in benchmark_chunk_ids:
+                    base_chunk = (cid // gpus_per_node) * gpus_per_node
+                    base_chunks_to_run.add(base_chunk)
+                chunks_to_process = sorted(base_chunks_to_run)
+            else:
+                chunks_to_process = benchmark_chunk_ids
+
+            for chunk_id in chunks_to_process:
                 job_benchmarks.add(benchmark)
 
                 effective_generation_module = generation_module or benchmark_args.generation_module
@@ -431,12 +457,17 @@ def prepare_eval_commands(
                     f"{job_extra_arguments} "
                 )
 
+                # Multi-instance mode: use shell expression for chunk_id
+                effective_chunk_id = chunk_id
+                if gpus_per_node > 1:
+                    effective_chunk_id = f"$(({chunk_id} + $SLURM_LOCALID))"
+
                 cmd = pipeline_utils.get_generation_cmd(
                     input_file=benchmark_args.input_file,
                     output_dir=benchmark_output_dir,
                     extra_arguments=full_extra_arguments,
                     random_seed=seed,
-                    chunk_id=chunk_id,
+                    chunk_id=effective_chunk_id,
                     num_chunks=benchmark_args.num_chunks,
                     script=generation_module or benchmark_args.generation_module,
                     requirements=requirements,
@@ -480,12 +511,14 @@ def prepare_eval_commands(
                             # a check above guarantees that this is the same for all tasks in a job
                             generation_task.get_server_command_fn(),
                             job_sandbox_env_overrides,
+                            gpus_per_node,  # client num_tasks for multi-instance mode
                         )
                     )
                     job_server_config, job_server_address, job_extra_arguments = pipeline_utils.configure_client(
                         **server_parameters,
                         extra_arguments=extra_arguments,
                         get_random_port=get_random_port,
+                        gpus_per_node=gpus_per_node,
                     )
                     for job_benchmark in job_benchmarks:
                         benchmarks_dict[job_benchmark].job_ids.append(cur_job_idx)
