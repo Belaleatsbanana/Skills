@@ -1,0 +1,48 @@
+executor: slurm
+
+ssh_tunnel:
+  host: login-eos.nvidia.com
+  # ------------------------------- Fill this up! -------------------------------
+  user: your_username
+  job_dir: /lustre/fsw/llmservice_nemo_speechlm/users/your_username/code/nemo-run
+  identity: ""
+  # -----------------------------------------------------------------------------
+
+# if you're running directly from cluster, you only need to define job_dir and shouldn't use ssh_tunnel
+# job_dir: <some location on slurm cluster to keep job metadata, uploaded code and generated sbatch files>
+
+account: llmservice_nemo_speechlm
+partition: batch
+job_name_prefix: ""
+
+disable_gpus_per_node: True
+
+containers:
+  trtllm: /lustre/share/llmservice_nemo_reasoning/images/nemo-skills-trtllm-latest.sqsh
+  vllm: /lustre/share/llmservice_nemo_reasoning/images/nemo-skills-vllm-latest.sqsh
+  sglang: /lustre/share/llmservice_nemo_reasoning/images/nemo-skills-sglang-latest.sqsh
+  nemo-rl: /lustre/share/llmservice_nemo_reasoning/images/nemo-skills-nemo-rl-latest.sqsh
+  megatron: /lustre/share/llmservice_nemo_reasoning/images/nemo-skills-megatron-latest.sqsh
+  sandbox: /lustre/share/llmservice_nemo_reasoning/images/nemo-skills-sandbox-latest.sqsh
+  nemo-skills: /lustre/share/llmservice_nemo_reasoning/images/nemo-skills-latest.sqsh
+  verl: /lustre/share/llmservice_nemo_reasoning/images/nemo-skills-verl-latest.sqsh
+
+mounts:
+  # - /lustre/fsw/llmservice_nemo_reasoning/hf_models:/hf_models
+  # - /lustre/fsw/llmservice_nemo_reasoning/images/swe-bench:/swe-bench-images
+  - /lustre/fsw/llmservice_nemo_speechlm:/lustre/fsw/llmservice_nemo_speechlm
+
+  # you also need to mount your own workspace folder (or any other folder you need)
+  # - /lustre/fsw/llmservice_nemo_reasoning/users/igitman/:/workspace
+
+env_vars:
+  # ------------------------------- Fill this up! -------------------------------
+  - HF_HOME=/lustre/fsw/llmservice_nemo_speechlm/users/your_username/hfcache
+  # -----------------------------------------------------------------------------
+
+timeouts:
+  batch: 04:00:00
+  interactive: 02:00:00
+
+mail_type: FAIL
+mail_user: # <your email goes here>
