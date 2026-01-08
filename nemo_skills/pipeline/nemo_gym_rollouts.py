@@ -119,6 +119,11 @@ def nemo_gym_rollouts(
     config_dir: str = typer.Option(None, help="Custom directory for cluster configs"),
     log_dir: str = typer.Option(None, help="Custom location for logs"),
     exclusive: bool | None = typer.Option(None, help="Add exclusive flag to slurm job"),
+    num_random_seeds: int = typer.Option(
+        None,
+        help="Number of parallel rollout jobs to run. Each job writes to rollouts-rs{i}.jsonl. "
+        "Use this to scale rollout collection across multiple nodes.",
+    ),
     dry_run: bool = typer.Option(False, help="Validate without executing"),
     sbatch_kwargs: str = typer.Option("", help="Additional sbatch kwargs as JSON string"),
 ):
@@ -136,6 +141,10 @@ def nemo_gym_rollouts(
     - +limit=... (limit number of samples from input)
     - +num_samples_in_parallel=... (concurrent requests)
     - +num_repeats=N (run each prompt N times for mean@k evaluation)
+
+    For large-scale rollout collection, use --num_random_seeds to create multiple
+    independent jobs. Each job has its own server and sandbox (unique ports to avoid
+    conflicts if scheduled on same node) and writes to rollouts-rs{i}.jsonl.
     """
     setup_logging(disable_hydra_logs=False, use_rich=True)
     extra_arguments = " ".join(ctx.args)
@@ -174,101 +183,122 @@ def nemo_gym_rollouts(
     # Get cluster config
     cluster_config = pipeline_utils.get_cluster_config(cluster, config_dir)
 
-    # Construct output file path from output_dir
-    output_file = f"{output_dir}/rollouts.jsonl"
-
     if not log_dir:
         log_dir = f"{output_dir}/logs"
 
     # Parse sbatch kwargs
     sbatch_kwargs_dict = parse_kwargs(sbatch_kwargs, exclusive=exclusive, qos=qos, time_min=time_min)
 
-    # Build pipeline components
-    components = []
-    server_script = None
-    sandbox_script = None
+    # Determine seed indices for parallel jobs
+    if num_random_seeds:
+        seed_indices = list(range(num_random_seeds))
+        LOG.info(f"Creating {num_random_seeds} separate jobs (rs0..rs{num_random_seeds - 1})")
+    else:
+        seed_indices = [None]  # Single job, no seed suffix
 
-    # 1. Server (optional, self-hosted)
+    # Get server type string once if self-hosted
+    server_type_str = None
+    server_container = None
     if self_hosted:
         server_type_str = server_type.value if hasattr(server_type, "value") else server_type
         server_container = cluster_config["containers"].get(server_type_str, server_type_str)
 
-        server_script = ServerScript(
-            server_type=server_type_str,
-            model_path=model,
-            cluster_config=cluster_config,
-            num_gpus=server_gpus,
-            num_nodes=server_nodes,
-            server_args=server_args,
-            allocate_port=True,
+    # Build jobs - one per seed, each with its own server/sandbox (unique ports)
+    jobs = []
+    for seed_idx in seed_indices:
+        components = []
+
+        # Determine naming suffix
+        if seed_idx is not None:
+            output_file = f"{output_dir}/rollouts-rs{seed_idx}.jsonl"
+            job_suffix = f"_rs{seed_idx}"
+        else:
+            output_file = f"{output_dir}/rollouts.jsonl"
+            job_suffix = ""
+
+        # 1. Server (optional, self-hosted) - each job gets its own server with unique port
+        server_script = None
+        if self_hosted:
+            server_script = ServerScript(
+                server_type=server_type_str,
+                model_path=model,
+                cluster_config=cluster_config,
+                num_gpus=server_gpus,
+                num_nodes=server_nodes,
+                server_args=server_args,
+                allocate_port=True,  # Each job gets unique port
+            )
+
+            server_cmd = Command(
+                script=server_script,
+                container=server_container,
+                name=f"{expname}_server{job_suffix}",
+            )
+            components.append(server_cmd)
+            LOG.info(f"Job{job_suffix}: server on port {server_script.port}")
+
+        # 2. Sandbox (optional) - each job gets its own sandbox with unique port
+        sandbox_script = None
+        if with_sandbox:
+            sandbox_script = SandboxScript(
+                cluster_config=cluster_config,
+                allocate_port=True,  # Each job gets unique port
+            )
+
+            sandbox_cmd = Command(
+                script=sandbox_script,
+                container=cluster_config["containers"]["sandbox"],
+                name=f"{expname}_sandbox{job_suffix}",
+            )
+            components.append(sandbox_cmd)
+            LOG.info(f"Job{job_suffix}: sandbox on port {sandbox_script.port}")
+
+        # 3. NeMo Gym rollouts
+        nemo_gym_script = NemoGymRolloutsScript(
+            config_paths=config_paths_list,
+            input_file=input_file,
+            output_file=output_file,
+            extra_arguments=extra_arguments,
+            server=server_script,
+            server_address=server_address,
+            sandbox=sandbox_script,
+            gym_path=gym_path,
+            policy_api_key=policy_api_key,
+            policy_model_name=policy_model_name,
         )
 
-        server_cmd = Command(
-            script=server_script,
-            container=server_container,
-            name=f"{expname}_server",
+        nemo_gym_cmd = Command(
+            script=nemo_gym_script,
+            container=cluster_config["containers"]["nemo-rl"],
+            name=f"{expname}_nemo_gym{job_suffix}",
         )
-        components.append(server_cmd)
-        LOG.info(f"Added self-hosted {server_type_str} server on port {server_script.port}")
+        components.append(nemo_gym_cmd)
 
-    # 2. Sandbox (optional)
-    if with_sandbox:
-        sandbox_script = SandboxScript(
-            cluster_config=cluster_config,
-            allocate_port=True,
+        # Create command group for this job
+        hardware = HardwareConfig(
+            partition=partition,
+            num_gpus=server_gpus if self_hosted else 0,
+            num_nodes=server_nodes if self_hosted else 1,
+            num_tasks=1,
+            sbatch_kwargs=sbatch_kwargs_dict,
         )
 
-        sandbox_cmd = Command(
-            script=sandbox_script,
-            container=cluster_config["containers"]["sandbox"],
-            name=f"{expname}_sandbox",
+        group = CommandGroup(
+            commands=components,
+            hardware=hardware,
+            name=f"{expname}{job_suffix}",
+            log_dir=log_dir,
         )
-        components.append(sandbox_cmd)
-        LOG.info(f"Added sandbox on port {sandbox_script.port}")
 
-    # 3. NeMo Gym rollouts (ng_run + ng_status wait + ng_collect_rollouts)
-    nemo_gym_script = NemoGymRolloutsScript(
-        config_paths=config_paths_list,
-        input_file=input_file,
-        output_file=output_file,
-        extra_arguments=extra_arguments,
-        server=server_script,
-        server_address=server_address,
-        sandbox=sandbox_script,
-        gym_path=gym_path,
-        policy_api_key=policy_api_key,
-        policy_model_name=policy_model_name,
-    )
+        jobs.append({"name": f"{expname}{job_suffix}", "group": group})
 
-    nemo_gym_cmd = Command(
-        script=nemo_gym_script,
-        container=cluster_config["containers"]["nemo-rl"],
-        name=f"{expname}_nemo_gym",
-    )
-    components.append(nemo_gym_cmd)
-    LOG.info("Added NeMo Gym rollouts command (ng_run + ng_collect_rollouts)")
-
-    # Create command group
-    hardware = HardwareConfig(
-        partition=partition,
-        num_gpus=server_gpus if self_hosted else 0,
-        num_nodes=server_nodes if self_hosted else 1,
-        num_tasks=1,
-        sbatch_kwargs=sbatch_kwargs_dict,
-    )
-
-    group = CommandGroup(
-        commands=components,
-        hardware=hardware,
-        name=expname,
-        log_dir=log_dir,
-    )
+    LOG.info(f"Created {len(jobs)} job(s)")
 
     # Create and run pipeline
     pipeline = Pipeline(
         name=expname,
         cluster_config=cluster_config,
-        jobs=[{"name": expname, "group": group}],
+        jobs=jobs,
     )
 
     sequential = cluster_config["executor"] in ["local", "none"]
