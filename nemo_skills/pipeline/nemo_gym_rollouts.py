@@ -26,23 +26,24 @@ Example usage:
         --cluster local \\
         --config_paths "ns_tools/configs/ns_tools.yaml,math_with_judge/configs/math_with_judge.yaml" \\
         --input_file data/example.jsonl \\
-        --output_file data/rollouts.jsonl \\
+        --output_dir /results/rollouts \\
         --model /path/to/model \\
         --server_type vllm \\
         --server_gpus 1 \\
         --with_sandbox \\
         +agent_name=ns_tools_simple_agent \\
         +limit=10 \\
-        +num_samples_in_parallel=3
+        +num_samples_in_parallel=3 \\
+        +num_repeats=4  # Run each prompt 4 times for mean@4
 
     # Pre-hosted server
     ns nemo_gym_rollouts \\
         --cluster local \\
         --config_paths "ns_tools/configs/ns_tools.yaml" \\
         --input_file data/example.jsonl \\
-        --output_file data/rollouts.jsonl \\
+        --output_dir /results/rollouts \\
         --server_address http://localhost:8000/v1 \\
-        --server_type vllm \\
+        --policy_model_name nvidia/model-name \\
         +agent_name=ns_tools_simple_agent
 """
 
@@ -84,7 +85,7 @@ def nemo_gym_rollouts(
         "E.g., 'ns_tools/configs/ns_tools.yaml,math_with_judge/configs/math_with_judge.yaml'",
     ),
     input_file: str = typer.Option(..., help="Path to input JSONL file for rollout collection"),
-    output_file: str = typer.Option(..., help="Path to output JSONL file for rollouts"),
+    output_dir: str = typer.Option(..., help="Directory for rollout outputs. Output file will be rollouts.jsonl"),
     expname: str = typer.Option("nemo_gym_rollouts", help="NeMo Run experiment name"),
     model: str = typer.Option(None, help="Path to model for self-hosted vLLM server"),
     server_address: str = typer.Option(
@@ -132,9 +133,9 @@ def nemo_gym_rollouts(
     All Hydra arguments (prefixed with + or ++) are passed through to ng_run
     and ng_collect_rollouts. Common arguments include:
     - +agent_name=... (required for rollout collection)
-    - +limit=... (limit number of samples)
+    - +limit=... (limit number of samples from input)
     - +num_samples_in_parallel=... (concurrent requests)
-    - ++policy_model_name=... (model name override)
+    - +num_repeats=N (run each prompt N times for mean@k evaluation)
     """
     setup_logging(disable_hydra_logs=False, use_rich=True)
     extra_arguments = " ".join(ctx.args)
@@ -173,8 +174,11 @@ def nemo_gym_rollouts(
     # Get cluster config
     cluster_config = pipeline_utils.get_cluster_config(cluster, config_dir)
 
+    # Construct output file path from output_dir
+    output_file = f"{output_dir}/rollouts.jsonl"
+
     if not log_dir:
-        log_dir = f"{output_file.rsplit('/', 1)[0]}/logs" if "/" in output_file else "./logs"
+        log_dir = f"{output_dir}/logs"
 
     # Parse sbatch kwargs
     sbatch_kwargs_dict = parse_kwargs(sbatch_kwargs, exclusive=exclusive, qos=qos, time_min=time_min)

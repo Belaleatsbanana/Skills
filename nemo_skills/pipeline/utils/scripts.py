@@ -532,11 +532,20 @@ class NemoGymRolloutsScript(BaseJobScript):
 
             ng_collect_cmd = " ".join(ng_collect_parts)
 
+            # Compute the vLLM server URL for the wait check
+            if self.server is not None:
+                vllm_server_url = f"http://{self.server.hostname_ref()}:{self.server.port}/v1"
+            elif self.server_address is not None:
+                vllm_server_url = self.server_address
+            else:
+                vllm_server_url = ""
+
             # Build the full bash script that:
             # 1. Installs NeMo Gym from 3rdparty/Gym-workspace/Gym
-            # 2. Starts ng_run in background
-            # 3. Polls ng_status until healthy (with early failure detection)
-            # 4. Runs ng_collect_rollouts
+            # 2. Waits for vLLM server to be ready
+            # 3. Starts ng_run in background
+            # 4. Polls ng_status until healthy (with early failure detection)
+            # 5. Runs ng_collect_rollouts
             cmd = f"""set -e
 set -o pipefail
 
@@ -549,6 +558,16 @@ echo "NeMo Gym installed successfully"
 
 # Disable pipefail for the polling loop (grep may return non-zero)
 set +o pipefail
+
+# Wait for vLLM server to be ready before starting ng_run (infinite loop like generate.py)
+VLLM_SERVER_URL="{vllm_server_url}"
+if [ -n "$VLLM_SERVER_URL" ]; then
+    echo "=== Waiting for vLLM server at $VLLM_SERVER_URL ==="
+    while [ $(curl -s -o /dev/null -w "%{{http_code}}" "$VLLM_SERVER_URL/models" 2>/dev/null) -ne 200 ]; do
+        sleep 3
+    done
+    echo "vLLM server is ready!"
+fi
 
 echo "=== Starting NeMo Gym servers ==="
 {ng_run_cmd} &
@@ -606,10 +625,15 @@ if [ $ELAPSED -ge $MAX_WAIT ]; then
 fi
 
 echo "=== Running rollout collection ==="
-{ng_collect_cmd} || {{ echo "ERROR: ng_collect_rollouts failed"; exit 1; }}
+mkdir -p "$(dirname "{self.output_file}")"
+{ng_collect_cmd} || {{ echo "ERROR: ng_collect_rollouts failed"; kill $NG_RUN_PID 2>/dev/null || true; exit 1; }}
 
 echo "=== Rollout collection complete ==="
 echo "Output: {self.output_file}"
+
+echo "=== Cleaning up ==="
+kill $NG_RUN_PID 2>/dev/null || true
+echo "Servers terminated."
 """
             return cmd.strip(), {"environment": {}}
 
