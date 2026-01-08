@@ -22,7 +22,7 @@ containers:
   nemo-skills: dockerfile:dockerfiles/Dockerfile.nemo-skills
   megatron: dockerfile:dockerfiles/Dockerfile.megatron
   verl: dockerfile:dockerfiles/Dockerfile.verl
-  nemo-rl: dockerfile:dockerfiles/Dockerfile.nemo-rl
+  nemo-rl: gitlab-master.nvidia.com:5005/dl/ai-services/docker-images/igitman/nemo-skills-nemo-rl:0.9.0
 
 mounts:
   - /tmp:/tmp
@@ -30,6 +30,7 @@ mounts:
   # TODO: can we make it simpler?
   - /mnt/datadrive/nemo-skills-test-data:/mnt/datadrive/nemo-skills-test-data
   - /home/wedu:/home/wedu  # For local testing with models
+  - /home/wedu/nemo-rl/3rdparty/Gym-workspace/Gym:/opt/nemo-rl/3rdparty/Gym-workspace/Gym  # Mount only George's Gym
 
 env_vars:
   - HF_HOME=/mnt/datadrive/nemo-skills-test-data/hf-cache

@@ -63,6 +63,7 @@ from nemo_skills.pipeline.cli import grpo_gym_nemo_rl, wrap_arguments
 
 grpo_gym_nemo_rl(
     ctx=wrap_arguments(
+        check_uncommitted_changes=False,
         '++grpo.max_num_steps=2 '
         '++grpo.num_prompts_per_step=2 '
         '++policy.max_total_sequence_length=512 '
