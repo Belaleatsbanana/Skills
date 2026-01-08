@@ -72,7 +72,7 @@ grpo_gym_nemo_rl(
         '++policy.train_micro_batch_size=1 '
         '++policy.optimizer.kwargs.lr=1e-6 '
         # Rewrite config_paths to include ns_tools (Hydra doesn't support += for lists)
-        '++env.nemo_gym.config_paths=[responses_api_models/vllm_model/configs/vllm_model_for_training.yaml,resources_servers/math_with_judge/configs/math_with_judge.yaml,/opt/NeMo-Gym/resources_servers/ns_tools/configs/ns_tools.yaml] '
+        '++env.nemo_gym.config_paths=[responses_api_models/vllm_model/configs/vllm_model_for_training.yaml,resources_servers/math_with_judge/configs/math_with_judge.yaml,/opt/nemo-rl/3rdparty/Gym-workspace/Gym/resources_servers/ns_tools/configs/ns_tools.yaml] '
         # Disable LLM judge (use rule-based math verification)
         '++env.nemo_gym.math_with_judge.resources_servers.math_with_judge.should_use_judge=false '
     ),
