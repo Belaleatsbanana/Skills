@@ -128,6 +128,8 @@ ENV NEMO_RL_VENV_DIR=/opt/ray_venvs
 # Copy in source from build context (defaults to cloned repo, can be overridden)
 # Exclude pyproject.toml and uv.lock since those may be altered by build-custom-vllm.sh
 COPY --from=nemo-rl --exclude=pyproject.toml --exclude=uv.lock . /opt/nemo-rl
+# Remove old Gym from nemo-rl stage (will be replaced with George's branch below)
+RUN rm -rf /opt/nemo-rl/3rdparty/Gym-workspace/Gym
 # Unshallow the repo to get the full history (in the case it was from the scratch layer).
 # Potentially not necessary if the repo is passed in as a complete repository (w/ full git history),
 # so do a quick check before trying to unshallow.
@@ -143,9 +145,6 @@ RUN echo "This distribution includes open source which is archived at the follow
     echo "For further inquiries or assistance, contact us at oss-requests@nvidia.com" >> NOTICES.txt
 
 RUN git clone https://github.com/NVIDIA-NeMo/Skills.git /opt/NeMo-Skills && cd /opt/NeMo-Skills && uv pip install .
-# Replace built-in Gym with George's ns_tools branch (keeps NeMo-RL's expected path)
-RUN rm -rf /opt/nemo-rl/3rdparty/Gym-workspace/Gym && \
-    git clone https://github.com/gwarmstrong/Gym.git /opt/nemo-rl/3rdparty/Gym-workspace/Gym && \
-    cd /opt/nemo-rl/3rdparty/Gym-workspace/Gym && \
-    git checkout georgea/add-nemo-skills-tool-resource && \
-    uv pip install .
+# Clone George's ns_tools branch to replace built-in Gym (already removed above)
+RUN git clone -b georgea/add-nemo-skills-tool-resource https://github.com/gwarmstrong/Gym.git /opt/nemo-rl/3rdparty/Gym-workspace/Gym && \
+    cd /opt/nemo-rl/3rdparty/Gym-workspace/Gym && uv pip install .
