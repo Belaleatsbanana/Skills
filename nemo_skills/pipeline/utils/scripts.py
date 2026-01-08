@@ -599,7 +599,11 @@ while true; do
 done
 
 echo "=== Running rollout collection ==="
+echo "Input file: {self.input_file}"
+echo "Output file: {self.output_file}"
 mkdir -p "$(dirname "{self.output_file}")"
+echo "Output directory created: $(dirname "{self.output_file}")"
+echo "Running: {ng_collect_cmd}"
 {ng_collect_cmd} || {{ echo "ERROR: ng_collect_rollouts failed"; kill $NG_RUN_PID 2>/dev/null || true; exit 1; }}
 
 echo "=== Rollout collection complete ==="
