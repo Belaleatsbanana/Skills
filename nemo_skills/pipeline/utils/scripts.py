@@ -523,11 +523,11 @@ class NemoGymRolloutsScript(BaseJobScript):
             ng_collect_cmd = " ".join(ng_collect_parts)
 
             # Build the full bash script that:
-            # 1. Starts ng_run in background
-            # 2. Polls ng_status until healthy
-            # 3. Runs ng_collect_rollouts
-            cmd = f"""
-echo "Starting NeMo Gym servers..."
+            # 1. Checks if ng_* commands are available
+            # 2. Starts ng_run in background
+            # 3. Polls ng_status until healthy (with early failure detection)
+            # 4. Runs ng_collect_rollouts
+            cmd = f"""echo "Starting NeMo Gym servers..."
 {ng_run_cmd} &
 NG_RUN_PID=$!
 echo "ng_run PID: $NG_RUN_PID"
@@ -536,6 +536,8 @@ echo "Waiting for servers to be ready (max {self.max_wait_seconds}s)..."
 MAX_WAIT={self.max_wait_seconds}
 WAIT_INTERVAL={self.wait_interval}
 ELAPSED=0
+NO_SERVERS_COUNT=0
+MAX_NO_SERVERS=5  # Fail fast if no servers found after this many checks
 
 while [ $ELAPSED -lt $MAX_WAIT ]; do
     STATUS_OUTPUT=$(ng_status 2>&1)
@@ -545,8 +547,29 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         break
     fi
 
+    # Check if ng_run process is still alive
+    if ! kill -0 $NG_RUN_PID 2>/dev/null; then
+        echo "ERROR: ng_run process died unexpectedly!"
+        exit 1
+    fi
+
     HEALTHY=$(echo "$STATUS_OUTPUT" | grep -oP '\\d+(?= healthy)' || echo "0")
-    TOTAL=$(echo "$STATUS_OUTPUT" | grep -oP '\\d+(?= servers found)' || echo "?")
+    TOTAL=$(echo "$STATUS_OUTPUT" | grep -oP '\\d+(?= servers found)' || echo "0")
+
+    # Fail fast if ng_status keeps returning no servers
+    if [ "$TOTAL" = "0" ] || [ "$TOTAL" = "?" ]; then
+        NO_SERVERS_COUNT=$((NO_SERVERS_COUNT + 1))
+        if [ $NO_SERVERS_COUNT -ge $MAX_NO_SERVERS ]; then
+            echo "ERROR: No servers detected after $MAX_NO_SERVERS attempts."
+            echo "ng_status output: $STATUS_OUTPUT"
+            echo "Check that ng_run started correctly and ng_status is working."
+            kill $NG_RUN_PID 2>/dev/null || true
+            exit 1
+        fi
+    else
+        NO_SERVERS_COUNT=0  # Reset counter if we see servers
+    fi
+
     echo "$HEALTHY/$TOTAL servers ready, waiting..."
 
     sleep $WAIT_INTERVAL
@@ -554,7 +577,9 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
 done
 
 if [ $ELAPSED -ge $MAX_WAIT ]; then
-    echo "WARNING: Timeout waiting for servers (${{MAX_WAIT}}s). Proceeding anyway..."
+    echo "ERROR: Timeout waiting for servers (${{MAX_WAIT}}s)."
+    kill $NG_RUN_PID 2>/dev/null || true
+    exit 1
 fi
 
 echo "Running rollout collection..."
