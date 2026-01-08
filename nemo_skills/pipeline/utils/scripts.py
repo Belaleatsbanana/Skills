@@ -473,6 +473,9 @@ class NemoGymRolloutsScript(BaseJobScript):
     server: Optional["ServerScript"] = None
     server_address: Optional[str] = None
     sandbox: Optional["SandboxScript"] = None
+    gym_path: str = "/opt/NeMo-RL/3rdparty/Gym-workspace/Gym"
+    policy_api_key: str = "dummy"  # API key for policy server (can be dummy for local)
+    policy_model_name: Optional[str] = None  # Model name override for policy server
     max_wait_seconds: int = 120
     wait_interval: int = 3
 
@@ -499,6 +502,13 @@ class NemoGymRolloutsScript(BaseJobScript):
             elif self.server_address is not None:
                 ng_run_parts.append(f'+policy_base_url="{self.server_address}"')
 
+            # Add policy API key (required by some configs)
+            ng_run_parts.append(f'+policy_api_key="{self.policy_api_key}"')
+
+            # Add policy model name (required by configs)
+            if self.policy_model_name:
+                ng_run_parts.append(f'+policy_model_name="{self.policy_model_name}"')
+
             # Add sandbox port override if sandbox is referenced
             if self.sandbox is not None:
                 ng_run_parts.append(f"++ns_tools.resources_servers.ns_tools.sandbox_port={self.sandbox.port}")
@@ -523,11 +533,24 @@ class NemoGymRolloutsScript(BaseJobScript):
             ng_collect_cmd = " ".join(ng_collect_parts)
 
             # Build the full bash script that:
-            # 1. Checks if ng_* commands are available
+            # 1. Installs NeMo Gym from 3rdparty/Gym-workspace/Gym
             # 2. Starts ng_run in background
             # 3. Polls ng_status until healthy (with early failure detection)
             # 4. Runs ng_collect_rollouts
-            cmd = f"""echo "Starting NeMo Gym servers..."
+            cmd = f"""set -e
+set -o pipefail
+
+echo "=== Installing NeMo Gym ==="
+cd {self.gym_path} || {{ echo "ERROR: Failed to cd to Gym directory"; exit 1; }}
+uv venv --python 3.12 --allow-existing .venv || {{ echo "ERROR: Failed to create venv"; exit 1; }}
+source .venv/bin/activate || {{ echo "ERROR: Failed to activate venv"; exit 1; }}
+uv sync --active --extra dev || {{ echo "ERROR: Failed to sync dependencies"; exit 1; }}
+echo "NeMo Gym installed successfully"
+
+# Disable pipefail for the polling loop (grep may return non-zero)
+set +o pipefail
+
+echo "=== Starting NeMo Gym servers ==="
 {ng_run_cmd} &
 NG_RUN_PID=$!
 echo "ng_run PID: $NG_RUN_PID"
@@ -582,10 +605,11 @@ if [ $ELAPSED -ge $MAX_WAIT ]; then
     exit 1
 fi
 
-echo "Running rollout collection..."
-{ng_collect_cmd}
+echo "=== Running rollout collection ==="
+{ng_collect_cmd} || {{ echo "ERROR: ng_collect_rollouts failed"; exit 1; }}
 
-echo "Rollout collection complete. Output: {self.output_file}"
+echo "=== Rollout collection complete ==="
+echo "Output: {self.output_file}"
 """
             return cmd.strip(), {"environment": {}}
 

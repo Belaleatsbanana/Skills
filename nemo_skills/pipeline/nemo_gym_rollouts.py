@@ -99,6 +99,19 @@ def nemo_gym_rollouts(
     server_nodes: int = typer.Option(1, help="Number of nodes for self-hosted server"),
     server_args: str = typer.Option("", help="Additional arguments for the server"),
     with_sandbox: bool = typer.Option(False, help="If True, start a sandbox container for code execution"),
+    gym_path: str = typer.Option(
+        "/opt/NeMo-RL/3rdparty/Gym-workspace/Gym",
+        help="Path to NeMo Gym installation. Defaults to container built-in. Use for mounted/custom Gym.",
+    ),
+    policy_api_key: str = typer.Option(
+        "dummy",
+        help="API key for policy server. Use 'dummy' for local vLLM servers.",
+    ),
+    policy_model_name: str = typer.Option(
+        None,
+        help="Model name for policy server. Required for pre-hosted servers. "
+        "For self-hosted, defaults to the model path if not specified.",
+    ),
     partition: str = typer.Option(None, help="Cluster partition to use"),
     qos: str = typer.Option(None, help="Specify Slurm QoS"),
     time_min: str = typer.Option(None, help="Slurm time-min parameter"),
@@ -147,6 +160,15 @@ def nemo_gym_rollouts(
 
     if self_hosted and server_type is None:
         raise ValueError("--server_type is required when using self-hosted server")
+
+    # Validate and set policy_model_name
+    if pre_hosted and policy_model_name is None:
+        raise ValueError("--policy_model_name is required when using a pre-hosted server (--server_address)")
+
+    if self_hosted and policy_model_name is None:
+        # For self-hosted, default to the model path
+        policy_model_name = model
+        LOG.info(f"Using model path as policy_model_name: {policy_model_name}")
 
     # Get cluster config
     cluster_config = pipeline_utils.get_cluster_config(cluster, config_dir)
@@ -209,11 +231,14 @@ def nemo_gym_rollouts(
         server=server_script,
         server_address=server_address,
         sandbox=sandbox_script,
+        gym_path=gym_path,
+        policy_api_key=policy_api_key,
+        policy_model_name=policy_model_name,
     )
 
     nemo_gym_cmd = Command(
         script=nemo_gym_script,
-        container=cluster_config["containers"]["nemo-skills"],
+        container=cluster_config["containers"]["nemo-rl"],
         name=f"{expname}_nemo_gym",
     )
     components.append(nemo_gym_cmd)
