@@ -135,6 +135,9 @@ policy:
       skip_tokenizer_init: false  # Enable tokenizer for NemoGym chat completions API
       precision: ${policy.precision}
       tensor_parallel_size: 1
+      http_server_serving_chat_kwargs:
+        enable_auto_tools: true  # Enable automatic tool choice for tool calling
+        tool_parser: hermes  # Tool call parser (hermes is a common choice)
       pipeline_parallel_size: 1
       expert_parallel_size: 1
       gpu_memory_utilization: 0.5
