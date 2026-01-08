@@ -19,10 +19,10 @@ containers:
   vllm: dockerfile:dockerfiles/Dockerfile.vllm
   sglang: lmsysorg/sglang:v0.5.4
   sandbox: dockerfile:dockerfiles/Dockerfile.sandbox
-  nemo-skills: dockerfile:dockerfiles/Dockerfile.nemo-skills
+  # nemo-skills: dockerfile:dockerfiles/Dockerfile.nemo-skills  # Not needed for ns_tools testing
   megatron: dockerfile:dockerfiles/Dockerfile.megatron
   verl: dockerfile:dockerfiles/Dockerfile.verl
-  nemo-rl: gitlab-master.nvidia.com:5005/dl/ai-services/docker-images/igitman/nemo-skills-nemo-rl:0.9.0
+  nemo-rl: nemo-rl-gym-ns-tools:latest
 
 mounts:
   - /tmp:/tmp
