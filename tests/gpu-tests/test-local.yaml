@@ -29,6 +29,7 @@ mounts:
   # change this if the models are located in a different place
   # TODO: can we make it simpler?
   - /mnt/datadrive/nemo-skills-test-data:/mnt/datadrive/nemo-skills-test-data
+  - /home/wedu:/home/wedu  # For local testing with models
 
 env_vars:
   - HF_HOME=/mnt/datadrive/nemo-skills-test-data/hf-cache

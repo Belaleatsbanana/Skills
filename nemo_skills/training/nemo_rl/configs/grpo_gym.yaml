@@ -165,11 +165,17 @@ env:
     - responses_api_models/vllm_model/configs/vllm_model_for_training.yaml
     - resources_servers/math_with_judge/configs/math_with_judge.yaml
     - responses_api_agents/simple_agent/configs/simple_agent.yaml
+    # Optional: ns_tools for Python code execution (requires Gym repo)
+    # Uncomment these lines if testing with ns_tools:
+    # - /home/wedu/Gym/resources_servers/ns_tools/configs/ns_tools.yaml
+
     policy_model:
       responses_api_models:
         vllm_model:
           skip_tokenizer_init: false  # Enable tokenizer for chat completions API
           return_token_id_information: true  # Required for NeMo-RL training
+
+    # Default agent: simple_agent with math_with_judge
     simple_agent:
       responses_api_agents:
         simple_agent:
@@ -177,12 +183,32 @@ env:
             name: math_with_judge
           model_server:
             name: policy_model
+
     math_with_judge:
       resources_servers:
         math_with_judge:
           judge_model_server:
             name: policy_model
           should_use_judge: false  # Disable LLM judge for quick testing
+
+    # Optional: ns_tools_simple_agent for Python code execution
+    # Uncomment this section if testing with ns_tools:
+    # ns_tools_simple_agent:
+    #   responses_api_agents:
+    #     simple_agent:
+    #       resources_server:
+    #         type: resources_servers
+    #         name: ns_tools
+    #       model_server:
+    #         type: responses_api_models
+    #         name: policy_model
+    #
+    # ns_tools:
+    #   resources_servers:
+    #     ns_tools:
+    #       math_judge_server:
+    #         type: resources_servers
+    #         name: math_with_judge
 
 logger:
   log_dir: "logs/grpo_gym"
