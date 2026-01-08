@@ -509,9 +509,10 @@ class NemoGymRolloutsScript(BaseJobScript):
             if self.policy_model_name:
                 ng_run_parts.append(f'+policy_model_name="{self.policy_model_name}"')
 
-            # Add sandbox port override if sandbox is referenced
+            # Add sandbox port override if sandbox is referenced (must be quoted string for pydantic)
+            # Single quotes survive bash and force Hydra to treat as string
             if self.sandbox is not None:
-                ng_run_parts.append(f"++ns_tools.resources_servers.ns_tools.sandbox_port={self.sandbox.port}")
+                ng_run_parts.append(f"\"++ns_tools.resources_servers.ns_tools.sandbox_port='{self.sandbox.port}'\"")
 
             # Add extra arguments to ng_run
             if self.extra_arguments:
