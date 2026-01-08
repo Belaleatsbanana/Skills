@@ -448,8 +448,6 @@ class NemoGymRolloutsScript(BaseJobScript):
         server: Optional ServerScript reference for policy model server
         server_address: Optional pre-hosted server address
         sandbox: Optional SandboxScript reference for sandbox port
-        max_wait_seconds: Maximum seconds to wait for servers (default: 120)
-        wait_interval: Seconds between status checks (default: 3)
         log_prefix: Prefix for log files (default: "nemo_gym")
 
     Example:
@@ -476,8 +474,6 @@ class NemoGymRolloutsScript(BaseJobScript):
     gym_path: str = "/opt/NeMo-RL/3rdparty/Gym-workspace/Gym"
     policy_api_key: str = "dummy"  # API key for policy server (can be dummy for local)
     policy_model_name: Optional[str] = None  # Model name override for policy server
-    max_wait_seconds: int = 120
-    wait_interval: int = 3
 
     log_prefix: str = field(default="nemo_gym", init=False)
 
@@ -575,14 +571,16 @@ echo "=== Starting NeMo Gym servers ==="
 NG_RUN_PID=$!
 echo "ng_run PID: $NG_RUN_PID"
 
-echo "Waiting for servers to be ready (max {self.max_wait_seconds}s)..."
-MAX_WAIT={self.max_wait_seconds}
-WAIT_INTERVAL={self.wait_interval}
-ELAPSED=0
-NO_SERVERS_COUNT=0
-MAX_NO_SERVERS=5  # Fail fast if no servers found after this many checks
+echo "Waiting for NeMo Gym servers..."
+LAST_STATUS=""
+while true; do
+    # Check if ng_run process died - let the failure cascade naturally
+    if ! kill -0 $NG_RUN_PID 2>/dev/null; then
+        echo "ERROR: ng_run process exited unexpectedly"
+        wait $NG_RUN_PID 2>/dev/null  # Get exit code
+        exit 1
+    fi
 
-while [ $ELAPSED -lt $MAX_WAIT ]; do
     STATUS_OUTPUT=$(ng_status 2>&1)
 
     if echo "$STATUS_OUTPUT" | grep -q "healthy, 0 unhealthy"; then
@@ -590,40 +588,15 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         break
     fi
 
-    # Check if ng_run process is still alive
-    if ! kill -0 $NG_RUN_PID 2>/dev/null; then
-        echo "ERROR: ng_run process died unexpectedly!"
-        exit 1
+    # Only print status when it changes (reduce verbosity)
+    CURRENT_STATUS=$(echo "$STATUS_OUTPUT" | grep -oE '[0-9]+ healthy' | head -1 || echo "starting")
+    if [ "$CURRENT_STATUS" != "$LAST_STATUS" ]; then
+        echo "Server status: $CURRENT_STATUS"
+        LAST_STATUS="$CURRENT_STATUS"
     fi
 
-    HEALTHY=$(echo "$STATUS_OUTPUT" | grep -oP '\\d+(?= healthy)' || echo "0")
-    TOTAL=$(echo "$STATUS_OUTPUT" | grep -oP '\\d+(?= servers found)' || echo "0")
-
-    # Fail fast if ng_status keeps returning no servers
-    if [ "$TOTAL" = "0" ] || [ "$TOTAL" = "?" ]; then
-        NO_SERVERS_COUNT=$((NO_SERVERS_COUNT + 1))
-        if [ $NO_SERVERS_COUNT -ge $MAX_NO_SERVERS ]; then
-            echo "ERROR: No servers detected after $MAX_NO_SERVERS attempts."
-            echo "ng_status output: $STATUS_OUTPUT"
-            echo "Check that ng_run started correctly and ng_status is working."
-            kill $NG_RUN_PID 2>/dev/null || true
-            exit 1
-        fi
-    else
-        NO_SERVERS_COUNT=0  # Reset counter if we see servers
-    fi
-
-    echo "$HEALTHY/$TOTAL servers ready, waiting..."
-
-    sleep $WAIT_INTERVAL
-    ELAPSED=$((ELAPSED + WAIT_INTERVAL))
+    sleep 10
 done
-
-if [ $ELAPSED -ge $MAX_WAIT ]; then
-    echo "ERROR: Timeout waiting for servers (${{MAX_WAIT}}s)."
-    kill $NG_RUN_PID 2>/dev/null || true
-    exit 1
-fi
 
 echo "=== Running rollout collection ==="
 mkdir -p "$(dirname "{self.output_file}")"
