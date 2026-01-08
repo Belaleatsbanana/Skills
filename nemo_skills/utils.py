@@ -25,8 +25,8 @@ from math import lcm
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Union
 
-import fire
-from fire import decorators as fire_decorators
+# import fire  # Lazy import in check_no_extra_args_fire() to avoid requiring fire dependency
+# from fire import decorators as fire_decorators
 from rich.logging import RichHandler
 
 # isort: off
@@ -507,6 +507,10 @@ def check_no_extra_args_fire():
         RuntimeError: If the function name is not found in the calling context.
         ValueError: If extra arguments are found that are not accepted by the function.
     """
+    # Lazy import fire to avoid requiring it as a dependency unless this function is actually called
+    import fire
+    from fire import decorators as fire_decorators
+
     args = sys.argv[1:]
     # Extract the function name and its arguments from the command-line arguments
     function_name = args[0]
