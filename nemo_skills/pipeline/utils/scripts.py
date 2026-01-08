@@ -428,3 +428,141 @@ class GenerationClientScript(BaseJobScript):
         # Always use lazy command building
         self.set_inline(build_cmd)
         super().__post_init__()
+
+
+@dataclass(kw_only=True)
+class NemoGymRolloutsScript(BaseJobScript):
+    """Script for running NeMo Gym rollout collection.
+
+    This script orchestrates the full rollout collection workflow:
+    1. Starts ng_run in background to spin up NeMo Gym servers
+    2. Polls ng_status until all servers are healthy
+    3. Runs ng_collect_rollouts to collect rollouts
+    4. Keeps ng_run running (cleanup handled externally)
+
+    Attributes:
+        config_paths: List of YAML config file paths for ng_run
+        input_file: Input JSONL file path for rollout collection
+        output_file: Output JSONL file path for rollouts
+        extra_arguments: Additional Hydra overrides passed to both ng_run and ng_collect_rollouts
+        server: Optional ServerScript reference for policy model server
+        server_address: Optional pre-hosted server address
+        sandbox: Optional SandboxScript reference for sandbox port
+        max_wait_seconds: Maximum seconds to wait for servers (default: 120)
+        wait_interval: Seconds between status checks (default: 3)
+        log_prefix: Prefix for log files (default: "nemo_gym")
+
+    Example:
+        script = NemoGymRolloutsScript(
+            config_paths=[
+                "resources_servers/ns_tools/configs/ns_tools.yaml",
+                "resources_servers/math_with_judge/configs/math_with_judge.yaml",
+            ],
+            input_file="/data/input.jsonl",
+            output_file="/data/rollouts.jsonl",
+            extra_arguments="+agent_name=ns_tools_simple_agent +limit=10",
+            server=server_script,
+            sandbox=sandbox_script,
+        )
+    """
+
+    config_paths: List[str]
+    input_file: str
+    output_file: str
+    extra_arguments: str = ""
+    server: Optional["ServerScript"] = None
+    server_address: Optional[str] = None
+    sandbox: Optional["SandboxScript"] = None
+    max_wait_seconds: int = 120
+    wait_interval: int = 3
+
+    log_prefix: str = field(default="nemo_gym", init=False)
+
+    def __post_init__(self):
+        """Initialize the combined ng_run + ng_collect_rollouts script."""
+
+        def build_cmd() -> Tuple[str, Dict]:
+            """Build the full rollout collection command."""
+            # Build config_paths argument
+            config_paths_str = ",".join(self.config_paths)
+
+            # Build ng_run command parts
+            ng_run_parts = [
+                "ng_run",
+                f'"+config_paths=[{config_paths_str}]"',
+            ]
+
+            # Add policy server URL if we have a server reference or address
+            if self.server is not None:
+                server_addr = f"http://{self.server.hostname_ref()}:{self.server.port}/v1"
+                ng_run_parts.append(f'+policy_base_url="{server_addr}"')
+            elif self.server_address is not None:
+                ng_run_parts.append(f'+policy_base_url="{self.server_address}"')
+
+            # Add sandbox port override if sandbox is referenced
+            if self.sandbox is not None:
+                ng_run_parts.append(f"++ns_tools.resources_servers.ns_tools.sandbox_port={self.sandbox.port}")
+
+            # Add extra arguments to ng_run
+            if self.extra_arguments:
+                ng_run_parts.append(self.extra_arguments)
+
+            ng_run_cmd = " ".join(ng_run_parts)
+
+            # Build ng_collect_rollouts command
+            ng_collect_parts = [
+                "ng_collect_rollouts",
+                f'+input_jsonl_fpath="{self.input_file}"',
+                f'+output_jsonl_fpath="{self.output_file}"',
+            ]
+
+            # Add extra arguments to ng_collect_rollouts
+            if self.extra_arguments:
+                ng_collect_parts.append(self.extra_arguments)
+
+            ng_collect_cmd = " ".join(ng_collect_parts)
+
+            # Build the full bash script that:
+            # 1. Starts ng_run in background
+            # 2. Polls ng_status until healthy
+            # 3. Runs ng_collect_rollouts
+            cmd = f"""
+echo "Starting NeMo Gym servers..."
+{ng_run_cmd} &
+NG_RUN_PID=$!
+echo "ng_run PID: $NG_RUN_PID"
+
+echo "Waiting for servers to be ready (max {self.max_wait_seconds}s)..."
+MAX_WAIT={self.max_wait_seconds}
+WAIT_INTERVAL={self.wait_interval}
+ELAPSED=0
+
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+    STATUS_OUTPUT=$(ng_status 2>&1)
+
+    if echo "$STATUS_OUTPUT" | grep -q "healthy, 0 unhealthy"; then
+        echo "All servers ready!"
+        break
+    fi
+
+    HEALTHY=$(echo "$STATUS_OUTPUT" | grep -oP '\\d+(?= healthy)' || echo "0")
+    TOTAL=$(echo "$STATUS_OUTPUT" | grep -oP '\\d+(?= servers found)' || echo "?")
+    echo "$HEALTHY/$TOTAL servers ready, waiting..."
+
+    sleep $WAIT_INTERVAL
+    ELAPSED=$((ELAPSED + WAIT_INTERVAL))
+done
+
+if [ $ELAPSED -ge $MAX_WAIT ]; then
+    echo "WARNING: Timeout waiting for servers (${{MAX_WAIT}}s). Proceeding anyway..."
+fi
+
+echo "Running rollout collection..."
+{ng_collect_cmd}
+
+echo "Rollout collection complete. Output: {self.output_file}"
+"""
+            return cmd.strip(), {"environment": {}}
+
+        self.set_inline(build_cmd)
+        super().__post_init__()
