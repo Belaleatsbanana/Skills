@@ -24,10 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-try:
-    import nemo_run as run
-except ImportError:
-    run = None
+import nemo_run as run
 import yaml
 from huggingface_hub import get_token
 from invoke import StreamWatcher
