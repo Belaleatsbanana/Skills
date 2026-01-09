@@ -53,13 +53,14 @@ import typer
 
 import nemo_skills.pipeline.utils as pipeline_utils
 from nemo_skills.pipeline.app import app, typer_unpacker
-from nemo_skills.pipeline.utils.cluster import parse_kwargs
+from nemo_skills.pipeline.utils.cluster import cluster_path_exists, parse_kwargs
 from nemo_skills.pipeline.utils.declarative import (
     Command,
     CommandGroup,
     HardwareConfig,
     Pipeline,
 )
+from nemo_skills.pipeline.utils.mounts import get_unmounted_path
 from nemo_skills.pipeline.utils.scripts import (
     NemoGymRolloutsScript,
     SandboxScript,
@@ -124,6 +125,21 @@ def nemo_gym_rollouts(
         help="Number of parallel rollout jobs to run. Each job writes to rollouts-rs{i}.jsonl. "
         "Use this to scale rollout collection across multiple nodes.",
     ),
+    random_seeds: str = typer.Option(
+        None,
+        help="Explicit list of seed indices to run (comma-separated, e.g., '0,2,5,7'). "
+        "Overrides num_random_seeds. Can provide a list directly when using through Python.",
+    ),
+    starting_seed: int = typer.Option(
+        0,
+        help="Starting seed index when using num_random_seeds. "
+        "E.g., starting_seed=10 with num_random_seeds=4 creates seeds 10,11,12,13.",
+    ),
+    rerun_done: bool = typer.Option(
+        False,
+        help="If False (default), skip seeds that already have output files. "
+        "If True, re-run all seeds even if output files exist.",
+    ),
     dry_run: bool = typer.Option(False, help="Validate without executing"),
     sbatch_kwargs: str = typer.Option("", help="Additional sbatch kwargs as JSON string"),
 ):
@@ -145,6 +161,9 @@ def nemo_gym_rollouts(
     For large-scale rollout collection, use --num_random_seeds to create multiple
     independent jobs. Each job has its own server and sandbox (unique ports to avoid
     conflicts if scheduled on same node) and writes to rollouts-rs{i}.jsonl.
+
+    Use --starting_seed to offset seed numbering (e.g., to continue from a previous run).
+    Use --random_seeds to specify explicit seeds (e.g., '0,2,5,7' to re-run specific seeds).
     """
     setup_logging(disable_hydra_logs=False, use_rich=True)
     extra_arguments = " ".join(ctx.args)
@@ -190,9 +209,18 @@ def nemo_gym_rollouts(
     sbatch_kwargs_dict = parse_kwargs(sbatch_kwargs, exclusive=exclusive, qos=qos, time_min=time_min)
 
     # Determine seed indices for parallel jobs
-    if num_random_seeds:
-        seed_indices = list(range(num_random_seeds))
-        LOG.info(f"Creating {num_random_seeds} separate jobs (rs0..rs{num_random_seeds - 1})")
+    if random_seeds is not None:
+        # Explicit seeds provided
+        if isinstance(random_seeds, str):
+            seed_indices = [int(s.strip()) for s in random_seeds.split(",")]
+        else:
+            seed_indices = list(random_seeds)
+        LOG.info(f"Using explicit seeds: {seed_indices}")
+    elif num_random_seeds:
+        seed_indices = list(range(starting_seed, starting_seed + num_random_seeds))
+        LOG.info(
+            f"Creating {num_random_seeds} separate jobs (rs{starting_seed}..rs{starting_seed + num_random_seeds - 1})"
+        )
     else:
         seed_indices = [None]  # Single job, no seed suffix
 
@@ -202,6 +230,31 @@ def nemo_gym_rollouts(
     if self_hosted:
         server_type_str = server_type.value if hasattr(server_type, "value") else server_type
         server_container = cluster_config["containers"].get(server_type_str, server_type_str)
+
+    # Filter out seeds with existing output files (unless rerun_done=True)
+    if not rerun_done and seed_indices != [None]:
+        filtered_seeds = []
+        skipped_seeds = []
+        for seed_idx in seed_indices:
+            output_file = f"{output_dir}/rollouts-rs{seed_idx}.jsonl"
+            # Check if file exists on cluster
+            try:
+                unmounted_path = get_unmounted_path(cluster_config, output_file)
+                if cluster_path_exists(cluster_config, unmounted_path):
+                    skipped_seeds.append(seed_idx)
+                else:
+                    filtered_seeds.append(seed_idx)
+            except Exception as e:
+                LOG.warning(f"Could not check if {output_file} exists: {e}. Including seed {seed_idx}.")
+                filtered_seeds.append(seed_idx)
+
+        if skipped_seeds:
+            LOG.info(f"Skipping seeds with existing output files: {skipped_seeds}")
+        seed_indices = filtered_seeds
+
+        if not seed_indices:
+            LOG.info("All seeds already have output files. Nothing to run.")
+            return None
 
     # Build jobs - one per seed, each with its own server/sandbox (unique ports)
     jobs = []

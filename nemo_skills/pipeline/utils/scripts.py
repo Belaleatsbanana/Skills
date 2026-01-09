@@ -556,12 +556,13 @@ echo "NeMo Gym installed successfully"
 # Disable pipefail for the polling loop (grep may return non-zero)
 set +o pipefail
 
-# Wait for vLLM server to be ready before starting ng_run (infinite loop like generate.py)
+# Wait for vLLM server to be ready before starting ng_run
+# Note: --kill-on-bad-exit in srun ensures job fails if vLLM crashes
 VLLM_SERVER_URL="{vllm_server_url}"
 if [ -n "$VLLM_SERVER_URL" ]; then
     echo "=== Waiting for vLLM server at $VLLM_SERVER_URL ==="
     while [ $(curl -s -o /dev/null -w "%{{http_code}}" "$VLLM_SERVER_URL/models" 2>/dev/null) -ne 200 ]; do
-        sleep 3
+        sleep 10
     done
     echo "vLLM server is ready!"
 fi
