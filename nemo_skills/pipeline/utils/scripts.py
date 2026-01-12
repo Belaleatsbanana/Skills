@@ -505,11 +505,6 @@ class NemoGymRolloutsScript(BaseJobScript):
             if self.policy_model_name:
                 ng_run_parts.append(f'+policy_model_name="{self.policy_model_name}"')
 
-            # Add sandbox port override if sandbox is referenced (must be quoted string for pydantic)
-            # Single quotes survive bash and force Hydra to treat as string
-            if self.sandbox is not None:
-                ng_run_parts.append(f"\"++ns_tools.resources_servers.ns_tools.sandbox_port='{self.sandbox.port}'\"")
-
             # Add extra arguments to ng_run
             if self.extra_arguments:
                 ng_run_parts.append(self.extra_arguments)
@@ -614,7 +609,15 @@ echo "=== Cleaning up ==="
 kill $NG_RUN_PID 2>/dev/null || true
 echo "Servers terminated."
 """
-            return cmd.strip(), {"environment": {}}
+            # Build environment variables for sandbox connection
+            # YAML configs use ${oc.env:NEMO_SKILLS_SANDBOX_HOST,127.0.0.1} and
+            # ${oc.env:NEMO_SKILLS_SANDBOX_PORT,6000} to resolve these
+            env_vars = {}
+            if self.sandbox is not None:
+                env_vars["NEMO_SKILLS_SANDBOX_HOST"] = self.sandbox.hostname_ref()
+                env_vars["NEMO_SKILLS_SANDBOX_PORT"] = str(self.sandbox.port)
+
+            return cmd.strip(), {"environment": env_vars}
 
         self.set_inline(build_cmd)
         super().__post_init__()
