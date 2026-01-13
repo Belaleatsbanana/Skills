@@ -574,12 +574,22 @@ class Pipeline:
         if span_group_nodes and hardware and hardware.num_nodes is not None:
             num_nodes = hardware.num_nodes
 
+        # Check if the script has a per-script num_tasks override.
+        # This allows different scripts in the same CommandGroup to have different
+        # task configurations (e.g., vLLM servers with 2 tasks per node, Gym with 1).
+        script_num_tasks = getattr(command.script, "num_tasks_override", None)
+        tasks_per_node = (
+            script_num_tasks
+            if script_num_tasks is not None
+            else (hardware.num_tasks if hardware and hardware.num_tasks is not None else 1)
+        )
+
         with env_context:
             return get_executor(
                 cluster_config=cluster_config,
                 container=container_image,
                 num_nodes=num_nodes,
-                tasks_per_node=hardware.num_tasks if hardware and hardware.num_tasks is not None else 1,
+                tasks_per_node=tasks_per_node,
                 gpus_per_node=hardware.num_gpus if hardware and hardware.num_gpus is not None else 0,
                 job_name=job_name_override if job_name_override else command.name,
                 log_dir=log_dir,
