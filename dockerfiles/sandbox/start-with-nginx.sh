@@ -482,7 +482,29 @@ if [ "$IS_MASTER" = "1" ]; then
 
             if [ $TOTAL_READY -ge $TOTAL_EXPECTED ]; then
                 echo "All $TOTAL_READY/$TOTAL_EXPECTED remote workers ready!"
-                break
+                # Add stabilization delay and verify again
+                echo "Waiting 3 seconds for workers to stabilize..."
+                sleep 3
+
+                # Verify all workers are still up after stabilization
+                echo "Verifying all workers are stable..."
+                VERIFY_READY=0
+                for node in $ALL_NODES; do
+                    for i in $(seq 1 $NUM_WORKERS); do
+                        WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+                        if curl -s -f --connect-timeout 1 --max-time 2 "http://${node}:${WORKER_PORT}/health" > /dev/null 2>&1; then
+                            VERIFY_READY=$((VERIFY_READY + 1))
+                        fi
+                    done
+                done
+
+                if [ $VERIFY_READY -ge $TOTAL_EXPECTED ]; then
+                    echo "Verification passed: $VERIFY_READY/$TOTAL_EXPECTED workers confirmed ready"
+                    break
+                else
+                    echo "WARNING: Verification failed ($VERIFY_READY/$TOTAL_EXPECTED), retrying..."
+                    # Don't break, continue waiting
+                fi
             fi
 
             if [ $((REMOTE_ELAPSED % 10)) -eq 0 ]; then
