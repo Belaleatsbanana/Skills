@@ -267,24 +267,15 @@ def get_executor(
 
     if not heterogeneous:
         env_vars["SLURM_MASTER_NODE"] = "$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n1)"
-        # All hostnames (space-separated) for multi-node services like sandbox
-        env_vars["SLURM_ALL_HOSTNAMES"] = "$(scontrol show hostnames $SLURM_JOB_NODELIST | tr '\\n' ' ')"
     else:
         # master node will be within the same group
         env_vars["SLURM_MASTER_NODE"] = (
             f"$(scontrol show hostnames $SLURM_JOB_NODELIST_HET_GROUP_{het_group} | head -n1)"
         )
-        # All hostnames for this het group (space-separated)
-        env_vars["SLURM_ALL_HOSTNAMES"] = (
-            f"$(scontrol show hostnames $SLURM_JOB_NODELIST_HET_GROUP_{het_group} | tr '\\n' ' ')"
-        )
         # in addition defining master nodes for all groups to allow communication
         for group in range(total_het_groups):
             env_vars[f"SLURM_MASTER_NODE_HET_GROUP_{group}"] = (
                 f"$(scontrol show hostnames $SLURM_JOB_NODELIST_HET_GROUP_{group} | head -n1)"
-            )
-            env_vars[f"SLURM_ALL_HOSTNAMES_HET_GROUP_{group}"] = (
-                f"$(scontrol show hostnames $SLURM_JOB_NODELIST_HET_GROUP_{group} | tr '\\n' ' ')"
             )
 
     if gpus_per_node is not None and gpus_per_node > 0:
