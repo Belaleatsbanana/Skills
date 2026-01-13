@@ -1,17 +1,91 @@
 #!/bin/bash
 # Start nginx load balancer with multiple uwsgi workers
 # Supports both single-node (unix sockets) and multi-node Slurm (TCP) modes
+#
+# Multi-node mode is auto-detected from SLURM environment variables.
+# No special nemo-skills configuration required - just run on multiple nodes.
 
 set -e
 
 export NUM_WORKERS=${NUM_WORKERS:-$(nproc --all)}
 
 # =============================================================================
-# Multi-node mode detection
+# Helper function: Expand SLURM nodelist without scontrol
+# =============================================================================
+# Parses compressed SLURM nodelist formats like:
+#   - "node001" -> "node001"
+#   - "node[001-003]" -> "node001 node002 node003"
+#   - "node[001,003,005]" -> "node001 node003 node005"
+#   - "gpu[01-02],cpu[01-03]" -> "gpu01 gpu02 cpu01 cpu02 cpu03"
+expand_nodelist() {
+    local nodelist="$1"
+
+    # If empty, return empty
+    [ -z "$nodelist" ] && return
+
+    # Use Python for reliable parsing (available in sandbox container)
+    python3 -c "
+import re
+import sys
+
+def expand_nodelist(nodelist):
+    '''Expand SLURM nodelist to individual hostnames.'''
+    if not nodelist:
+        return []
+
+    nodes = []
+    # Split by comma, but not commas inside brackets
+    # First, handle each bracketed group separately
+    remaining = nodelist
+
+    while remaining:
+        # Find a complete node specification (prefix + optional bracket range)
+        match = re.match(r'([^\[\],]+)(?:\[([^\]]+)\])?(?:,|$)', remaining)
+        if not match:
+            break
+
+        prefix = match.group(1)
+        ranges = match.group(2)
+        remaining = remaining[match.end():]
+
+        if ranges is None:
+            # Simple hostname without range
+            if prefix.strip():
+                nodes.append(prefix.strip())
+        else:
+            # Has range specification like '001-003' or '001,003,005' or '001-003,005'
+            for range_part in ranges.split(','):
+                range_part = range_part.strip()
+                if '-' in range_part:
+                    # Range like 001-003
+                    parts = range_part.split('-', 1)
+                    start_str, end_str = parts[0], parts[1]
+                    # Preserve leading zeros
+                    width = len(start_str)
+                    try:
+                        for i in range(int(start_str), int(end_str) + 1):
+                            nodes.append(f'{prefix}{i:0{width}d}')
+                    except ValueError:
+                        # If parsing fails, just add as-is
+                        nodes.append(f'{prefix}{range_part}')
+                else:
+                    # Single number
+                    nodes.append(f'{prefix}{range_part}')
+
+    return nodes
+
+nodelist = '''$nodelist'''
+nodes = expand_nodelist(nodelist)
+print(' '.join(nodes))
+" 2>/dev/null
+}
+
+# =============================================================================
+# Multi-node mode detection (auto-detect from SLURM environment)
 # =============================================================================
 # Enable multi-node mode when:
 #   1. NEMO_SKILLS_SANDBOX_MULTINODE=1 is explicitly set, OR
-#   2. Running under Slurm with SLURM_NNODES > 1
+#   2. Running under SLURM with SLURM_NNODES > 1
 MULTINODE_MODE=0
 if [ "${NEMO_SKILLS_SANDBOX_MULTINODE:-0}" = "1" ]; then
     MULTINODE_MODE=1
@@ -23,19 +97,25 @@ fi
 
 # Determine master node and current node identity
 if [ "$MULTINODE_MODE" = "1" ]; then
-    # SLURM_ALL_HOSTNAMES is set by nemo-run before container starts
-    if [ -n "$SLURM_ALL_HOSTNAMES" ]; then
-        echo "Using SLURM_ALL_HOSTNAMES: $SLURM_ALL_HOSTNAMES"
-        ALL_NODES="$SLURM_ALL_HOSTNAMES"
-        MASTER_NODE="${SLURM_MASTER_NODE:-$(echo "$ALL_NODES" | awk '{print $1}')}"
-        NODE_COUNT=$(echo "$ALL_NODES" | wc -w)
+    # Parse SLURM_JOB_NODELIST to get all node hostnames
+    if [ -n "$SLURM_JOB_NODELIST" ]; then
+        echo "Expanding SLURM_JOB_NODELIST: $SLURM_JOB_NODELIST"
+        ALL_NODES=$(expand_nodelist "$SLURM_JOB_NODELIST")
+        if [ -z "$ALL_NODES" ]; then
+            echo "WARNING: Failed to expand nodelist, using hostname"
+            ALL_NODES="$(hostname)"
+        fi
     else
-        echo "ERROR: SLURM_ALL_HOSTNAMES not set. This should be set by nemo-run."
-        echo "Falling back to single node mode."
-        MASTER_NODE="${SLURM_MASTER_NODE:-$(hostname)}"
-        ALL_NODES="$MASTER_NODE"
-        NODE_COUNT=1
+        echo "WARNING: SLURM_JOB_NODELIST not set, using hostname"
+        ALL_NODES="$(hostname)"
     fi
+
+    # Determine master (first node) and count
+    MASTER_NODE=$(echo "$ALL_NODES" | awk '{print $1}')
+    NODE_COUNT=$(echo "$ALL_NODES" | wc -w)
+
+    echo "Resolved nodes: $ALL_NODES"
+    echo "Master node: $MASTER_NODE, Total nodes: $NODE_COUNT"
 
     CURRENT_NODE=$(hostname)
     # Normalize hostnames (strip domain if present for comparison)
@@ -376,44 +456,40 @@ echo "All local workers are ready!"
 # Start nginx (master node only)
 # =============================================================================
 if [ "$IS_MASTER" = "1" ]; then
-    if [ "$MULTINODE_MODE" = "1" ]; then
-        # In multi-node mode, optionally wait for remote workers before starting nginx
-        WAIT_FOR_REMOTE=${NEMO_SKILLS_SANDBOX_WAIT_FOR_REMOTE:-0}
-        if [ "$WAIT_FOR_REMOTE" = "1" ] && [ "$NODE_COUNT" -gt 1 ]; then
-            echo "Waiting for remote workers to be ready..."
-            REMOTE_READY=0
-            REMOTE_TIMEOUT=300
-            REMOTE_START=$(date +%s)
+    if [ "$MULTINODE_MODE" = "1" ] && [ "$NODE_COUNT" -gt 1 ]; then
+        # In multi-node mode, always wait for remote workers before starting nginx
+        echo "Waiting for remote workers to be ready..."
+        REMOTE_TIMEOUT=300
+        REMOTE_START=$(date +%s)
 
-            while true; do
-                REMOTE_ELAPSED=$(($(date +%s) - REMOTE_START))
-                if [ $REMOTE_ELAPSED -gt $REMOTE_TIMEOUT ]; then
-                    echo "WARNING: Timeout waiting for all remote workers, starting nginx anyway"
-                    break
-                fi
+        while true; do
+            REMOTE_ELAPSED=$(($(date +%s) - REMOTE_START))
+            if [ $REMOTE_ELAPSED -gt $REMOTE_TIMEOUT ]; then
+                echo "WARNING: Timeout waiting for all remote workers, starting nginx anyway"
+                break
+            fi
 
-                TOTAL_READY=0
-                TOTAL_EXPECTED=$((NODE_COUNT * NUM_WORKERS))
-                for node in $ALL_NODES; do
-                    for i in $(seq 1 $NUM_WORKERS); do
-                        WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
-                        if curl -s -f --connect-timeout 1 --max-time 2 "http://${node}:${WORKER_PORT}/health" > /dev/null 2>&1; then
-                            TOTAL_READY=$((TOTAL_READY + 1))
-                        fi
-                    done
+            TOTAL_READY=0
+            TOTAL_EXPECTED=$((NODE_COUNT * NUM_WORKERS))
+            for node in $ALL_NODES; do
+                for i in $(seq 1 $NUM_WORKERS); do
+                    WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+                    if curl -s -f --connect-timeout 1 --max-time 2 "http://${node}:${WORKER_PORT}/health" > /dev/null 2>&1; then
+                        TOTAL_READY=$((TOTAL_READY + 1))
+                    fi
                 done
-
-                if [ $TOTAL_READY -ge $TOTAL_EXPECTED ]; then
-                    echo "All $TOTAL_READY/$TOTAL_EXPECTED remote workers ready!"
-                    break
-                fi
-
-                if [ $((REMOTE_ELAPSED % 10)) -eq 0 ]; then
-                    echo "  Remote progress: $TOTAL_READY/$TOTAL_EXPECTED workers ready (${REMOTE_ELAPSED}s elapsed)"
-                fi
-                sleep 2
             done
-        fi
+
+            if [ $TOTAL_READY -ge $TOTAL_EXPECTED ]; then
+                echo "All $TOTAL_READY/$TOTAL_EXPECTED remote workers ready!"
+                break
+            fi
+
+            if [ $((REMOTE_ELAPSED % 10)) -eq 0 ]; then
+                echo "  Remote progress: $TOTAL_READY/$TOTAL_EXPECTED workers ready (${REMOTE_ELAPSED}s elapsed)"
+            fi
+            sleep 2
+        done
     fi
 
     echo "Starting nginx on port $NGINX_PORT..."
