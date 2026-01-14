@@ -125,3 +125,8 @@ class MCPClientTool(Tool):
 
     async def execute(self, tool_name: str, arguments: Dict[str, Any], extra_args: Dict[str, Any] | None = None):
         return await self._client.call_tool(tool=tool_name, args=arguments, extra_args=extra_args)
+
+    async def shutdown(self) -> None:
+        """Close the underlying client/pool if it supports cleanup."""
+        if self._client is not None and hasattr(self._client, "close"):
+            await self._client.close()

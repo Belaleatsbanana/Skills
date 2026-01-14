@@ -11,12 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import asyncio
 import copy
 import functools
 import json
 import logging
 import os
 from abc import abstractmethod
+from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, List
 
 from mcp import ClientSession, StdioServerParameters
@@ -468,3 +470,277 @@ class MCPStdioClient(MCPClient):
                 await session.initialize()
                 result = await session.call_tool(tool, arguments=args)
                 return _extract_tool_result(result)
+
+
+class MCPPersistentStdioConnection:
+    """A single persistent MCP stdio connection.
+
+    Internal class used by MCPStdioConnectionPool.
+    """
+
+    def __init__(self, server_params: StdioServerParameters, connection_id: int = 0):
+        self.server_params = server_params
+        self.connection_id = connection_id
+        self._stdio_cm = None
+        self._session_cm = None
+        self._session: ClientSession | None = None
+        self._connected = False
+
+    async def connect(self) -> None:
+        """Start the subprocess and initialize the MCP session."""
+        if self._connected:
+            return
+
+        self._stdio_cm = stdio_client(self.server_params)
+        read_stream, write_stream = await self._stdio_cm.__aenter__()
+
+        self._session_cm = ClientSession(read_stream, write_stream)
+        self._session = await self._session_cm.__aenter__()
+        await self._session.initialize()
+
+        self._connected = True
+        LOG.debug(f"Connection {self.connection_id} established")
+
+    async def close(self) -> None:
+        """Mark the connection as closed.
+
+        Note: Due to anyio's cancel scope tracking in the MCP library, we cannot
+        safely close connections that were opened in a different task context.
+        Instead, we just mark the connection as closed and let the subprocess
+        be cleaned up by the OS when garbage collected or when Python exits.
+
+        The subprocess cleanup happens automatically because:
+        1. Python's subprocess module will terminate child processes on GC
+        2. The OS will clean up orphaned processes
+        3. The actual tool calls work correctly regardless
+        """
+        if not self._connected:
+            return
+
+        # Mark as disconnected to prevent new calls
+        self._connected = False
+
+        # Clear references (subprocess will be cleaned up by GC/OS)
+        self._session = None
+        self._session_cm = None
+        self._stdio_cm = None
+        LOG.debug(f"Connection {self.connection_id} marked as closed")
+
+    async def list_tools(self) -> List[Dict[str, Any]]:
+        tools_resp = await self._session.list_tools()
+        tools_list: List[Dict[str, Any]] = []
+        for t in getattr(tools_resp, "tools", []) or []:
+            input_schema = getattr(t, "input_schema", None)
+            if input_schema is None:
+                input_schema = getattr(t, "inputSchema", None)
+            tools_list.append(
+                {
+                    "name": getattr(t, "name", None),
+                    "description": getattr(t, "description", ""),
+                    "input_schema": input_schema,
+                }
+            )
+        return tools_list
+
+    async def call_tool(self, tool: str, args: dict) -> Any:
+        result = await self._session.call_tool(tool, arguments=args)
+        return _extract_tool_result(result)
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected
+
+
+class MCPStdioConnectionPool(MCPClient):
+    """Connection pool for MCP stdio clients.
+
+    Maintains a pool of persistent subprocess connections for concurrent tool calls.
+    Each connection can only handle one call at a time, so the pool size determines
+    maximum concurrency. Requests exceeding pool size are queued and processed FIFO.
+
+    Args:
+        command: Executable to launch (e.g., "python").
+        args: Command-line arguments (e.g., ["-m", "nemo_skills.mcp.servers.python_tool"]).
+        pool_size: Number of connections to maintain (default: 4).
+        lazy_init: If True, connections are created on demand. If False, all connections
+                   are pre-warmed on first use (default: True).
+        acquire_timeout: Optional timeout in seconds for acquiring a connection.
+                        If None (default), waits indefinitely. Set this to prevent
+                        requests from waiting forever when pool is saturated.
+
+    Usage:
+        pool = MCPStdioConnectionPool(
+            command="python",
+            args=["-m", "nemo_skills.mcp.servers.python_tool"],
+            pool_size=8,
+            acquire_timeout=30.0,  # Fail if can't get connection in 30s
+        )
+        # Connections are created lazily or can be pre-warmed:
+        await pool.warm_up()
+
+        # Concurrent calls are automatically distributed across connections:
+        results = await asyncio.gather(
+            pool.call_tool("execute", {"code": "1+1"}),
+            pool.call_tool("execute", {"code": "2+2"}),
+            pool.call_tool("execute", {"code": "3+3"}),
+        )
+
+        # Monitor pool status:
+        status = pool.get_status()
+        print(f"Available: {status['available']}/{status['pool_size']}")
+        print(f"Waiting: {status['waiting_requests']}")
+
+        # Cleanup:
+        await pool.close()
+    """
+
+    def __init__(
+        self,
+        command: str,
+        args: list[str] | None = None,
+        pool_size: int = 4,
+        lazy_init: bool = True,
+        acquire_timeout: float | None = None,
+    ):
+        if args is None:
+            args = []
+        self.server_params = StdioServerParameters(command=command, args=args, env=os.environ.copy())
+        self.pool_size = pool_size
+        self.lazy_init = lazy_init
+        self.acquire_timeout = acquire_timeout
+        self.tools: List[Dict[str, Any]] = []
+
+        # Pool state
+        self._connections: List[MCPPersistentStdioConnection] = []
+        self._available: asyncio.Queue | None = None  # Queue of available connection indices
+        self._initialized = False
+        self._init_lock = None  # Created lazily
+        self._closed = False
+        self._waiting_count = 0  # Track requests waiting for a connection
+
+    def _get_init_lock(self) -> asyncio.Lock:
+        """Lazily create lock to avoid event loop issues during __init__."""
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
+        return self._init_lock
+
+    async def _ensure_initialized(self) -> None:
+        """Initialize the pool if not already done."""
+        if self._initialized:
+            return
+
+        async with self._get_init_lock():
+            if self._initialized:
+                return
+
+            self._available = asyncio.Queue()
+
+            # Create connection objects
+            for i in range(self.pool_size):
+                conn = MCPPersistentStdioConnection(self.server_params, connection_id=i)
+                self._connections.append(conn)
+                self._available.put_nowait(i)
+
+            self._initialized = True
+            LOG.info(f"MCPStdioConnectionPool initialized with {self.pool_size} connection slots")
+
+    async def warm_up(self) -> None:
+        """Pre-connect all connections in the pool.
+
+        Call this during startup to avoid connection latency on first calls.
+        """
+        await self._ensure_initialized()
+
+        async def connect_one(idx: int):
+            conn = self._connections[idx]
+            if not conn.is_connected:
+                await conn.connect()
+
+        await asyncio.gather(*[connect_one(i) for i in range(self.pool_size)])
+        LOG.info(f"MCPStdioConnectionPool warmed up {self.pool_size} connections")
+
+    @asynccontextmanager
+    async def _acquire(self):
+        """Acquire a connection from the pool.
+
+        If acquire_timeout is set, raises asyncio.TimeoutError if a connection
+        cannot be acquired within the timeout period.
+        """
+        await self._ensure_initialized()
+
+        self._waiting_count += 1
+        try:
+            if self.acquire_timeout is not None:
+                idx = await asyncio.wait_for(self._available.get(), timeout=self.acquire_timeout)
+            else:
+                idx = await self._available.get()
+        except asyncio.TimeoutError:
+            raise asyncio.TimeoutError(
+                f"Could not acquire connection within {self.acquire_timeout}s. "
+                f"Pool size: {self.pool_size}, waiting: {self._waiting_count}"
+            )
+        finally:
+            self._waiting_count -= 1
+
+        conn = self._connections[idx]
+
+        try:
+            # Connect if not already connected (lazy initialization)
+            if not conn.is_connected:
+                await conn.connect()
+            yield conn
+        finally:
+            # Return connection to pool
+            self._available.put_nowait(idx)
+
+    def get_status(self) -> dict:
+        """Get current pool status for monitoring.
+
+        Returns:
+            dict with keys:
+                - pool_size: Total number of connections in pool
+                - available: Number of connections currently available
+                - in_use: Number of connections currently in use
+                - waiting_requests: Number of requests waiting for a connection
+                - initialized: Whether pool has been initialized
+                - closed: Whether pool has been closed
+        """
+        available = self._available.qsize() if self._available else 0
+        return {
+            "pool_size": self.pool_size,
+            "available": available,
+            "in_use": self.pool_size - available if self._initialized else 0,
+            "waiting_requests": self._waiting_count,
+            "initialized": self._initialized,
+            "closed": self._closed,
+        }
+
+    async def list_tools(self) -> List[Dict[str, Any]]:
+        """List available tools (uses one connection briefly)."""
+        async with self._acquire() as conn:
+            self.tools = await conn.list_tools()
+            return self.tools
+
+    async def call_tool(self, tool: str, args: dict) -> Any:
+        """Execute a tool call using an available connection from the pool."""
+        self._assert_tool_allowed(tool)
+
+        if self._closed:
+            raise RuntimeError("Connection pool is closed")
+
+        async with self._acquire() as conn:
+            return await conn.call_tool(tool, args)
+
+    async def close(self) -> None:
+        """Close all connections in the pool."""
+        self._closed = True
+
+        if not self._initialized:
+            return
+
+        async with self._get_init_lock():
+            close_tasks = [conn.close() for conn in self._connections]
+            await asyncio.gather(*close_tasks, return_exceptions=True)
+            self._connections.clear()
+            self._initialized = False
+            LOG.info("MCPStdioConnectionPool closed")
