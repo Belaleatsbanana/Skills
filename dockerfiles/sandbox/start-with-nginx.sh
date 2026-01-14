@@ -379,19 +379,46 @@ done
 echo "All $NUM_WORKERS workers started simultaneously - waiting for readiness..."
 
 # =============================================================================
-# Wait for workers to be ready
+# Wait for workers to be ready (parallel health checks for faster startup)
 # =============================================================================
 echo "Waiting for workers to start..."
-READY_WORKERS=0
 TIMEOUT=180  # Increased timeout since uwsgi takes time to start
 START_TIME=$(date +%s)
 
 # Track which workers are ready to avoid redundant checks
 declare -A WORKER_READY
 
+# Directory for health check status files (parallel communication)
+HEALTH_CHECK_DIR=$(mktemp -d)
+trap "rm -rf $HEALTH_CHECK_DIR" EXIT
+
+# Function to check a single worker's health (runs in background)
+check_worker_health() {
+    local worker_num=$1
+    local status_file="$HEALTH_CHECK_DIR/worker_${worker_num}"
+
+    if [ "$MULTINODE_MODE" = "1" ]; then
+        local WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + worker_num - 1))
+        local HEALTH_URL="http://127.0.0.1:${WORKER_PORT}/health"
+        if curl -s -f --connect-timeout 2 --max-time 5 "$HEALTH_URL" > /dev/null 2>&1; then
+            echo "ready" > "$status_file"
+        fi
+    else
+        local SOCKET_PATH="${SOCKET_DIR}/worker${worker_num}.sock"
+        if curl -s -f --connect-timeout 2 --max-time 5 --unix-socket "$SOCKET_PATH" http://localhost/health > /dev/null 2>&1; then
+            echo "ready" > "$status_file"
+        fi
+    fi
+}
+
+# Main readiness loop with parallel health checks
+READY_WORKERS=0
+LAST_PROGRESS_TIME=0
+
 while [ $READY_WORKERS -lt $NUM_WORKERS ]; do
     CURRENT_TIME=$(date +%s)
     ELAPSED=$((CURRENT_TIME - START_TIME))
+
     if [ $ELAPSED -gt $TIMEOUT ]; then
         echo "ERROR: Timeout waiting for workers to start"
 
@@ -414,40 +441,52 @@ while [ $READY_WORKERS -lt $NUM_WORKERS ]; do
         exit 1
     fi
 
-    READY_WORKERS=0
-    for i in $(seq 1 $NUM_WORKERS); do
-        # Skip workers that are already ready
-        if [ "${WORKER_READY[$i]}" = "1" ]; then
-            READY_WORKERS=$((READY_WORKERS + 1))
-            continue
-        fi
+    # Launch parallel health checks for all unready workers
+    check_pids=()
+    checking_workers=()
 
-        # Try the health check
-        if [ "$MULTINODE_MODE" = "1" ]; then
-            WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
-            HEALTH_URL="http://127.0.0.1:${WORKER_PORT}/health"
-            if curl -s -f --connect-timeout 2 --max-time 5 "$HEALTH_URL" > /dev/null 2>&1; then
-                READY_WORKERS=$((READY_WORKERS + 1))
-                WORKER_READY[$i]=1
+    for i in $(seq 1 $NUM_WORKERS); do
+        if [ "${WORKER_READY[$i]}" != "1" ]; then
+            check_worker_health $i &
+            check_pids+=($!)
+            checking_workers+=($i)
+        fi
+    done
+
+    # Wait for all parallel health checks to complete (with timeout)
+    for pid in "${check_pids[@]}"; do
+        wait $pid 2>/dev/null || true
+    done
+
+    # Collect results from status files
+    PREV_READY=$READY_WORKERS
+    for i in "${checking_workers[@]}"; do
+        if [ -f "$HEALTH_CHECK_DIR/worker_${i}" ]; then
+            WORKER_READY[$i]=1
+            READY_WORKERS=$((READY_WORKERS + 1))
+            rm -f "$HEALTH_CHECK_DIR/worker_${i}"
+
+            if [ "$MULTINODE_MODE" = "1" ]; then
+                WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
                 echo "  Worker $i (port $WORKER_PORT): Ready! ($READY_WORKERS/$NUM_WORKERS)"
-            fi
-        else
-            SOCKET_PATH="${SOCKET_DIR}/worker${i}.sock"
-            if curl -s -f --connect-timeout 2 --max-time 5 --unix-socket "$SOCKET_PATH" http://localhost/health > /dev/null 2>&1; then
-                READY_WORKERS=$((READY_WORKERS + 1))
-                WORKER_READY[$i]=1
-                echo "  Worker $i (socket $SOCKET_PATH): Ready! ($READY_WORKERS/$NUM_WORKERS)"
+            else
+                echo "  Worker $i (socket ${SOCKET_DIR}/worker${i}.sock): Ready! ($READY_WORKERS/$NUM_WORKERS)"
             fi
         fi
     done
 
-    # Show progress every 10 seconds
-    if [ $((ELAPSED % 10)) -eq 0 ] && [ $READY_WORKERS -lt $NUM_WORKERS ]; then
-        echo "  Progress: $READY_WORKERS/$NUM_WORKERS workers ready (${ELAPSED}s elapsed)"
-    fi
+    # Show progress every 10 seconds if not all ready
+    if [ $READY_WORKERS -lt $NUM_WORKERS ]; then
+        if [ $((CURRENT_TIME - LAST_PROGRESS_TIME)) -ge 10 ]; then
+            echo "  Progress: $READY_WORKERS/$NUM_WORKERS workers ready (${ELAPSED}s elapsed)"
+            LAST_PROGRESS_TIME=$CURRENT_TIME
+        fi
 
-    # Check less frequently to reduce CPU usage and log spam
-    sleep 2
+        # Only sleep if we didn't make progress (avoid busy-waiting but stay responsive)
+        if [ $READY_WORKERS -eq $PREV_READY ]; then
+            sleep 1
+        fi
+    fi
 done
 
 echo "All local workers are ready!"
