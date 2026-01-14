@@ -636,6 +636,12 @@ class GenerationTask:
             output.pop("generation_time", None)
             output.pop("num_generated_tokens", None)
             output.pop("num_input_tokens", None)
+            # Also remove tool call timing stats
+            output.pop("tool_call_times", None)
+            output.pop("total_tool_call_time_ms", None)
+            output.pop("avg_tool_call_time_ms", None)
+            output.pop("min_tool_call_time_ms", None)
+            output.pop("max_tool_call_time_ms", None)
 
         for key in output:
             original_data_point.pop(key, None)

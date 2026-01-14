@@ -16,6 +16,7 @@ import asyncio
 import copy
 import json
 import logging
+import time
 import uuid
 from collections import defaultdict
 from typing import Dict, List
@@ -64,6 +65,15 @@ class ToolCallingWrapper:
         self.schema_mappings = {}  # Built when tools are listed
 
     async def _execute_tool_call(self, tool_call, request_id: str, endpoint_type: EndpointType):
+        """Execute a single tool call and return result with timing info.
+
+        Returns:
+            tuple: (result, timing_info) where timing_info is a dict with:
+                - tool_name: Name of the tool called
+                - start_time: Unix timestamp when execution started
+                - end_time: Unix timestamp when execution ended
+                - duration_ms: Duration in milliseconds
+        """
         ## TODO(sanyamk): The correct key format needs to be cohesive with other formatters.
         tool_name, tool_args = get_tool_details_by_endpoint_type(tool_call, endpoint_type)
 
@@ -76,36 +86,71 @@ class ToolCallingWrapper:
         except json.decoder.JSONDecodeError as e:
             LOG.error(f"Tool arguments are not in JSON format: {tool_args}")
             LOG.exception(e)
-            return {"error": "Tool argument parsing failed."}
+            return {"error": "Tool argument parsing failed."}, {
+                "tool_name": tool_name,
+                "start_time": time.time(),
+                "end_time": time.time(),
+                "duration_ms": 0.0,
+                "error": True,
+            }
 
         ## TODO(sanyamk): Only exceptions related to tool execution here, all others must fail.
         # Remap model's tool name/args back to original schema
         original_tool_name, tool_args = remap_tool_call(tool_name, tool_args, self.schema_mappings)
 
+        start_time = time.time()
         try:
             # Allow providers to specify extra_args behavior internally if needed in the future
             result = await self.tool_manager.execute_tool(
                 original_tool_name, tool_args, extra_args={"request_id": request_id}
             )
+            end_time = time.time()
+            timing_info = {
+                "tool_name": original_tool_name,
+                "start_time": start_time,
+                "end_time": end_time,
+                "duration_ms": (end_time - start_time) * 1000,
+                "error": False,
+            }
         except FatalToolError:
             # Fatal errors should propagate up and stop the process
             raise
         except Exception as e:
             LOG.exception(e)
-            return {"error": "Tool execution failed."}
+            end_time = time.time()
+            return {"error": "Tool execution failed."}, {
+                "tool_name": original_tool_name,
+                "start_time": start_time,
+                "end_time": end_time,
+                "duration_ms": (end_time - start_time) * 1000,
+                "error": True,
+            }
 
-        return result
+        return result, timing_info
 
     async def _execute_tool_calls(self, tool_calls: List, request_id: str, endpoint_type: EndpointType):
+        """Execute multiple tool calls in parallel and return results with timing.
+
+        Returns:
+            tuple: (formatted_responses, timing_infos) where timing_infos is a list of
+                   timing info dicts from each tool call.
+        """
         tasks = [
             self._execute_tool_call(tool_call, request_id=request_id, endpoint_type=endpoint_type)
             for tool_call in tool_calls
         ]
-        tool_results = await asyncio.gather(*tasks)
-        return [
+        results_with_timing = await asyncio.gather(*tasks)
+
+        # Unpack results and timing info
+        tool_results = [r[0] for r in results_with_timing]
+        timing_infos = [r[1] for r in results_with_timing]
+
+        formatted_responses = [
             format_tool_response_by_endpoint_type(tool_call, tool_result, endpoint_type)
             for tool_call, tool_result in zip(tool_calls, tool_results)
         ]
+
+        return formatted_responses, timing_infos
 
     async def generate_async(
         self,
@@ -128,6 +173,9 @@ class ToolCallingWrapper:
 
         result_steps = defaultdict(list)
         conversation = copy.deepcopy(prompt)
+
+        # Track tool call timing
+        all_tool_call_timings = []
 
         # assigning a unique request id to pass to tool calls if they need to be stateful
         request_id = str(uuid.uuid4())
@@ -154,11 +202,20 @@ class ToolCallingWrapper:
             tool_calls = generation.get("tool_calls", [])
             if tool_calls:
                 tool_calls = [tool_call.model_dump() for tool_call in tool_calls]
-                tool_calls_output_messages = await self._execute_tool_calls(
+                tool_calls_output_messages, timing_infos = await self._execute_tool_calls(
                     tool_calls, request_id=request_id, endpoint_type=endpoint_type
                 )
                 LOG.info("Sending tool calls: %s", tool_calls_output_messages)
                 conversation.extend(tool_calls_output_messages)
+
+                # Collect timing info
+                all_tool_call_timings.extend(timing_infos)
+                for timing in timing_infos:
+                    LOG.info(
+                        "Tool call timing: %s took %.2f ms",
+                        timing["tool_name"],
+                        timing["duration_ms"],
+                    )
 
                 result_steps["num_tool_calls"].append(len(tool_calls))
 
@@ -171,5 +228,20 @@ class ToolCallingWrapper:
         result_steps["num_tool_calls"] = sum(result_steps["num_tool_calls"])
         result_steps["conversation"] = conversation
         result_steps["tools"] = tools  # Schema sent to model (with overrides applied)
+
+        # Add tool call timing statistics
+        if all_tool_call_timings:
+            durations = [t["duration_ms"] for t in all_tool_call_timings]
+            result_steps["tool_call_times"] = all_tool_call_timings
+            result_steps["total_tool_call_time_ms"] = sum(durations)
+            result_steps["avg_tool_call_time_ms"] = sum(durations) / len(durations)
+            result_steps["min_tool_call_time_ms"] = min(durations)
+            result_steps["max_tool_call_time_ms"] = max(durations)
+        else:
+            result_steps["tool_call_times"] = []
+            result_steps["total_tool_call_time_ms"] = 0.0
+            result_steps["avg_tool_call_time_ms"] = 0.0
+            result_steps["min_tool_call_time_ms"] = 0.0
+            result_steps["max_tool_call_time_ms"] = 0.0
 
         return result_steps
