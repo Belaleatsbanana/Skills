@@ -690,6 +690,12 @@ class MultiVLLMServerScript(BaseJobScript):
     gpus_per_server: int = 8
     server_args: str = ""
     base_port: Optional[int] = None
+    # Mitigations for vLLM v1 shared-memory communicator instability on some clusters.
+    # When enabled, we export env vars that (if supported by the vLLM version) disable
+    # SHM-based broadcast paths, which are sensitive to /dev/shm sizing and IPC quirks.
+    disable_shm_broadcast: bool = False
+    # Print /dev/shm diagnostics at startup to help debug node-to-node differences.
+    print_shm_diagnostics: bool = True
 
     # Spans all nodes - each SLURM task runs one server
     span_group_nodes: bool = True
@@ -714,6 +720,8 @@ class MultiVLLMServerScript(BaseJobScript):
         ports_str = " ".join(str(p) for p in self._ports)
 
         # Build command that runs one server per SLURM task
+        disable_shm_broadcast = "true" if self.disable_shm_broadcast else "false"
+        print_shm_diagnostics = "true" if self.print_shm_diagnostics else "false"
         cmd = f'''
 #!/bin/bash
 set -e
@@ -722,6 +730,8 @@ set -e
 PORTS=({ports_str})
 GPUS_PER_SERVER={self.gpus_per_server}
 SERVERS_PER_NODE={self.servers_per_node}
+DISABLE_SHM_BROADCAST={disable_shm_broadcast}
+PRINT_SHM_DIAGNOSTICS={print_shm_diagnostics}
 
 # SLURM environment
 # SLURM_PROCID: Global task ID (0 to num_nodes * servers_per_node - 1)
@@ -752,8 +762,27 @@ echo "Tensor Parallel Size: {self.gpus_per_server}"
 echo "Model: {self.model_path}"
 echo "================================="
 
+# Debug /dev/shm and IPC-related info (helps with node-to-node variance)
+if [ "$PRINT_SHM_DIAGNOSTICS" = "true" ]; then
+  echo ""
+  echo "=== /dev/shm diagnostics (before vLLM start) ==="
+  df -h /dev/shm || true
+  ls -ld /dev/shm || true
+  mount | grep -E " /dev/shm " || true
+  echo "ulimit -n: $(ulimit -n || true)"
+  echo "==============================================="
+  echo ""
+fi
+
 # Set GPU visibility
 export CUDA_VISIBLE_DEVICES=$GPU_LIST
+
+# Mitigation: attempt to disable vLLM SHM broadcast transport (best-effort, version-dependent).
+# These env vars are intentionally safe: if vLLM doesn't recognize them, they are ignored.
+if [ "$DISABLE_SHM_BROADCAST" = "true" ]; then
+  export VLLM_DISABLE_SHM_BROADCAST=1
+  export VLLM_USE_SHM_BROADCAST=0
+fi
 
 # Start vLLM server
 python3 -m vllm.entrypoints.openai.api_server \\
@@ -875,10 +904,36 @@ print(' '.join(nodes))
 " "$1"
 }}
 
-# Get all node hostnames
-NODES_STR=$(expand_nodelist "$SLURM_JOB_NODELIST")
-read -ra NODES <<< "$NODES_STR"
-echo "Nodes: ${{NODES[*]}}"
+# Get all node hostnames.
+# IMPORTANT: depending on how the step is launched, some clusters populate only one of these.
+# We'll pick the candidate that expands to the most nodes, and verify it matches NUM_NODES.
+BEST_NODES_STR=""
+BEST_COUNT=0
+for VAR_NAME in SLURM_JOB_NODELIST SLURM_NODELIST SLURM_STEP_NODELIST; do
+    NL="${{!VAR_NAME:-}}"
+    if [ -z "$NL" ]; then
+        continue
+    fi
+    EXPANDED="$(expand_nodelist "$NL" || true)"
+    COUNT="$(echo "$EXPANDED" | wc -w | tr -d ' ')"
+    if [ "$COUNT" -gt "$BEST_COUNT" ]; then
+        BEST_COUNT="$COUNT"
+        BEST_NODES_STR="$EXPANDED"
+        BEST_VAR_NAME="$VAR_NAME"
+    fi
+done
+
+if [ "$BEST_COUNT" -lt "$NUM_NODES" ]; then
+    echo "ERROR: Could not discover enough node hostnames for NUM_NODES=$NUM_NODES"
+    echo "  Best candidate: ${{BEST_VAR_NAME:-<none>}} -> $BEST_COUNT nodes: '${{BEST_NODES_STR:-}}'"
+        echo "  SLURM_JOB_NODELIST='${{SLURM_JOB_NODELIST:-}}'"
+        echo "  SLURM_NODELIST='${{SLURM_NODELIST:-}}'"
+        echo "  SLURM_STEP_NODELIST='${{SLURM_STEP_NODELIST:-}}'"
+    exit 1
+fi
+
+read -ra NODES <<< "$BEST_NODES_STR"
+echo "Nodes (from $BEST_VAR_NAME): ${{NODES[*]}}"
 
 # Build URL list and wait for each server (no timeout - wait indefinitely)
 URLS=""
@@ -887,6 +942,10 @@ START_TIME=$(date +%s)
 
 for NODE_IDX in $(seq 0 $((NUM_NODES - 1))); do
     NODE=${{NODES[$NODE_IDX]}}
+    if [ -z "$NODE" ]; then
+        echo "ERROR: Empty NODE at index $NODE_IDX. Nodes: ${{NODES[*]}}"
+        exit 1
+    fi
 
     for LOCAL_IDX in $(seq 0 $((SERVERS_PER_NODE - 1))); do
         PORT=${{PORTS[$GLOBAL_IDX]}}
