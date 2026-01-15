@@ -83,16 +83,28 @@ print(' '.join(nodes))
 # =============================================================================
 # Node discovery (auto-detect from SLURM, fallback to localhost)
 # =============================================================================
+# Debug: Print all relevant environment variables for troubleshooting
+_H=$(hostname)
+echo "[$_H] === Environment Debug ==="
+echo "[$_H] SLURM_JOB_NODELIST: ${SLURM_JOB_NODELIST:-<not set>}"
+echo "[$_H] SLURM_NNODES: ${SLURM_NNODES:-<not set>}"
+echo "[$_H] SLURM_NODEID: ${SLURM_NODEID:-<not set>}"
+echo "[$_H] SLURM_PROCID: ${SLURM_PROCID:-<not set>}"
+echo "[$_H] NGINX_PORT: ${NGINX_PORT:-<not set>}"
+echo "[$_H] SANDBOX_WORKER_BASE_PORT: ${SANDBOX_WORKER_BASE_PORT:-<not set>}"
+echo "[$_H] NUM_WORKERS: ${NUM_WORKERS:-<not set>}"
+echo "[$_H] ==========================="
+
 # Parse SLURM_JOB_NODELIST if available, otherwise use localhost
 if [ -n "$SLURM_JOB_NODELIST" ]; then
-    echo "Expanding SLURM_JOB_NODELIST: $SLURM_JOB_NODELIST"
+    echo "[$_H] Expanding SLURM_JOB_NODELIST: $SLURM_JOB_NODELIST"
     ALL_NODES=$(expand_nodelist "$SLURM_JOB_NODELIST")
     if [ -z "$ALL_NODES" ]; then
-        echo "WARNING: Failed to expand nodelist, falling back to localhost"
+        echo "[$_H] WARNING: Failed to expand nodelist, falling back to localhost"
         ALL_NODES="127.0.0.1"
     fi
 else
-    echo "No SLURM environment detected, using localhost"
+    echo "[$_H] No SLURM environment detected, using localhost"
     ALL_NODES="127.0.0.1"
 fi
 
@@ -100,8 +112,8 @@ fi
 MASTER_NODE=$(echo "$ALL_NODES" | awk '{print $1}')
 NODE_COUNT=$(echo "$ALL_NODES" | wc -w)
 
-echo "Resolved nodes: $ALL_NODES"
-echo "Master node: $MASTER_NODE, Total nodes: $NODE_COUNT"
+echo "[$_H] Resolved nodes: $ALL_NODES"
+echo "[$_H] Master node: $MASTER_NODE, Total nodes: $NODE_COUNT"
 
 CURRENT_NODE=$(hostname)
 # Normalize hostnames (strip domain if present for comparison)
@@ -109,12 +121,21 @@ CURRENT_NODE_SHORT="${CURRENT_NODE%%.*}"
 MASTER_NODE_SHORT="${MASTER_NODE%%.*}"
 
 # For localhost/127.0.0.1 fallback, we're always the master
+echo "[$_H] === Master Detection Debug ==="
+echo "[$_H] ALL_NODES: $ALL_NODES"
+echo "[$_H] CURRENT_NODE: $CURRENT_NODE"
+echo "[$_H] CURRENT_NODE_SHORT: $CURRENT_NODE_SHORT"
+echo "[$_H] MASTER_NODE: $MASTER_NODE"
+echo "[$_H] MASTER_NODE_SHORT: $MASTER_NODE_SHORT"
+echo "[$_H] ================================"
+
 if [ "$ALL_NODES" = "127.0.0.1" ] || [ "$CURRENT_NODE_SHORT" = "$MASTER_NODE_SHORT" ]; then
     IS_MASTER=1
-    echo "This node ($CURRENT_NODE) is the MASTER node"
+    echo "[$_H] This node is the MASTER node"
+    echo "[$_H]   Reason: ALL_NODES='$ALL_NODES' or CURRENT_NODE_SHORT='$CURRENT_NODE_SHORT' matches MASTER_NODE_SHORT='$MASTER_NODE_SHORT'"
 else
     IS_MASTER=0
-    echo "This node ($CURRENT_NODE) is a WORKER node (master: $MASTER_NODE)"
+    echo "[$_H] This node is a WORKER node (master: $MASTER_NODE)"
 fi
 
 # TCP mode: workers listen on ports
@@ -315,6 +336,13 @@ EOF
 }
 
 # Start all workers simultaneously
+echo "[$_H] === Starting Workers ==="
+echo "[$_H] IS_MASTER: $IS_MASTER"
+echo "[$_H] SANDBOX_WORKER_BASE_PORT: $SANDBOX_WORKER_BASE_PORT"
+echo "[$_H] NUM_WORKERS: $NUM_WORKERS"
+echo "[$_H] Port range: $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
+echo "[$_H] =========================="
+
 for i in $(seq 1 $NUM_WORKERS); do
     pid=$(start_worker $i)
     WORKER_PIDS+=($pid)
@@ -422,7 +450,19 @@ while [ $READY_WORKERS -lt $NUM_WORKERS ]; do
     fi
 done
 
-echo "All local workers are ready!"
+echo "[$_H] All local workers are ready!"
+
+# Debug: Show what ports are actually listening
+echo "[$_H] === Listening Ports Debug ==="
+echo "[$_H] First 3 worker ports that should be listening:"
+for p in $(seq $SANDBOX_WORKER_BASE_PORT $((SANDBOX_WORKER_BASE_PORT + 2))); do
+    if ss -tlnp 2>/dev/null | grep -q ":${p} " ; then
+        echo "[$_H]   Port $p: LISTENING"
+    else
+        echo "[$_H]   Port $p: NOT LISTENING"
+    fi
+done
+echo "[$_H] ==============================="
 
 # =============================================================================
 # Start nginx (master node only)
