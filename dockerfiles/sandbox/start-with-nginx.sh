@@ -1,9 +1,9 @@
 #!/bin/bash
 # Start nginx load balancer with multiple uwsgi workers
-# Supports both single-node (unix sockets) and multi-node Slurm (TCP) modes
+# Uses TCP sockets for workers, supporting both single-node and multi-node deployments.
 #
-# Multi-node mode is auto-detected from SLURM environment variables.
-# No special nemo-skills configuration required - just run on multiple nodes.
+# Multi-node is auto-detected from SLURM environment variables.
+# Falls back to single-node (localhost) when SLURM is not available.
 
 set -e
 
@@ -81,66 +81,49 @@ print(' '.join(nodes))
 }
 
 # =============================================================================
-# Multi-node mode detection (auto-detect from SLURM environment)
+# Node discovery (auto-detect from SLURM, fallback to localhost)
 # =============================================================================
-# Enable multi-node mode when:
-#   1. NEMO_SKILLS_SANDBOX_MULTINODE=1 is explicitly set, OR
-#   2. Running under SLURM with SLURM_NNODES > 1
-MULTINODE_MODE=0
-if [ "${NEMO_SKILLS_SANDBOX_MULTINODE:-0}" = "1" ]; then
-    MULTINODE_MODE=1
-    echo "Multi-node mode enabled via NEMO_SKILLS_SANDBOX_MULTINODE=1"
-elif [ -n "$SLURM_JOB_NODELIST" ] && [ "${SLURM_NNODES:-1}" -gt 1 ]; then
-    MULTINODE_MODE=1
-    echo "Multi-node mode auto-detected: SLURM_NNODES=${SLURM_NNODES}"
-fi
-
-# Determine master node and current node identity
-if [ "$MULTINODE_MODE" = "1" ]; then
-    # Parse SLURM_JOB_NODELIST to get all node hostnames
-    if [ -n "$SLURM_JOB_NODELIST" ]; then
-        echo "Expanding SLURM_JOB_NODELIST: $SLURM_JOB_NODELIST"
-        ALL_NODES=$(expand_nodelist "$SLURM_JOB_NODELIST")
-        if [ -z "$ALL_NODES" ]; then
-            echo "WARNING: Failed to expand nodelist, using hostname"
-            ALL_NODES="$(hostname)"
-        fi
-    else
-        echo "WARNING: SLURM_JOB_NODELIST not set, using hostname"
-        ALL_NODES="$(hostname)"
+# Parse SLURM_JOB_NODELIST if available, otherwise use localhost
+if [ -n "$SLURM_JOB_NODELIST" ]; then
+    echo "Expanding SLURM_JOB_NODELIST: $SLURM_JOB_NODELIST"
+    ALL_NODES=$(expand_nodelist "$SLURM_JOB_NODELIST")
+    if [ -z "$ALL_NODES" ]; then
+        echo "WARNING: Failed to expand nodelist, falling back to localhost"
+        ALL_NODES="127.0.0.1"
     fi
-
-    # Determine master (first node) and count
-    MASTER_NODE=$(echo "$ALL_NODES" | awk '{print $1}')
-    NODE_COUNT=$(echo "$ALL_NODES" | wc -w)
-
-    echo "Resolved nodes: $ALL_NODES"
-    echo "Master node: $MASTER_NODE, Total nodes: $NODE_COUNT"
-
-    CURRENT_NODE=$(hostname)
-    # Normalize hostnames (strip domain if present for comparison)
-    CURRENT_NODE_SHORT="${CURRENT_NODE%%.*}"
-    MASTER_NODE_SHORT="${MASTER_NODE%%.*}"
-
-    if [ "$CURRENT_NODE_SHORT" = "$MASTER_NODE_SHORT" ]; then
-        IS_MASTER=1
-        echo "This node ($CURRENT_NODE) is the MASTER node"
-    else
-        IS_MASTER=0
-        echo "This node ($CURRENT_NODE) is a WORKER node (master: $MASTER_NODE)"
-    fi
-
-    # TCP mode: workers listen on ports instead of unix sockets
-    SANDBOX_WORKER_BASE_PORT=${SANDBOX_WORKER_BASE_PORT:-$((NGINX_PORT + 1))}
-    echo "Multi-node configuration:"
-    echo "  Master node: $MASTER_NODE"
-    echo "  Total nodes: $NODE_COUNT"
-    echo "  Workers per node: $NUM_WORKERS"
-    echo "  Worker port range: $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
 else
-    IS_MASTER=1  # In single-node mode, we're always the master
-    echo "Starting single-node deployment with nginx (unix sockets upstream)..."
+    echo "No SLURM environment detected, using localhost"
+    ALL_NODES="127.0.0.1"
 fi
+
+# Determine master (first node) and count
+MASTER_NODE=$(echo "$ALL_NODES" | awk '{print $1}')
+NODE_COUNT=$(echo "$ALL_NODES" | wc -w)
+
+echo "Resolved nodes: $ALL_NODES"
+echo "Master node: $MASTER_NODE, Total nodes: $NODE_COUNT"
+
+CURRENT_NODE=$(hostname)
+# Normalize hostnames (strip domain if present for comparison)
+CURRENT_NODE_SHORT="${CURRENT_NODE%%.*}"
+MASTER_NODE_SHORT="${MASTER_NODE%%.*}"
+
+# For localhost/127.0.0.1 fallback, we're always the master
+if [ "$ALL_NODES" = "127.0.0.1" ] || [ "$CURRENT_NODE_SHORT" = "$MASTER_NODE_SHORT" ]; then
+    IS_MASTER=1
+    echo "This node ($CURRENT_NODE) is the MASTER node"
+else
+    IS_MASTER=0
+    echo "This node ($CURRENT_NODE) is a WORKER node (master: $MASTER_NODE)"
+fi
+
+# TCP mode: workers listen on ports
+SANDBOX_WORKER_BASE_PORT=${SANDBOX_WORKER_BASE_PORT:-$((NGINX_PORT + 1))}
+echo "Configuration:"
+echo "  Master node: $MASTER_NODE"
+echo "  Total nodes: $NODE_COUNT"
+echo "  Workers per node: $NUM_WORKERS"
+echo "  Worker port range: $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
 
 echo "Workers per node: $NUM_WORKERS, Nginx port: $NGINX_PORT"
 
@@ -201,28 +184,14 @@ echo "Generating nginx configuration..."
 UPSTREAM_FILE="/tmp/upstream_servers.conf"
 > $UPSTREAM_FILE  # Clear the file
 
-if [ "$MULTINODE_MODE" = "1" ]; then
-    # Multi-node: generate TCP upstream entries for all nodes × all worker ports
-    echo "Generating upstream servers for multi-node (TCP)..."
-    for node in $ALL_NODES; do
-        for i in $(seq 1 $NUM_WORKERS); do
-            WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
-            echo "        server ${node}:${WORKER_PORT} max_fails=3 fail_timeout=30s;" >> $UPSTREAM_FILE
-        done
-    done
-    echo "Generated upstream servers for $NODE_COUNT nodes × $NUM_WORKERS workers (TCP):"
-else
-    # Single-node: use unix sockets (original behavior)
-    SOCKET_DIR="/tmp/uwsgi_sockets"
-    mkdir -p "$SOCKET_DIR"
-    chmod 777 "$SOCKET_DIR"
-
+# Generate TCP upstream entries for all nodes × all worker ports
+for node in $ALL_NODES; do
     for i in $(seq 1 $NUM_WORKERS); do
-        SOCKET_PATH="${SOCKET_DIR}/worker${i}.sock"
-        echo "        server unix:${SOCKET_PATH} max_fails=3 fail_timeout=30s;" >> $UPSTREAM_FILE
+        WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+        echo "        server ${node}:${WORKER_PORT} max_fails=3 fail_timeout=30s;" >> $UPSTREAM_FILE
     done
-    echo "Generated upstream servers for $NUM_WORKERS workers (unix sockets):"
-fi
+done
+echo "Generated upstream servers for $NODE_COUNT node(s) × $NUM_WORKERS workers (TCP):"
 
 cat $UPSTREAM_FILE
 
@@ -289,10 +258,6 @@ cleanup() {
         fi
     done
     pkill -f nginx || true
-    # Cleanup leftover unix sockets (single-node mode only)
-    if [ "$MULTINODE_MODE" != "1" ] && [ -n "$SOCKET_DIR" ] && [ -d "$SOCKET_DIR" ]; then
-        rm -f "$SOCKET_DIR"/worker*.sock 2>/dev/null || true
-    fi
     exit 0
 }
 
@@ -301,25 +266,9 @@ trap cleanup SIGTERM SIGINT
 # Function to start a single worker and return its PID
 start_worker() {
     local i=$1
+    local WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
 
-    if [ "$MULTINODE_MODE" = "1" ]; then
-        # Multi-node: use TCP socket
-        local WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
-        local SOCKET_SPEC="0.0.0.0:${WORKER_PORT}"
-        local SOCKET_DISPLAY="${WORKER_PORT}"
-        echo "Starting worker $i on TCP port $WORKER_PORT..." >&2
-    else
-        # Single-node: use unix socket
-        local SOCKET_PATH="${SOCKET_DIR}/worker${i}.sock"
-        local SOCKET_SPEC="${SOCKET_PATH}"
-        local SOCKET_DISPLAY="${SOCKET_PATH}"
-
-        # Ensure old socket is removed if present
-        if [ -S "$SOCKET_PATH" ]; then
-            rm -f "$SOCKET_PATH"
-        fi
-        echo "Starting worker $i on socket $SOCKET_PATH..." >&2
-    fi
+    echo "Starting worker $i on TCP port $WORKER_PORT..." >&2
 
     # Create a custom uwsgi.ini for this worker
     cat > /tmp/worker${i}_uwsgi.ini << EOF
@@ -327,7 +276,7 @@ start_worker() {
 module = main
 callable = app
 processes = ${UWSGI_PROCESSES}
-http-socket = ${SOCKET_SPEC}
+http-socket = 0.0.0.0:${WORKER_PORT}
 vacuum = true
 master = true
 die-on-term = true
@@ -348,16 +297,11 @@ log-prefix = [worker${i}]
 logto = /var/log/worker${i}.log
 EOF
 
-    # Add chmod-socket only for unix sockets
-    if [ "$MULTINODE_MODE" != "1" ]; then
-        echo "chmod-socket = 666" >> /tmp/worker${i}_uwsgi.ini
-    fi
-
     if [ -n "$UWSGI_CHEAPER" ]; then
         echo "cheaper = ${UWSGI_CHEAPER}" >> /tmp/worker${i}_uwsgi.ini
     fi
 
-    echo "Created custom uwsgi config for worker $i (${SOCKET_DISPLAY})" >&2
+    echo "Created custom uwsgi config for worker $i (port ${WORKER_PORT})" >&2
 
     # Start worker with custom config
     (
@@ -366,7 +310,7 @@ EOF
     ) &
 
     local pid=$!
-    echo "Worker $i started with PID $pid on ${SOCKET_DISPLAY}" >&2
+    echo "Worker $i started with PID $pid on port ${WORKER_PORT}" >&2
     echo $pid
 }
 
@@ -396,18 +340,11 @@ trap "rm -rf $HEALTH_CHECK_DIR" EXIT
 check_worker_health() {
     local worker_num=$1
     local status_file="$HEALTH_CHECK_DIR/worker_${worker_num}"
+    local WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + worker_num - 1))
+    local HEALTH_URL="http://127.0.0.1:${WORKER_PORT}/health"
 
-    if [ "$MULTINODE_MODE" = "1" ]; then
-        local WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + worker_num - 1))
-        local HEALTH_URL="http://127.0.0.1:${WORKER_PORT}/health"
-        if curl -s -f --connect-timeout 2 --max-time 5 "$HEALTH_URL" > /dev/null 2>&1; then
-            echo "ready" > "$status_file"
-        fi
-    else
-        local SOCKET_PATH="${SOCKET_DIR}/worker${worker_num}.sock"
-        if curl -s -f --connect-timeout 2 --max-time 5 --unix-socket "$SOCKET_PATH" http://localhost/health > /dev/null 2>&1; then
-            echo "ready" > "$status_file"
-        fi
+    if curl -s -f --connect-timeout 2 --max-time 5 "$HEALTH_URL" > /dev/null 2>&1; then
+        echo "ready" > "$status_file"
     fi
 }
 
@@ -466,12 +403,8 @@ while [ $READY_WORKERS -lt $NUM_WORKERS ]; do
             READY_WORKERS=$((READY_WORKERS + 1))
             rm -f "$HEALTH_CHECK_DIR/worker_${i}"
 
-            if [ "$MULTINODE_MODE" = "1" ]; then
-                WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
-                echo "  Worker $i (port $WORKER_PORT): Ready! ($READY_WORKERS/$NUM_WORKERS)"
-            else
-                echo "  Worker $i (socket ${SOCKET_DIR}/worker${i}.sock): Ready! ($READY_WORKERS/$NUM_WORKERS)"
-            fi
+            WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+            echo "  Worker $i (port $WORKER_PORT): Ready! ($READY_WORKERS/$NUM_WORKERS)"
         fi
     done
 
@@ -495,7 +428,7 @@ echo "All local workers are ready!"
 # Start nginx (master node only)
 # =============================================================================
 if [ "$IS_MASTER" = "1" ]; then
-    if [ "$MULTINODE_MODE" = "1" ] && [ "$NODE_COUNT" -gt 1 ]; then
+    if [ "$NODE_COUNT" -gt 1 ]; then
         # In multi-node mode, always wait for remote workers before starting nginx
         echo "Waiting for remote workers to be ready..."
         REMOTE_TIMEOUT=300
@@ -643,20 +576,13 @@ if [ "$IS_MASTER" = "1" ]; then
     echo "=== Sandbox deployment ready (MASTER) ==="
     echo "Nginx load balancer: http://localhost:$NGINX_PORT"
     echo "Session affinity: enabled (based on X-Session-ID header)"
-    if [ "$MULTINODE_MODE" = "1" ]; then
-        echo "Mode: MULTI-NODE (TCP)"
-        echo "Nodes: $NODE_COUNT ($ALL_NODES)"
-        echo "Workers per node: $NUM_WORKERS"
-        echo "Total workers: $((NODE_COUNT * NUM_WORKERS))"
-        echo "Worker port range: $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
-    else
-        echo "Mode: SINGLE-NODE (unix sockets)"
-        echo "Workers: $NUM_WORKERS (unix sockets in ${SOCKET_DIR}/worker{1..$NUM_WORKERS}.sock)"
-    fi
+    echo "Nodes: $NODE_COUNT ($ALL_NODES)"
+    echo "Workers per node: $NUM_WORKERS"
+    echo "Total workers: $((NODE_COUNT * NUM_WORKERS))"
+    echo "Worker port range: $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
     echo "Nginx status: http://localhost:$NGINX_PORT/nginx-status"
 else
     echo "=== Sandbox deployment ready (WORKER NODE) ==="
-    echo "Mode: MULTI-NODE (TCP) - worker node"
     echo "Local nginx proxy: http://localhost:$NGINX_PORT -> master $MASTER_NODE:$NGINX_PORT"
     echo "Master node: $MASTER_NODE (nginx LB with consistent hash routing)"
     echo "Local workers: $NUM_WORKERS on ports $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
@@ -711,13 +637,11 @@ while true; do
         fi
     done
 
-    # Check nginx (runs on all nodes in multi-node mode)
-    if [ "$IS_MASTER" = "1" ] || [ "$MULTINODE_MODE" = "1" ]; then
-        if ! pgrep nginx > /dev/null; then
-            echo "ERROR: Nginx died unexpectedly"
-            cleanup
-            exit 1
-        fi
+    # Check nginx (runs on all nodes)
+    if ! pgrep nginx > /dev/null; then
+        echo "ERROR: Nginx died unexpectedly"
+        cleanup
+        exit 1
     fi
 
     sleep 10
