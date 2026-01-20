@@ -45,6 +45,11 @@ class SupportedAgentFrameworks(str, Enum):
     openhands = "openhands"
 
 
+class SupportedDatasetTypes(str, Enum):
+    swe_bench = "swe_bench"
+    multi_swe_bench = "multi_swe_bench"
+
+
 # Like nemo_skills.inference.generate.InferenceConfig, except most parameters are not passed by default
 # because they may not be supported by all LLM servers or agent frameworks.
 # tokens_to_generate is purposefully unlimited by default for SWE-bench.
@@ -109,6 +114,9 @@ class SweBenchGenerationConfig:
     # If None, will use the default for the chosen framework
     agent_config: str | None = None
     agent_max_turns: int = 100  # Max iterations for the agent
+
+    # Which dataset type we're running on. This determines which evaluation harness is used.
+    dataset_type: SupportedDatasetTypes = SupportedDatasetTypes.swe_bench
 
     # Enables multilingual mode. Intended for datasets such as SWE-bench Multilingual.
     # For OpenHands, this runs a different entrypoint script within the OH repo that adds multilingual-specific features.
@@ -298,18 +306,48 @@ class SweBenchGenerationTask(GenerationTask):
                 f"Supported frameworks: {', '.join(SupportedAgentFrameworks)}."
             )
 
-        # Install the SWE-bench evaluation harness.
-        setup_commands.append(
-            # clone the swe-bench repo
-            "rm -rf /root/SWE-bench && "
-            f"git clone {self.cfg.eval_harness_repo} /root/SWE-bench && "
-            "cd /root/SWE-bench && "
-            f"git checkout {self.cfg.eval_harness_commit} && "
-            # make venv & install swe-bench dependencies
-            "uv venv --python 3.12 --managed-python venv && "
-            "source venv/bin/activate && "
-            "uv pip install -e ."
-        )
+        # Install the SWE-bench/Multi-SWE-bench evaluation harness.
+        if self.cfg.dataset_type == SupportedDatasetTypes.swe_bench:
+            if self.cfg.eval_harness_repo is None:
+                self.cfg.eval_harness_repo = "https://github.com/Kipok/SWE-bench.git"
+            if self.cfg.eval_harness_commit is None:
+                self.cfg.eval_harness_commit = "HEAD"
+
+            setup_commands.append(
+                # clone the swe-bench repo
+                "rm -rf /root/SWE-bench && "
+                f"git clone {self.cfg.eval_harness_repo} /root/SWE-bench && "
+                "cd /root/SWE-bench && "
+                f"git checkout {self.cfg.eval_harness_commit} && "
+                # make venv & install swe-bench dependencies
+                "uv venv --python 3.12 --managed-python venv && "
+                "source venv/bin/activate && "
+                "uv pip install -e ."
+            )
+
+        elif self.cfg.dataset_type == SupportedDatasetTypes.multi_swe_bench:
+            if self.cfg.eval_harness_repo is None:
+                self.cfg.eval_harness_repo = "https://github.com/ludwig-n/multi-swe-bench.git"
+            if self.cfg.eval_harness_commit is None:
+                self.cfg.eval_harness_commit = "local-eval"
+
+            setup_commands.append(
+                # clone the multi-swe-bench repo
+                "rm -rf /root/multi-swe-bench && "
+                f"git clone {self.cfg.eval_harness_repo} /root/multi-swe-bench && "
+                "cd /root/multi-swe-bench && "
+                f"git checkout {self.cfg.eval_harness_commit} && "
+                # make venv & install multi-swe-bench dependencies
+                "uv venv --python 3.12 --managed-python venv && "
+                "source venv/bin/activate && "
+                "uv pip install -e ."
+            )
+
+        else:
+            raise ValueError(
+                f"Unsupported dataset type: {self.cfg.dataset_type}. "
+                f"Supported dataset types: {', '.join(SupportedDatasetTypes)}."
+            )
 
         # Run all commands with retries and timeout
         combined_setup_command = " && ".join(setup_commands)
@@ -654,6 +692,94 @@ class SweBenchGenerationTask(GenerationTask):
             )
         return pred_file
 
+    async def _eval_swe_bench(self, data_point, pred_mounted_path):
+        """
+        Evaluates a patch using the SWE-bench harness.
+        pred_mounted_path must be a mounted path to a file in the SWE-bench evaluation format.
+        Returns the absolute (not mounted) path to the evaluation report file.
+        """
+        swe_bench_cmd = (
+            # copy installed repo & uv dir from /root_mount
+            "cp -r /root_mount/SWE-bench /root && "
+            "cp -r /root_mount/uv /root && "
+            "cd /root/SWE-bench && "
+            # run the evaluation with streaming output
+            f"/root/SWE-bench/venv/bin/python -m swebench.harness.run_local_evaluation "
+            f"    --predictions_path {pred_mounted_path} "
+            f"    --instance_ids {data_point['instance_id']} "
+            f"    --run_id eval-outputs "
+            f"    --timeout {self.cfg.swebench_tests_timeout} "
+            f"    --dataset_name {self.cfg.input_file} && "
+            f"cp -r logs/run_evaluation/eval-outputs /trajectories_mount/"
+        )
+
+        # Execute SWE-bench evaluation command
+        search_path = os.path.join(self.output_dir, "eval-outputs", "*", data_point["instance_id"], "report.json")
+        return await self._execute_container_command(
+            data_point,
+            swe_bench_cmd,
+            search_path,
+            mode="eval",
+            timeout=self.cfg.swebench_tests_timeout + 120,
+        )
+
+    async def _eval_multi_swe_bench(self, data_point, pred_mounted_path):
+        """
+        Evaluates a patch using the Multi-SWE-bench harness.
+        pred_mounted_path must be a mounted path to a file in the SWE-bench evaluation format.
+        Returns the absolute (not mounted) path to the evaluation report file.
+        """
+        # Multi-SWE-bench evaluation uses a config file for settings
+        output_dir = f"eval-outputs/{data_point['instance_id']}"
+        config = {
+            "mode": "evaluation",
+            "workdir": "tmp/workdir",
+            # for gold patch evaluation we use dataset_row for both patch_files and dataset_files
+            # TODO: support real evaluation
+            "patch_files": ["dataset_row.json"],
+            "dataset_files": ["dataset_row.json"],
+            "force_build": False,
+            "output_dir": f"{output_dir}/output",
+            "specifics": [],
+            "skips": [],
+            "repo_dir": "tmp/repo",
+            "need_clone": False,
+            "global_env": [],
+            "clear_env": True,
+            "stop_on_error": True,
+            "max_workers": 1,
+            "max_workers_build_image": 1,
+            "max_workers_run_instance": 1,
+            "log_dir": f"{output_dir}/logs",
+            "log_level": "DEBUG",
+        }
+
+        multi_swe_bench_cmd = (
+            # copy installed repo & uv dir from /root_mount
+            "cp -r /root_mount/multi-swe-bench /root && "
+            "cp -r /root_mount/uv /root && "
+            "cd /root/multi-swe-bench && "
+            # dump original dataset row
+            f"echo {shlex.quote(data_point['original_row'])} >dataset_row.json && "
+            # dump config
+            f"echo {shlex.quote(json.dumps(config))} >config.json && "
+            # run the evaluation
+            "/root/multi-swe-bench/venv/bin/python -m multi_swe_bench.harness.run_evaluation --config config.json && "
+            "cp -r eval-outputs /trajectories_mount/"
+        )
+
+        # Execute Multi-SWE-bench evaluation command
+        search_path = os.path.join(
+            self.output_dir, "eval-outputs", data_point["instance_id"], "output", "final_report.json"
+        )
+        return await self._execute_container_command(
+            data_point,
+            multi_swe_bench_cmd,
+            search_path,
+            mode="eval",
+            timeout=self.cfg.swebench_tests_timeout + 120,
+        )
+
     async def process_single_datapoint(self, data_point, data):
         """Will do all necessary generations to get a single answer for the data point."""
 
@@ -691,33 +817,12 @@ class SweBenchGenerationTask(GenerationTask):
                 }
             }
         else:
-            # Run full evaluation with streaming output
-            swe_bench_cmd = (
-                # copy installed repo & uv dir from /root_mount
-                "cp -r /root_mount/SWE-bench /root && "
-                "cp -r /root_mount/uv /root && "
-                "cd /root/SWE-bench && "
-                # run the evaluation with streaming output
-                f"/root/SWE-bench/venv/bin/python -m swebench.harness.run_local_evaluation "
-                f"    --predictions_path {pred_mounted_path} "
-                f"    --instance_ids {data_point['instance_id']} "
-                f"    --run_id eval-outputs "
-                f"    --timeout {self.cfg.swebench_tests_timeout} "
-                f"    --dataset_name {self.cfg.input_file} && "
-                f"cp -r logs/run_evaluation/eval-outputs /trajectories_mount/"
-            )
-
-            # Execute SWE-bench evaluation command
-            search_path = os.path.join(self.output_dir, "eval-outputs", "*", data_point["instance_id"], "report.json")
             # TODO: should we fail on errors here? Seems that json isn't always generated
             try:
-                report_file = await self._execute_container_command(
-                    data_point,
-                    swe_bench_cmd,
-                    search_path,
-                    mode="eval",
-                    timeout=self.cfg.swebench_tests_timeout + 120,
-                )
+                if self.cfg.dataset_type == SupportedDatasetTypes.swe_bench:
+                    report_file = await self._eval_swe_bench(data_point, pred_mounted_path)
+                elif self.cfg.dataset_type == SupportedDatasetTypes.multi_swe_bench:
+                    report_file = await self._eval_multi_swe_bench(data_point, pred_mounted_path)
             except ValueError:
                 LOG.error("Failed to execute SWE-bench evaluation command for %s", data_point["instance_id"])
                 report_json = {
