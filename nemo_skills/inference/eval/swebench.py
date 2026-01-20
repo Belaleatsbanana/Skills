@@ -731,16 +731,16 @@ class SweBenchGenerationTask(GenerationTask):
         Returns the absolute (not mounted) path to the evaluation report file.
         """
         # Multi-SWE-bench evaluation uses a config file for settings
-        output_dir = f"eval-outputs/{data_point['instance_id']}"
+        local_output_dir = f"eval-outputs/{data_point['instance_id']}"
         config = {
             "mode": "evaluation",
             "workdir": "tmp/workdir",
             # for gold patch evaluation we use dataset_row for both patch_files and dataset_files
             # TODO: support real evaluation
-            "patch_files": ["dataset_row.json"],
-            "dataset_files": ["dataset_row.json"],
+            "patch_files": [f"{local_output_dir}/dataset_row.json"],
+            "dataset_files": [f"{local_output_dir}/dataset_row.json"],
             "force_build": False,
-            "output_dir": f"{output_dir}/output",
+            "output_dir": f"{local_output_dir}/output",
             "specifics": [],
             "skips": [],
             "repo_dir": "tmp/repo",
@@ -751,21 +751,27 @@ class SweBenchGenerationTask(GenerationTask):
             "max_workers": 1,
             "max_workers_build_image": 1,
             "max_workers_run_instance": 1,
-            "log_dir": f"{output_dir}/logs",
+            "log_dir": f"{local_output_dir}/logs",
             "log_level": "DEBUG",
         }
+
+        # Save original dataset row and config.
+        # We need to use absolute paths here, since we are not in the Apptainer container yet
+        absolute_output_dir = self.output_dir / local_output_dir
+        absolute_output_dir.mkdir(parents=True, exist_ok=True)
+        with open(absolute_output_dir / "dataset_row.json", "w") as fout:
+            fout.write(data_point["original_row"])  # already a json string
+        with open(absolute_output_dir / "config.json", "w") as fout:
+            fout.write(json.dumps(config))
 
         multi_swe_bench_cmd = (
             # copy installed repo & uv dir from /root_mount
             "cp -r /root_mount/multi-swe-bench /root && "
             "cp -r /root_mount/uv /root && "
             "cd /root/multi-swe-bench && "
-            # dump original dataset row
-            f"echo {shlex.quote(data_point['original_row'])} >dataset_row.json && "
-            # dump config
-            f"echo {shlex.quote(json.dumps(config))} >config.json && "
             # run the evaluation
-            "/root/multi-swe-bench/venv/bin/python -m multi_swe_bench.harness.run_evaluation --config config.json && "
+            "/root/multi-swe-bench/venv/bin/python -m multi_swe_bench.harness.run_evaluation "
+            f"    --config {local_output_dir}/config.json && "
             "cp -r eval-outputs /trajectories_mount/"
         )
 
