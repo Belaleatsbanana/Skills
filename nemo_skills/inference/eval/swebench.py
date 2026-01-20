@@ -786,27 +786,30 @@ class SweBenchGenerationTask(GenerationTask):
         # TODO: what's the right way to support api models, so that our standard parameters for that can be used?
         # TODO: use self.cfg.server.base_url, etc. Can we pass in API key?
 
-        if "base_url" in self.cfg.server:
-            api_base = self.cfg.server.base_url
-        else:
-            api_base = f"http://{self.cfg.server.host}:{self.cfg.server.port}/v1"
+        # if "base_url" in self.cfg.server:
+        #     api_base = self.cfg.server.base_url
+        # else:
+        #     api_base = f"http://{self.cfg.server.host}:{self.cfg.server.port}/v1"
 
-        if self.cfg.agent_framework == SupportedAgentFrameworks.swe_agent:
-            pred_file = await self._run_swe_agent(data_point, api_base)
-        elif self.cfg.agent_framework == SupportedAgentFrameworks.openhands:
-            pred_file = await self._run_openhands(data_point, api_base)
-        else:
-            raise ValueError(
-                f"Unsupported agent framework: {self.cfg.agent_framework}. "
-                f"Supported frameworks: {', '.join(SupportedAgentFrameworks)}."
-            )
+        # if self.cfg.agent_framework == SupportedAgentFrameworks.swe_agent:
+        #     pred_file = await self._run_swe_agent(data_point, api_base)
+        # elif self.cfg.agent_framework == SupportedAgentFrameworks.openhands:
+        #     pred_file = await self._run_openhands(data_point, api_base)
+        # else:
+        #     raise ValueError(
+        #         f"Unsupported agent framework: {self.cfg.agent_framework}. "
+        #         f"Supported frameworks: {', '.join(SupportedAgentFrameworks)}."
+        #     )
 
-        pred_mounted_path = pred_file.replace(str(self.output_dir), "/trajectories_mount")
-        with open(pred_file, "r") as f:
-            trajectory_dict = json.loads(f.read())
+        # pred_mounted_path = pred_file.replace(str(self.output_dir), "/trajectories_mount")
+        # with open(pred_file, "r") as f:
+        #     trajectory_dict = json.loads(f.read())
 
-        # Check if the trajectory has an empty patch before running evaluation
-        has_patch = trajectory_dict["model_patch"] is not None
+        # # Check if the trajectory has an empty patch before running evaluation
+        # has_patch = trajectory_dict["model_patch"] is not None
+        has_patch = True
+        trajectory_dict = {}
+        pred_mounted_path = None
 
         if not has_patch:
             report_json = {
