@@ -730,20 +730,21 @@ class SweBenchGenerationTask(GenerationTask):
         pred_mounted_path must be a mounted path to a file in the SWE-bench evaluation format.
         Returns the absolute (not mounted) path to the evaluation report file.
         """
+        eval_outputs_mounted_dir = f"/trajectories_mount/eval-outputs/{data_point['instance_id']}"
+
         # Multi-SWE-bench evaluation uses a config file for settings
-        local_output_dir = f"eval-outputs/{data_point['instance_id']}"
         config = {
             "mode": "evaluation",
-            "workdir": "tmp/workdir",
+            "workdir": f"{eval_outputs_mounted_dir}/workdir",
             # for gold patch evaluation we use dataset_row for both patch_files and dataset_files
             # TODO: support real evaluation
-            "patch_files": [f"{local_output_dir}/dataset_row.json"],
-            "dataset_files": [f"{local_output_dir}/dataset_row.json"],
+            "patch_files": [f"{eval_outputs_mounted_dir}/dataset_row.json"],
+            "dataset_files": [f"{eval_outputs_mounted_dir}/dataset_row.json"],
             "force_build": False,
-            "output_dir": f"{local_output_dir}/output",
+            "output_dir": f"{eval_outputs_mounted_dir}/output",
             "specifics": [],
             "skips": [],
-            "repo_dir": "tmp/repo",
+            "repo_dir": "repo",
             "need_clone": False,
             "global_env": [],
             "clear_env": True,
@@ -751,17 +752,17 @@ class SweBenchGenerationTask(GenerationTask):
             "max_workers": 1,
             "max_workers_build_image": 1,
             "max_workers_run_instance": 1,
-            "log_dir": f"{local_output_dir}/logs",
+            "log_dir": f"{eval_outputs_mounted_dir}/logs",
             "log_level": "DEBUG",
         }
 
         # Save original dataset row and config.
         # We need to use absolute paths here, since we are not in the Apptainer container yet
-        absolute_output_dir = self.output_dir / local_output_dir
-        absolute_output_dir.mkdir(parents=True, exist_ok=True)
-        with open(absolute_output_dir / "dataset_row.json", "w") as fout:
+        eval_outputs_dir = self.output_dir / "eval-outputs" / data_point["instance_id"]
+        eval_outputs_dir.mkdir(parents=True, exist_ok=True)
+        with open(eval_outputs_dir / "dataset_row.json", "w") as fout:
             fout.write(data_point["original_row"])  # already a json string
-        with open(absolute_output_dir / "config.json", "w") as fout:
+        with open(eval_outputs_dir / "config.json", "w") as fout:
             fout.write(json.dumps(config))
 
         multi_swe_bench_cmd = (
@@ -771,14 +772,12 @@ class SweBenchGenerationTask(GenerationTask):
             "cd /root/multi-swe-bench && "
             # run the evaluation
             "/root/multi-swe-bench/venv/bin/python -m multi_swe_bench.harness.run_evaluation "
-            f"    --config {local_output_dir}/config.json && "
+            f"    --config {eval_outputs_mounted_dir}/config.json && "
             "cp -r eval-outputs /trajectories_mount/"
         )
 
         # Execute Multi-SWE-bench evaluation command
-        search_path = os.path.join(
-            self.output_dir, "eval-outputs", data_point["instance_id"], "output", "final_report.json"
-        )
+        search_path = os.path.join(eval_outputs_dir, "output", "final_report.json")
         return await self._execute_container_command(
             data_point,
             multi_swe_bench_cmd,
