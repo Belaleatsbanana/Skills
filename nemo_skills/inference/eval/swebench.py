@@ -115,17 +115,18 @@ class SweBenchGenerationConfig:
     agent_config: str | None = None
     agent_max_turns: int = 100  # Max iterations for the agent
 
-    # Which dataset type we're running on. This determines which evaluation harness is used.
-    dataset_type: SupportedDatasetTypes = SupportedDatasetTypes.swe_bench
-
     # Enables multilingual mode. Intended for datasets such as SWE-bench Multilingual.
     # For OpenHands, this runs a different entrypoint script within the OH repo that adds multilingual-specific features.
     # For SWE-agent, this changes the default config to multilingual.yaml, which uses language-specific prompting.
     multilingual: bool = False
 
-    # URL of the evaluation harness repo to pass to git clone. Defaults to our fork of SWE-bench with local evaluation
-    eval_harness_repo: str = "https://github.com/Kipok/SWE-bench.git"
-    eval_harness_commit: str = "HEAD"  # Which commit to use when cloning the eval harness repo
+    # Which dataset type we're running on. This determines which evaluation harness is used.
+    dataset_type: SupportedDatasetTypes = SupportedDatasetTypes.swe_bench
+
+    # Evaluation harness repo URL & commit. Passed to git clone & git checkout respectively.
+    # Defaults to our fork of SWE-bench/Multi-SWE-bench depending on dataset_type.
+    eval_harness_repo: str | None = None
+    eval_harness_commit: str | None = None
 
     setup_timeout: int = 60 * 20  # Timeout to download & install the agent framework and the eval harness, in seconds
     swebench_tests_timeout: int = 60 * 30  # Timeout for the tests after applying the patch, in seconds
