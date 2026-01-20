@@ -56,7 +56,7 @@ if __name__ == "__main__":
             input_row = json.loads(line)
 
             # Multi-SWE-bench docker image format: mswebench/facebook_m_zstd:pr-3942
-            docker_image = f"mswebench/{input_row['org']}_m_{input_row['repo']}:pr-{input_row['number']}"
+            docker_image = f"mswebench/{input_row['org']}_m_{input_row['repo']}:pr-{input_row['number']}".lower()
             if container_formatter.endswith(".sif"):
                 docker_image = docker_image.replace("/", "_").replace(":", "_")
 
