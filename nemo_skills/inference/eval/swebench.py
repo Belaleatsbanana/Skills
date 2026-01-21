@@ -786,8 +786,7 @@ class SweBenchGenerationTask(GenerationTask):
             "cd /root/multi-swe-bench && "
             # run the evaluation
             "/root/multi-swe-bench/venv/bin/python -m multi_swe_bench.harness.run_evaluation "
-            f"    --config {eval_outputs_mounted_dir}/config.json && "
-            "cp -r eval-outputs /trajectories_mount/"
+            f"    --config {eval_outputs_mounted_dir}/config.json"
         )
 
         # Execute Multi-SWE-bench evaluation command
