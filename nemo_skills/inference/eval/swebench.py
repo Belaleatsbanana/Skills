@@ -792,13 +792,32 @@ class SweBenchGenerationTask(GenerationTask):
 
         # Execute Multi-SWE-bench evaluation command
         search_path = os.path.join(eval_outputs_dir, "output", "final_report.json")
-        return await self._execute_container_command(
+        out_file = await self._execute_container_command(
             data_point,
             multi_swe_bench_cmd,
             search_path,
             mode="eval",
             timeout=self.cfg.swebench_tests_timeout + 120,
         )
+
+        # Convert to SWE-bench report format
+
+        with open(out_file, "r") as f:
+            report = json.load(f)
+
+        report = {
+            data_point["instance_id"]: {
+                "resolved": report["resolved_instances"] == 1,
+                "patch_exists": report["empty_patch_instances"] == 0,
+                "patch_successfully_applied": report["completed_instances"] == 1,
+            }
+        }
+
+        report_file = eval_outputs_dir / "report.json"
+        with open(report_file, "w") as f:
+            json.dump(report, f)
+
+        return report_file
 
     async def process_single_datapoint(self, data_point, data):
         """Will do all necessary generations to get a single answer for the data point."""
