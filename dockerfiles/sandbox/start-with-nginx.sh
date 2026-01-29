@@ -140,11 +140,31 @@ fi
 
 # TCP mode: workers listen on ports
 SANDBOX_WORKER_BASE_PORT=${SANDBOX_WORKER_BASE_PORT:-$((NGINX_PORT + 1))}
+
+# =============================================================================
+# Dynamic port reporting setup (for multi-node deployments)
+# =============================================================================
+# Each node will find free ports dynamically and report them to shared storage.
+# Master will collect all port assignments before generating nginx config.
+# IMPORTANT: Must use shared filesystem (Lustre), NOT /tmp (which is node-local)
+if [ -n "$SLURM_JOB_ID" ]; then
+    # Use job-specific directory on shared storage (Lustre)
+    # /workspace is typically mounted to Lustre in our cluster configs
+    PORTS_REPORT_DIR="${SANDBOX_PORTS_DIR:-/workspace/sandbox_ports_${SLURM_JOB_ID}}"
+else
+    PORTS_REPORT_DIR="/tmp/sandbox_ports_$$"
+fi
+mkdir -p "$PORTS_REPORT_DIR"
+echo "Port reporting directory: $PORTS_REPORT_DIR"
+
+# Array to track actual ports assigned to workers (may differ from base calculation if ports are busy)
+declare -a ACTUAL_WORKER_PORTS
+
 echo "Configuration:"
 echo "  Master node: $MASTER_NODE"
 echo "  Total nodes: $NODE_COUNT"
 echo "  Workers per node: $NUM_WORKERS"
-echo "  Worker port range: $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
+echo "  Base worker port: $SANDBOX_WORKER_BASE_PORT (actual ports may vary if busy)"
 
 echo "Workers per node: $NUM_WORKERS, Nginx port: $NGINX_PORT"
 
@@ -198,52 +218,10 @@ else
 fi
 
 # =============================================================================
-# Generate nginx upstream configuration
+# Nginx config generation will happen AFTER workers start and report their ports
 # =============================================================================
-echo "Generating nginx configuration..."
-
 UPSTREAM_FILE="/tmp/upstream_servers.conf"
-> $UPSTREAM_FILE  # Clear the file
-
-# Generate TCP upstream entries for all nodes × all worker ports
-for node in $ALL_NODES; do
-    for i in $(seq 1 $NUM_WORKERS); do
-        WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
-        echo "        server ${node}:${WORKER_PORT} max_fails=3 fail_timeout=30s;" >> $UPSTREAM_FILE
-    done
-done
-echo "Generated upstream servers for $NODE_COUNT node(s) × $NUM_WORKERS workers (TCP):"
-
-cat $UPSTREAM_FILE
-
-# Only the master node generates and uses nginx config
-if [ "$IS_MASTER" = "1" ]; then
-    # Create nginx config by replacing placeholders
-    sed "s|\${NGINX_PORT}|${NGINX_PORT}|g" /etc/nginx/nginx.conf.template > /tmp/nginx_temp.conf
-
-    # Replace the upstream servers placeholder with the actual servers
-    awk -v upstream_file="$UPSTREAM_FILE" '
-    /\${UPSTREAM_SERVERS}/ {
-        while ((getline line < upstream_file) > 0) {
-            print line
-        }
-        close(upstream_file)
-        next
-    }
-    { print }
-    ' /tmp/nginx_temp.conf > /etc/nginx/nginx.conf
-
-    echo "Nginx configuration created successfully"
-
-    # Test nginx configuration
-    echo "Testing nginx configuration..."
-    if ! nginx -t; then
-        echo "ERROR: nginx configuration test failed"
-        echo "Generated nginx.conf:"
-        cat /etc/nginx/nginx.conf
-        exit 1
-    fi
-fi
+echo "Nginx upstream config will be generated after all nodes report their ports"
 
 # =============================================================================
 # Log setup
@@ -284,10 +262,42 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT
 
-# Function to start a single worker and return its PID
+# Function to check if a port is free
+is_port_free() {
+    local port=$1
+    ! ss -tlnp 2>/dev/null | grep -q ":${port} "
+}
+
+# Function to find a free port starting from a given port
+find_free_port() {
+    local start_port=$1
+    local max_attempts=100
+    local port=$start_port
+
+    for _ in $(seq 1 $max_attempts); do
+        if is_port_free $port; then
+            echo $port
+            return 0
+        fi
+        port=$((port + 1))
+    done
+
+    # Fallback: return the original port and let uwsgi fail with clear error
+    echo $start_port
+    return 1
+}
+
+# Function to start a single worker and return "pid:port"
 start_worker() {
     local i=$1
-    local WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+    local DESIRED_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+
+    # Find a free port (may be different from desired if that port is busy)
+    local WORKER_PORT=$(find_free_port $DESIRED_PORT)
+
+    if [ "$WORKER_PORT" != "$DESIRED_PORT" ]; then
+        echo "Worker $i: Port $DESIRED_PORT busy, using $WORKER_PORT instead" >&2
+    fi
 
     echo "Starting worker $i on TCP port $WORKER_PORT..." >&2
 
@@ -332,7 +342,8 @@ EOF
 
     local pid=$!
     echo "Worker $i started with PID $pid on port ${WORKER_PORT}" >&2
-    echo $pid
+    # Return both PID and actual port (format: "pid:port")
+    echo "$pid:$WORKER_PORT"
 }
 
 # Start all workers simultaneously
@@ -343,12 +354,28 @@ echo "[$_H] NUM_WORKERS: $NUM_WORKERS"
 echo "[$_H] Port range: $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
 echo "[$_H] =========================="
 
+# Start all workers - each call returns immediately after spawning uwsgi
+echo "Starting $NUM_WORKERS workers..."
 for i in $(seq 1 $NUM_WORKERS); do
-    pid=$(start_worker $i)
+    result=$(start_worker $i)
+    pid="${result%%:*}"
+    port="${result##*:}"
     WORKER_PIDS+=($pid)
+    ACTUAL_WORKER_PORTS+=($port)
 done
 
-echo "All $NUM_WORKERS workers started simultaneously - waiting for readiness..."
+echo "All $NUM_WORKERS workers started - waiting for readiness..."
+
+# Write actual port assignments to shared storage for master to collect
+PORTS_FILE="$PORTS_REPORT_DIR/${CURRENT_NODE_SHORT}_ports.txt"
+echo "Writing port assignments to $PORTS_FILE"
+> "$PORTS_FILE"
+for i in $(seq 1 $NUM_WORKERS); do
+    idx=$((i - 1))
+    echo "${i}:${ACTUAL_WORKER_PORTS[$idx]}" >> "$PORTS_FILE"
+done
+echo "PORT_REPORT_COMPLETE" >> "$PORTS_FILE"
+echo "Port assignments written for $NUM_WORKERS workers"
 
 # =============================================================================
 # Wait for workers to be ready (parallel health checks for faster startup)
@@ -368,7 +395,8 @@ trap "rm -rf $HEALTH_CHECK_DIR" EXIT
 check_worker_health() {
     local worker_num=$1
     local status_file="$HEALTH_CHECK_DIR/worker_${worker_num}"
-    local WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + worker_num - 1))
+    local idx=$((worker_num - 1))
+    local WORKER_PORT=${ACTUAL_WORKER_PORTS[$idx]}
     local HEALTH_URL="http://127.0.0.1:${WORKER_PORT}/health"
 
     if curl -s -f --connect-timeout 2 --max-time 5 "$HEALTH_URL" > /dev/null 2>&1; then
@@ -431,7 +459,8 @@ while [ $READY_WORKERS -lt $NUM_WORKERS ]; do
             READY_WORKERS=$((READY_WORKERS + 1))
             rm -f "$HEALTH_CHECK_DIR/worker_${i}"
 
-            WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+            idx=$((i - 1))
+            WORKER_PORT=${ACTUAL_WORKER_PORTS[$idx]}
             echo "  Worker $i (port $WORKER_PORT): Ready! ($READY_WORKERS/$NUM_WORKERS)"
         fi
     done
@@ -454,12 +483,15 @@ echo "[$_H] All local workers are ready!"
 
 # Debug: Show what ports are actually listening
 echo "[$_H] === Listening Ports Debug ==="
-echo "[$_H] First 3 worker ports that should be listening:"
-for p in $(seq $SANDBOX_WORKER_BASE_PORT $((SANDBOX_WORKER_BASE_PORT + 2))); do
-    if ss -tlnp 2>/dev/null | grep -q ":${p} " ; then
-        echo "[$_H]   Port $p: LISTENING"
-    else
-        echo "[$_H]   Port $p: NOT LISTENING"
+echo "[$_H] First 3 worker ports (actual assignments):"
+for i in 0 1 2; do
+    if [ $i -lt ${#ACTUAL_WORKER_PORTS[@]} ]; then
+        p=${ACTUAL_WORKER_PORTS[$i]}
+        if ss -tlnp 2>/dev/null | grep -q ":${p} " ; then
+            echo "[$_H]   Worker $((i+1)) port $p: LISTENING"
+        else
+            echo "[$_H]   Worker $((i+1)) port $p: NOT LISTENING"
+        fi
     fi
 done
 echo "[$_H] ==============================="
@@ -469,9 +501,100 @@ echo "[$_H] ==============================="
 # =============================================================================
 if [ "$IS_MASTER" = "1" ]; then
     if [ "$NODE_COUNT" -gt 1 ]; then
-        # In multi-node mode, always wait for remote workers before starting nginx
-        echo "Waiting for remote workers to be ready..."
-        REMOTE_TIMEOUT=300
+        # =============================================================================
+        # Collect port assignments from all nodes (dynamic port discovery)
+        # =============================================================================
+        echo "Waiting for all nodes to report their port assignments..."
+        PORT_COLLECT_TIMEOUT=120
+        PORT_COLLECT_START=$(date +%s)
+
+        while true; do
+            PORT_COLLECT_ELAPSED=$(($(date +%s) - PORT_COLLECT_START))
+            if [ $PORT_COLLECT_ELAPSED -gt $PORT_COLLECT_TIMEOUT ]; then
+                echo "ERROR: Timeout waiting for all nodes to report ports"
+                echo "Expected port files from: $ALL_NODES"
+                echo "Found in $PORTS_REPORT_DIR:"
+                ls -la "$PORTS_REPORT_DIR" || true
+                exit 1
+            fi
+
+            NODES_REPORTED=0
+            for node in $ALL_NODES; do
+                node_short="${node%%.*}"
+                port_file="$PORTS_REPORT_DIR/${node_short}_ports.txt"
+                if [ -f "$port_file" ] && grep -q "PORT_REPORT_COMPLETE" "$port_file" 2>/dev/null; then
+                    NODES_REPORTED=$((NODES_REPORTED + 1))
+                fi
+            done
+
+            if [ $NODES_REPORTED -ge $NODE_COUNT ]; then
+                echo "All $NODE_COUNT nodes have reported their ports"
+                break
+            fi
+
+            if [ $((PORT_COLLECT_ELAPSED % 10)) -eq 0 ]; then
+                echo "  Waiting for port reports: $NODES_REPORTED/$NODE_COUNT nodes (${PORT_COLLECT_ELAPSED}s elapsed)"
+            fi
+            sleep 1
+        done
+
+        # =============================================================================
+        # Generate nginx upstream config from collected port assignments
+        # =============================================================================
+        echo "Generating nginx upstream config from actual port assignments..."
+        > $UPSTREAM_FILE
+
+        for node in $ALL_NODES; do
+            node_short="${node%%.*}"
+            port_file="$PORTS_REPORT_DIR/${node_short}_ports.txt"
+            echo "Reading ports from $port_file for node $node"
+
+            while IFS=: read -r worker_num worker_port; do
+                # Skip the PORT_REPORT_COMPLETE marker
+                [ "$worker_num" = "PORT_REPORT_COMPLETE" ] && continue
+                [ -z "$worker_num" ] && continue
+
+                echo "        server ${node}:${worker_port} max_fails=3 fail_timeout=30s;" >> $UPSTREAM_FILE
+            done < "$port_file"
+        done
+
+        echo "Generated upstream servers from dynamic port assignments:"
+        wc -l < $UPSTREAM_FILE | xargs echo "  Total upstream servers:"
+        head -5 $UPSTREAM_FILE
+        echo "  ..."
+
+        # =============================================================================
+        # Create nginx config with dynamic upstream
+        # =============================================================================
+        sed "s|\${NGINX_PORT}|${NGINX_PORT}|g" /etc/nginx/nginx.conf.template > /tmp/nginx_temp.conf
+
+        awk -v upstream_file="$UPSTREAM_FILE" '
+        /\${UPSTREAM_SERVERS}/ {
+            while ((getline line < upstream_file) > 0) {
+                print line
+            }
+            close(upstream_file)
+            next
+        }
+        { print }
+        ' /tmp/nginx_temp.conf > /etc/nginx/nginx.conf
+
+        echo "Nginx configuration created with dynamic ports"
+
+        # Test nginx configuration
+        echo "Testing nginx configuration..."
+        if ! nginx -t; then
+            echo "ERROR: nginx configuration test failed"
+            echo "Generated nginx.conf:"
+            cat /etc/nginx/nginx.conf
+            exit 1
+        fi
+
+        # =============================================================================
+        # Wait for remote workers to be healthy (using actual ports from collected data)
+        # =============================================================================
+        echo "Verifying all remote workers are healthy..."
+        REMOTE_TIMEOUT=180
         REMOTE_START=$(date +%s)
 
         while true; do
@@ -482,51 +605,76 @@ if [ "$IS_MASTER" = "1" ]; then
             fi
 
             TOTAL_READY=0
-            TOTAL_EXPECTED=$((NODE_COUNT * NUM_WORKERS))
+            TOTAL_EXPECTED=0
+
             for node in $ALL_NODES; do
-                for i in $(seq 1 $NUM_WORKERS); do
-                    WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
-                    if curl -s -f --connect-timeout 1 --max-time 2 "http://${node}:${WORKER_PORT}/health" > /dev/null 2>&1; then
+                node_short="${node%%.*}"
+                port_file="$PORTS_REPORT_DIR/${node_short}_ports.txt"
+
+                while IFS=: read -r worker_num worker_port; do
+                    [ "$worker_num" = "PORT_REPORT_COMPLETE" ] && continue
+                    [ -z "$worker_num" ] && continue
+
+                    TOTAL_EXPECTED=$((TOTAL_EXPECTED + 1))
+                    if curl -s -f --connect-timeout 1 --max-time 2 "http://${node}:${worker_port}/health" > /dev/null 2>&1; then
                         TOTAL_READY=$((TOTAL_READY + 1))
                     fi
-                done
+                done < "$port_file"
             done
 
             if [ $TOTAL_READY -ge $TOTAL_EXPECTED ]; then
-                echo "All $TOTAL_READY/$TOTAL_EXPECTED remote workers ready!"
-                # Add stabilization delay and verify again
-                echo "Waiting 3 seconds for workers to stabilize..."
-                sleep 3
-
-                # Verify all workers are still up after stabilization
-                echo "Verifying all workers are stable..."
-                VERIFY_READY=0
-                for node in $ALL_NODES; do
-                    for i in $(seq 1 $NUM_WORKERS); do
-                        WORKER_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
-                        if curl -s -f --connect-timeout 1 --max-time 2 "http://${node}:${WORKER_PORT}/health" > /dev/null 2>&1; then
-                            VERIFY_READY=$((VERIFY_READY + 1))
-                        fi
-                    done
-                done
-
-                if [ $VERIFY_READY -ge $TOTAL_EXPECTED ]; then
-                    echo "Verification passed: $VERIFY_READY/$TOTAL_EXPECTED workers confirmed ready"
-                    break
-                else
-                    echo "WARNING: Verification failed ($VERIFY_READY/$TOTAL_EXPECTED), retrying..."
-                    # Don't break, continue waiting
-                fi
+                echo "All $TOTAL_READY/$TOTAL_EXPECTED remote workers healthy!"
+                break
             fi
 
             if [ $((REMOTE_ELAPSED % 10)) -eq 0 ]; then
-                echo "  Remote progress: $TOTAL_READY/$TOTAL_EXPECTED workers ready (${REMOTE_ELAPSED}s elapsed)"
+                echo "  Remote health check: $TOTAL_READY/$TOTAL_EXPECTED workers ready (${REMOTE_ELAPSED}s elapsed)"
             fi
             sleep 2
         done
+    else
+        # Single-node mode: generate config from local ports only
+        echo "Single-node mode: generating nginx config from local ports"
+        > $UPSTREAM_FILE
+        for i in $(seq 1 $NUM_WORKERS); do
+            idx=$((i - 1))
+            worker_port=${ACTUAL_WORKER_PORTS[$idx]}
+            echo "        server 127.0.0.1:${worker_port} max_fails=3 fail_timeout=30s;" >> $UPSTREAM_FILE
+        done
+
+        sed "s|\${NGINX_PORT}|${NGINX_PORT}|g" /etc/nginx/nginx.conf.template > /tmp/nginx_temp.conf
+        awk -v upstream_file="$UPSTREAM_FILE" '
+        /\${UPSTREAM_SERVERS}/ {
+            while ((getline line < upstream_file) > 0) { print line }
+            close(upstream_file)
+            next
+        }
+        { print }
+        ' /tmp/nginx_temp.conf > /etc/nginx/nginx.conf
+
+        echo "Testing nginx configuration..."
+        if ! nginx -t; then
+            echo "ERROR: nginx configuration test failed"
+            cat /etc/nginx/nginx.conf
+            exit 1
+        fi
     fi
 
     echo "Starting nginx on port $NGINX_PORT..."
+
+    # Debug: check if port is already in use before starting nginx
+    echo "=== Port $NGINX_PORT Debug ==="
+    if ss -tlnp 2>/dev/null | grep -q ":$NGINX_PORT "; then
+        echo "WARNING: Port $NGINX_PORT already in use!"
+        ss -tlnp 2>/dev/null | grep ":$NGINX_PORT " || true
+        netstat -tlnp 2>/dev/null | grep ":$NGINX_PORT " || true
+        echo "Processes using port $NGINX_PORT:"
+        lsof -i :$NGINX_PORT 2>/dev/null || true
+    else
+        echo "Port $NGINX_PORT is free"
+    fi
+    echo "=== End Port Debug ==="
+
     nginx
 
     # Enable network blocking for user code execution if requested
@@ -619,13 +767,13 @@ if [ "$IS_MASTER" = "1" ]; then
     echo "Nodes: $NODE_COUNT ($ALL_NODES)"
     echo "Workers per node: $NUM_WORKERS"
     echo "Total workers: $((NODE_COUNT * NUM_WORKERS))"
-    echo "Worker port range: $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
+    echo "Local worker ports: ${ACTUAL_WORKER_PORTS[0]} to ${ACTUAL_WORKER_PORTS[$((NUM_WORKERS-1))]}"
     echo "Nginx status: http://localhost:$NGINX_PORT/nginx-status"
 else
     echo "=== Sandbox deployment ready (WORKER NODE) ==="
     echo "Local nginx proxy: http://localhost:$NGINX_PORT -> master $MASTER_NODE:$NGINX_PORT"
     echo "Master node: $MASTER_NODE (nginx LB with consistent hash routing)"
-    echo "Local workers: $NUM_WORKERS on ports $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
+    echo "Local workers: $NUM_WORKERS (ports: ${ACTUAL_WORKER_PORTS[0]} to ${ACTUAL_WORKER_PORTS[$((NUM_WORKERS-1))]})"
 fi
 
 echo "UWSGI processes per worker: $UWSGI_PROCESSES"
@@ -672,8 +820,11 @@ while true; do
         i=$((idx + 1))
         if ! kill -0 "$pid" 2>/dev/null; then
             echo "WARNING: Worker $i (PID $pid) died - restarting..."
-            new_pid=$(start_worker $i)
+            result=$(start_worker $i)
+            new_pid="${result%%:*}"
+            new_port="${result##*:}"
             WORKER_PIDS[$idx]=$new_pid
+            ACTUAL_WORKER_PORTS[$idx]=$new_port
         fi
     done
 
