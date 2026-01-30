@@ -183,6 +183,15 @@ class MagpieTTSBackend(InferenceBackend):
                             os.symlink(ctx, link_path)
                     else:
                         link_name = f"d{i}.wav"
+                        # Magpie inference expects a readable "context" wav for every manifest entry.
+                        # When callers don't provide one (common for pure TTS-from-text prompts),
+                        # create a tiny dummy wav so the dataloader doesn't crash.
+                        link_path = os.path.join(audio_dir, link_name)
+                        if not os.path.exists(link_path):
+                            sr = int(getattr(self.tts_config, "output_sample_rate", 22050) or 22050)
+                            dur_s = 0.1
+                            n = max(1, int(sr * dur_s))
+                            sf.write(link_path, [0.0] * n, sr)
                     f.write(
                         json.dumps(
                             {
