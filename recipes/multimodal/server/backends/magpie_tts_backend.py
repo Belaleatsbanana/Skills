@@ -112,7 +112,12 @@ class MagpieTTSBackend(InferenceBackend):
                     from huggingface_hub import hf_hub_download  # type: ignore
 
                     def _hf_resolve_to_local(url: str) -> str | None:
-                        m = re.match(r"^https?://huggingface\\.co/([^/]+)/([^/]+)/resolve/([^/]+)/(.+)$", url)
+                        # Some NeMo deps pass raw HF "resolve" URLs via fsspec http.
+                        # Route them through HF Hub caching + file locks to avoid 429s.
+                        if not isinstance(url, str):
+                            return None
+                        url_no_q = url.split("?", 1)[0]
+                        m = re.match(r"^https?://huggingface\.co/([^/]+)/([^/]+)/resolve/([^/]+)/(.+)$", url_no_q)
                         if not m:
                             return None
                         repo_id = f"{m.group(1)}/{m.group(2)}"
