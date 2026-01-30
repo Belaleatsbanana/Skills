@@ -3,13 +3,13 @@
 
 cluster: dfw
 base_output_dir: /workspace/rl-data-clean/non-proof-clean
-model_name: gpt-oss-120b   # Change this to your preferred model
+model_name: gpt-oss-120b  # Change this to your preferred model
 expname: assess-non-proof-${model_name}
 suffix: single-stage
 
 # Input: Your JSONL file with problem, expected_answer, solution keys
 # CHANGE THIS to your actual input file path
-input_file: ${base_output_dir}/super_holdout_problems_with_solution.jsonl
+input_file: ${base_output_dir}/super_holdout_problems_cleaned.jsonl
 
 # Model configuration
 generate_kwargs:
@@ -25,7 +25,7 @@ pipeline_stages:
 
 # Output directory
 directories:
-  step-1-assess: ${base_output_dir}/${model_name}/step-1-assess-complete-problem-pair
+  step-1-assess: ${base_output_dir}/${model_name}/step-1-assess-complete-solution
 
 # Stage configuration
 stages:
