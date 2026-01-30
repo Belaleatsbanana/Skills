@@ -214,8 +214,10 @@ class MagpieTTSBackend(InferenceBackend):
                 if self._model is not None:
                     decoder = getattr(self._model, "decoder", None)
                     if decoder is not None and hasattr(decoder, "reset_cache"):
-                        # Keep caching enabled for decoding speed, but start from a clean cache.
-                        decoder.reset_cache(use_cache=True)
+                        # Disable KV caching: NeMo's transformer cache path can produce
+                        # sequence-length mismatches under longform decoding when the
+                        # server batches/streams requests.
+                        decoder.reset_cache(use_cache=False)
             except Exception:
                 # Best-effort: if cache reset fails for any reason, continue and let the
                 # underlying stack surface the real error.
