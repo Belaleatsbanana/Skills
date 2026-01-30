@@ -25,7 +25,7 @@ pipeline_stages:
 
 # Output directory
 directories:
-  step-1-assess: ${base_output_dir}/${model_name}/step-1-assess-complete-solution
+  step-1-assess: ${base_output_dir}/${model_name}/step-1-assess-complete-problem-pair
 
 # Stage configuration
 stages:
