@@ -1,0 +1,92 @@
+user: |-
+  You are a mathematics education expert. Your task is to evaluate if a complete problem-answer-solution triplet is suitable for RL training.
+
+  Problem:
+  {problem}
+
+  Expected Answer:
+  {expected_answer}
+
+  Solution:
+  {solution}
+
+  Evaluate the complete triplet:
+
+  ## 1. PROBLEM QUALITY
+  Is the problem clear, complete, and well-defined?
+  - Analyze: Clarity, completeness, unambiguous statement
+  - Check: All necessary information present
+
+  ## 2. SOLUTION PRESENCE & CLARITY
+  Does the solution exist and is it clear?
+  - Analyze: Is there a complete solution provided?
+  - Check: Can you follow the solution steps?
+  - Identify: Is solution clear or full of noise/errors?
+
+  ## 3. SOLUTION CORRECTNESS
+  Does the solution correctly solve the problem?
+  - Analyze: Are the steps logically sound?
+  - Check: Does the solution lead to the expected answer?
+  - Identify: Any mathematical errors or wrong reasoning?
+
+  ## 4. SOLUTION COMPLETENESS
+  Is the solution complete with all necessary steps?
+  - Analyze: Are all major steps present?
+  - Check: Can someone follow this to reach the answer?
+  - Identify: Any missing steps or unexplained jumps?
+
+  ## 5. PROBLEM-SOLUTION-ANSWER CONSISTENCY
+  Do all three components align with each other?
+  - Analyze: Does solution address the problem?
+  - Check: Does solution reach the expected answer?
+  - Identify: Any inconsistencies or mismatches?
+
+  ## 6. RL TRAINING SUITABILITY
+  Is this triplet suitable for RL training?
+  - Analyze: Clear problem, correct solution, verifiable answer?
+  - Check: Can model learn good reasoning from this?
+  - Identify: Any issues that would confuse RL training?
+
+  ## Decision Criteria for ACCEPT:
+  - Problem is clear and complete
+  - Solution is present, clear, and followable
+  - Solution is mathematically correct
+  - Solution leads to the expected answer
+  - All three components are consistent
+  - Suitable for RL training (model can learn from this)
+
+  ## Decision Criteria for REJECT:
+  - Problem is unclear or incomplete
+  - Solution is missing, unclear, or full of noise
+  - Solution contains mathematical errors
+  - Solution doesn't reach the expected answer
+  - Inconsistencies between problem, solution, and answer
+  - Not suitable for RL training
+
+  Provide your assessment in EXACT format:
+
+  PROBLEM_QUALITY_ANALYSIS:
+  <Is the problem clear and complete? Any issues?>
+
+  SOLUTION_PRESENCE_CLARITY_ANALYSIS:
+  <Is solution present and clear? Or noisy/unclear?>
+
+  SOLUTION_CORRECTNESS_ANALYSIS:
+  <Is the solution mathematically correct? Any errors in reasoning?>
+
+  SOLUTION_COMPLETENESS_ANALYSIS:
+  <Are all necessary steps present? Any gaps?>
+
+  CONSISTENCY_ANALYSIS:
+  <Do problem, solution, and answer all align? Any mismatches?>
+
+  RL_TRAINING_SUITABILITY_ANALYSIS:
+  <Is this suitable for RL training? Can a model learn good reasoning from this?>
+
+  CRITICAL_ISSUES:
+  <List any serious problems that would prevent using this for training. If none, state "None">
+
+  DECISION: <ACCEPT/REJECT>
+  DECISION_REASONING: <Final decision with clear justification. Why is this suitable or not for RL training?>
+
+  Output:
