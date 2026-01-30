@@ -164,6 +164,21 @@ class MagpieTTSBackend(InferenceBackend):
         os.makedirs(output_dir, exist_ok=True)
 
         try:
+            # MagpieTTS uses KV caching internally during decoding. When the unified server
+            # batches requests, consecutive calls to this backend can have different batch
+            # sizes, and stale KV caches can trigger shape mismatches (e.g. cat on self_k).
+            # Reset caches at the start of each request batch to avoid cross-request leakage.
+            try:
+                if self._model is not None:
+                    decoder = getattr(self._model, "decoder", None)
+                    if decoder is not None and hasattr(decoder, "reset_cache"):
+                        # Keep caching enabled for decoding speed, but start from a clean cache.
+                        decoder.reset_cache(use_cache=True)
+            except Exception:
+                # Best-effort: if cache reset fails for any reason, continue and let the
+                # underlying stack surface the real error.
+                pass
+
             # Parse requests, extracting JSON from text (skips non-JSON prefixes)
             parsed = [self._extract_json(r.text) for r in requests]
 
