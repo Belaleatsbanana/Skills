@@ -93,6 +93,48 @@ class MagpieTTSBackend(InferenceBackend):
         self._model = self._runner = self._temp_dir = self._checkpoint_name = None
 
     def load_model(self) -> None:
+        # Some dependencies inside NeMo's audio codec model load weights via raw
+        # HuggingFace "resolve" URLs using fsspec's HTTP filesystem, which does
+        # not cache and can easily hit 429s when many ranks start concurrently.
+        #
+        # Patch NeMo's `load_fsspec()` at runtime to route HuggingFace resolve
+        # URLs through `huggingface_hub.hf_hub_download()` (uses file locks and
+        # local caching under HF_HOME/HF_HUB_CACHE), then load from the local path.
+        try:  # best-effort; do not fail server if patching is unavailable
+            import os
+            import re
+
+            import nemo.collections.tts.modules.audio_codec_modules as _acm  # type: ignore
+
+            _orig_load_fsspec = getattr(_acm, "load_fsspec", None)
+            if callable(_orig_load_fsspec) and not getattr(_acm, "_hf_load_fsspec_patched", False):
+                try:
+                    from huggingface_hub import hf_hub_download  # type: ignore
+
+                    def _hf_resolve_to_local(url: str) -> str | None:
+                        m = re.match(r"^https?://huggingface\\.co/([^/]+)/([^/]+)/resolve/([^/]+)/(.+)$", url)
+                        if not m:
+                            return None
+                        repo_id = f"{m.group(1)}/{m.group(2)}"
+                        revision = m.group(3)
+                        filename = m.group(4)
+                        token = os.environ.get("HF_TOKEN") or None
+                        return hf_hub_download(repo_id=repo_id, filename=filename, revision=revision, token=token)
+
+                    def _load_fsspec_patched(path: str, map_location: str = None, **kwargs):
+                        if isinstance(path, str) and path.startswith("http"):
+                            local = _hf_resolve_to_local(path)
+                            if local:
+                                return _orig_load_fsspec(local, map_location=map_location, **kwargs)
+                        return _orig_load_fsspec(path, map_location=map_location, **kwargs)
+
+                    _acm.load_fsspec = _load_fsspec_patched  # type: ignore[assignment]
+                    _acm._hf_load_fsspec_patched = True  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         from nemo.collections.tts.modules.magpietts_inference.inference import InferenceConfig, MagpieInferenceRunner
         from nemo.collections.tts.modules.magpietts_inference.utils import ModelLoadConfig, load_magpie_model
 
