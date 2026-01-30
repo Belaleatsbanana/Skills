@@ -322,13 +322,20 @@ def get_executor(
     ]
     # IMPORTANT:
     # Slurm's `srun --wait=<sec>` terminates the job step if other tasks are still
-    # running <sec> seconds after the first task exits. For multi-instance runs
-    # (e.g., chunked evaluation), task runtimes can differ widely, and a low wait
-    # will kill long-running tasks (observed with `--wait=240`).
+    # running <sec> seconds after the first task exits.
     #
-    # If you need this behavior, configure it explicitly in the cluster config:
+    # `nemo_run` adds `--wait=60` by default; for multi-instance runs (e.g., chunked
+    # evaluation) tasks can finish at very different times (some may exit quickly
+    # due to `++skip_filled=True`), which causes Slurm to kill still-running tasks.
+    #
+    # We override this with a large wait by default for multi-instance mode.
+    # You can customize via cluster config:
     #   srun_wait_seconds: <int>
     srun_wait_seconds = cluster_config.get("srun_wait_seconds")
+    if srun_wait_seconds is None and tasks_per_node > 1:
+        # Use a very large wait (1 day) so long-running ranks aren't killed just
+        # because other ranks finished earlier.
+        srun_wait_seconds = 24 * 60 * 60
     if srun_wait_seconds is not None:
         srun_args.append(f"--wait={int(srun_wait_seconds)}")
     if overlap:
