@@ -314,13 +314,23 @@ def get_executor(
     srun_args = [
         "--no-container-mount-home",
         "--mpi=pmix",
-        "--wait=240",  # wait up to 4 minutes for slower tasks to complete (important for multi-instance mode)
         # we need to be explicit about this in srun as commands might need to run in parallel
         f"--ntasks-per-node={tasks_per_node}",
         f"--nodes={num_nodes}",
         # NeMo-run should take care of this, but we'll put it here temporarily
         f"--container-env={','.join([k.strip() for k in env_vars.keys()])}",
     ]
+    # IMPORTANT:
+    # Slurm's `srun --wait=<sec>` terminates the job step if other tasks are still
+    # running <sec> seconds after the first task exits. For multi-instance runs
+    # (e.g., chunked evaluation), task runtimes can differ widely, and a low wait
+    # will kill long-running tasks (observed with `--wait=240`).
+    #
+    # If you need this behavior, configure it explicitly in the cluster config:
+    #   srun_wait_seconds: <int>
+    srun_wait_seconds = cluster_config.get("srun_wait_seconds")
+    if srun_wait_seconds is not None:
+        srun_args.append(f"--wait={int(srun_wait_seconds)}")
     if overlap:
         srun_args.append("--overlap")
     if not cluster_config.get("disable_gpus_per_node", False) and gpus_per_node is not None:
