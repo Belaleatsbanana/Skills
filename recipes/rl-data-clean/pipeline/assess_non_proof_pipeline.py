@@ -44,7 +44,6 @@ def assess_complete_solution_quality(cluster, expname, run_after, stage_config, 
         f"    {output_dir}/rejected.jsonl "
         f"    --stage complete_solution_quality "
     )
-
     generate(
         ctx=wrap_arguments(
             f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/NeMo-Skills/recipes/rl-data-clean/prompts/assess-complete-solution-quality.yaml "
