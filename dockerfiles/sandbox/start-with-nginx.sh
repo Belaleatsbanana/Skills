@@ -139,7 +139,8 @@ else
 fi
 
 # TCP mode: workers listen on ports
-SANDBOX_WORKER_BASE_PORT=${SANDBOX_WORKER_BASE_PORT:-$((NGINX_PORT + 1))}
+# Use high port range (50000+) to avoid commonly used ports like 6666
+SANDBOX_WORKER_BASE_PORT=${SANDBOX_WORKER_BASE_PORT:-50001}
 
 # =============================================================================
 # Dynamic port reporting setup (for multi-node deployments)
@@ -265,7 +266,9 @@ trap cleanup SIGTERM SIGINT
 # Function to check if a port is free
 is_port_free() {
     local port=$1
-    ! ss -tlnp 2>/dev/null | grep -q ":${port} "
+    # Check ALL socket states (not just LISTEN) to catch TIME_WAIT, etc.
+    # -t = TCP, -a = all states, -n = numeric
+    ! ss -tan 2>/dev/null | grep -qE ":${port}[[:space:]]"
 }
 
 # Function to find a free port starting from a given port
@@ -591,11 +594,28 @@ if [ "$IS_MASTER" = "1" ]; then
         fi
 
         # =============================================================================
-        # Wait for remote workers to be healthy (using actual ports from collected data)
+        # Wait for remote workers to be healthy (PARALLEL health checks using xargs)
         # =============================================================================
-        echo "Verifying all remote workers are healthy..."
-        REMOTE_TIMEOUT=180
+        echo "Verifying all remote workers are healthy (parallel checks)..."
+        REMOTE_TIMEOUT=60
         REMOTE_START=$(date +%s)
+
+        # Directory for parallel health check results
+        export REMOTE_HEALTH_DIR=$(mktemp -d)
+
+        # Build list of all workers to check
+        ENDPOINTS_FILE=$(mktemp)
+        for node in $ALL_NODES; do
+            node_short="${node%%.*}"
+            port_file="$PORTS_REPORT_DIR/${node_short}_ports.txt"
+            while IFS=: read -r worker_num worker_port; do
+                [ "$worker_num" = "PORT_REPORT_COMPLETE" ] && continue
+                [ -z "$worker_num" ] && continue
+                echo "${node}:${worker_port}" >> "$ENDPOINTS_FILE"
+            done < "$port_file"
+        done
+        TOTAL_EXPECTED=$(wc -l < "$ENDPOINTS_FILE")
+        echo "  Checking $TOTAL_EXPECTED workers across $NODE_COUNT nodes..."
 
         while true; do
             REMOTE_ELAPSED=$(($(date +%s) - REMOTE_START))
@@ -604,34 +624,30 @@ if [ "$IS_MASTER" = "1" ]; then
                 break
             fi
 
-            TOTAL_READY=0
-            TOTAL_EXPECTED=0
+            # Run parallel health checks using xargs (64 parallel jobs)
+            # Each curl writes a status file if successful
+            cat "$ENDPOINTS_FILE" | xargs -P 64 -I {} sh -c '
+                endpoint="{}"
+                status_file="$REMOTE_HEALTH_DIR/$(echo "$endpoint" | tr ":" "_")"
+                [ -f "$status_file" ] && exit 0
+                if curl -s -f --connect-timeout 2 --max-time 5 "http://${endpoint}/health" > /dev/null 2>&1; then
+                    touch "$status_file"
+                fi
+            '
 
-            for node in $ALL_NODES; do
-                node_short="${node%%.*}"
-                port_file="$PORTS_REPORT_DIR/${node_short}_ports.txt"
-
-                while IFS=: read -r worker_num worker_port; do
-                    [ "$worker_num" = "PORT_REPORT_COMPLETE" ] && continue
-                    [ -z "$worker_num" ] && continue
-
-                    TOTAL_EXPECTED=$((TOTAL_EXPECTED + 1))
-                    if curl -s -f --connect-timeout 1 --max-time 2 "http://${node}:${worker_port}/health" > /dev/null 2>&1; then
-                        TOTAL_READY=$((TOTAL_READY + 1))
-                    fi
-                done < "$port_file"
-            done
+            # Count ready workers
+            TOTAL_READY=$(find "$REMOTE_HEALTH_DIR" -type f 2>/dev/null | wc -l)
 
             if [ $TOTAL_READY -ge $TOTAL_EXPECTED ]; then
                 echo "All $TOTAL_READY/$TOTAL_EXPECTED remote workers healthy!"
                 break
             fi
 
-            if [ $((REMOTE_ELAPSED % 10)) -eq 0 ]; then
-                echo "  Remote health check: $TOTAL_READY/$TOTAL_EXPECTED workers ready (${REMOTE_ELAPSED}s elapsed)"
-            fi
-            sleep 2
+            echo "  Remote health check: $TOTAL_READY/$TOTAL_EXPECTED workers ready (${REMOTE_ELAPSED}s elapsed)"
+            sleep 1
         done
+
+        rm -rf "$REMOTE_HEALTH_DIR" "$ENDPOINTS_FILE"
     else
         # Single-node mode: generate config from local ports only
         echo "Single-node mode: generating nginx config from local ports"
