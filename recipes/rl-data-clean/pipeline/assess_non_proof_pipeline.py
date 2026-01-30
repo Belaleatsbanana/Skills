@@ -46,7 +46,7 @@ def assess_complete_solution_quality(cluster, expname, run_after, stage_config, 
     )
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/NeMo-Skills/recipes/rl-data-clean/prompts/assess-complete-solution-quality.yaml "
+            f"++prompt_config=/nemo-run/code/recipes/rl-data-clean/prompts/assess-complete-solution-quality.yaml "
             f"++inference.tokens_to_generate=120000 "
             f"++inference.temperature=1.0 "
             f"++inference.top_p=1.0 "
