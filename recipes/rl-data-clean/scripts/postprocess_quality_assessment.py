@@ -88,6 +88,35 @@ def parse_imo_readiness(generation: str) -> Dict[str, Any]:
     }
 
 
+def parse_complete_solution_quality(generation: str) -> Dict[str, Any]:
+    """Parse complete solution quality assessment output (non-proof problems)"""
+    return {
+        "decision": parse_decision(generation),
+        "problem_quality_analysis": parse_field(generation, "PROBLEM_QUALITY_ANALYSIS"),
+        "solution_presence_clarity_analysis": parse_field(generation, "SOLUTION_PRESENCE_CLARITY_ANALYSIS"),
+        "solution_correctness_analysis": parse_field(generation, "SOLUTION_CORRECTNESS_ANALYSIS"),
+        "solution_completeness_analysis": parse_field(generation, "SOLUTION_COMPLETENESS_ANALYSIS"),
+        "consistency_analysis": parse_field(generation, "CONSISTENCY_ANALYSIS"),
+        "rl_training_suitability_analysis": parse_field(generation, "RL_TRAINING_SUITABILITY_ANALYSIS"),
+        "critical_issues": parse_field(generation, "CRITICAL_ISSUES"),
+        "decision_reasoning": parse_field(generation, "DECISION_REASONING"),
+    }
+
+
+def parse_problem_answer_quality(generation: str) -> Dict[str, Any]:
+    """Parse problem-answer quality assessment output (quick screening)"""
+    return {
+        "decision": parse_decision(generation),
+        "problem_clarity_analysis": parse_field(generation, "PROBLEM_CLARITY_ANALYSIS"),
+        "problem_completeness_analysis": parse_field(generation, "PROBLEM_COMPLETENESS_ANALYSIS"),
+        "answer_clarity_analysis": parse_field(generation, "ANSWER_CLARITY_ANALYSIS"),
+        "consistency_analysis": parse_field(generation, "CONSISTENCY_ANALYSIS"),
+        "rl_training_suitability": parse_field(generation, "RL_TRAINING_SUITABILITY"),
+        "critical_issues": parse_field(generation, "CRITICAL_ISSUES"),
+        "decision_reasoning": parse_field(generation, "DECISION_REASONING"),
+    }
+
+
 def filter_by_decision(
     input_file: str,
     output_accept: str,
@@ -101,6 +130,8 @@ def filter_by_decision(
         "discussion_quality": parse_discussion_quality,
         "proof_quality": parse_proof_quality,
         "imo_readiness": parse_imo_readiness,
+        "complete_solution_quality": parse_complete_solution_quality,
+        "problem_answer_quality": parse_problem_answer_quality,
     }
 
     parse_func = parse_funcs[stage]
@@ -111,7 +142,14 @@ def filter_by_decision(
 
     with jsonlines.open(input_file) as reader:
         for item in reader:
+            # Support both old format (generation) and new format (serialized_output)
             generation = item.get("generation", "")
+            if not generation and "serialized_output" in item:
+                # Try to get from serialized_output[0]['content']
+                serialized = item.get("serialized_output", [])
+                if serialized and len(serialized) > 0:
+                    generation = serialized[0].get("content", "")
+
             assessment = parse_func(generation)
 
             # Add assessment to item
@@ -155,7 +193,14 @@ def main():
     parser.add_argument(
         "--stage",
         required=True,
-        choices=["problem_quality", "discussion_quality", "proof_quality", "imo_readiness"],
+        choices=[
+            "problem_quality",
+            "discussion_quality",
+            "proof_quality",
+            "imo_readiness",
+            "complete_solution_quality",
+            "problem_answer_quality",
+        ],
         help="Which assessment stage",
     )
 
