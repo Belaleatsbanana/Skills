@@ -175,7 +175,7 @@ class MagpieTTSBackend(InferenceBackend):
                 use_cfg=self.tts_config.use_cfg,
                 cfg_scale=self.tts_config.cfg_scale,
                 use_local_transformer=self.tts_config.use_local_transformer,
-                batch_size=32,
+                batch_size=16,
             ),
         )
 
