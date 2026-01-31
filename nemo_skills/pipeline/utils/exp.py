@@ -331,9 +331,9 @@ def get_executor(
     #   srun_wait_seconds: <int>
     srun_wait_seconds = cluster_config.get("srun_wait_seconds")
     if srun_wait_seconds is None and tasks_per_node > 1:
-        # Use a very large wait (1 day) so long-running ranks aren't killed just
+        # Use a reasonably large wait (1 hour) so long-running ranks aren't killed just
         # because other ranks finished earlier.
-        srun_wait_seconds = 24 * 60 * 60
+        srun_wait_seconds = 60 * 60
     if srun_wait_seconds is not None:
         srun_args.append(f"--wait={int(srun_wait_seconds)}")
     if overlap:
