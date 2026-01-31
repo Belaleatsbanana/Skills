@@ -1,0 +1,30 @@
+# EmergentTTS-Eval: local (docker) 10-sample generation smoke test
+#
+# Usage:
+#   export NEMO_SKILLS_CONFIG_DIR=/home/vmendelev/workspace/expressiveness/src/nemo-skills-tts-eval/cluster_configs
+#   python -m nemo_skills.dataset.emergent_tts.scripts.run_tts_eval --config <this_file> --stage generation
+
+cluster: local_nemo_25_11
+partition: interactive
+
+output_dir: /home/vmendelev/workspace/expressiveness/src/nemo-skills-tts-eval/_local_runs/emergent_tts_smoke10
+
+# Optional: if your local setup needs a NeMo source checkout for MagpieTTS inference,
+# set this to an absolute host path and ensure it's mounted in the local cluster config.
+nemo_code_path: /home/vmendelev/workspace/expressiveness/src/NeMo
+
+generation:
+  benchmarks: emergent_tts.emergent
+  model: nvidia/magpie_tts_multilingual_357m
+  server_type: generic
+  server_gpus: 1
+  server_entrypoint: python -m nemo_skills.inference.server.serve_unified
+  server_args: --backend magpie_tts --codec_model nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps --batch_size 8 --batch_timeout 0.1 --use_cfg --cfg_scale 2.5
+
+  # Use the repo dataset folder (contains emergent_tts/emergent/test.jsonl).
+  data_dir: /home/vmendelev/workspace/expressiveness/src/nemo-skills-tts-eval/nemo_skills/dataset
+
+  num_chunks: 1
+  gpus_per_node: 1
+  extra_args: ++max_samples=10 ++server.server_type=vllm_multimodal
+

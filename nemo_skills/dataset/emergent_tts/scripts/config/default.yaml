@@ -1,0 +1,61 @@
+# EmergentTTS-Eval pipeline configuration (example)
+#
+# NOTE: Before running generation, create the dataset under generation.data_dir:
+#   python nemo_skills/dataset/emergent_tts/prepare.py --output_dir <data_dir>/emergent_tts
+#
+# Then run:
+#   python -m nemo_skills.dataset.emergent_tts.scripts.run_tts_eval --config <this_file> --stage all
+
+cluster: eos
+container: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/containters/nemo-25.11.sqsh
+partition: batch
+mount_paths: /lustre:/lustre
+
+# Where NeMo-Skills will write eval-results/ and eval-logs/
+output_dir: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/tmp/emergent_tts_eval_full_8chunks
+
+# NeMo source checkout on EOS (needed for MagpieTTS inference modules).
+nemo_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/experimenta/tts_eval/NeMo
+
+generation:
+  benchmarks: emergent_tts.emergent
+  model: nvidia/magpie_tts_multilingual_357m
+  server_type: generic
+  # One GPU for the server process.
+  server_gpus: 1
+  server_entrypoint: python -m nemo_skills.inference.server.serve_unified
+  server_args: --backend magpie_tts --codec_model nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps --batch_size 16 --batch_timeout 0.1 --use_cfg --cfg_scale 2.5
+
+  # Shared NeMo-Skills data_dir. Must contain emergent_tts/emergent/test.jsonl and emergent_tts/emergent/__init__.py
+  data_dir: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/tmp/data_dir
+
+  # Full run: split across 8 chunks.
+  num_chunks: 8
+  # Request 8 GPUs per node for the generation job allocation.
+  # (Generation itself calls the server; this matches nv_tts scheduling expectations.)
+  gpus_per_node: 8
+  extra_args: ++server.server_type=vllm_multimodal
+
+scoring:
+  gpus: 1
+  # Container for scoring jobs (conversion + Emergent eval). Use the same container
+  # as the generation "main" job (not the Magpie server container).
+  container: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/containters/nemo-25.11.sqsh
+  # Install missing Python deps at job start (runs inside the scoring container).
+  # Keep this conservative: avoid upgrading core deps inside the base container.
+  installation_command: pip install editdistance whisper-normalizer json-repair tenacity
+
+  # Path to EmergentTTS-Eval-public on the cluster (added to PYTHONPATH)
+  scoring_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/code/EmergentTTS-Eval-public
+
+  # Path to Emergent data directory created by prepare.py:
+  #   <generation.data_dir>/emergent_tts/data
+  emergent_data_dir: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/tmp/data_dir/emergent_tts/data
+
+  # Judge configuration (OpenAI-compatible via NVIDIA Inference API)
+  judge_model: gcp/google/gemini-2.5-pro
+  judger_base_url: https://inference-api.nvidia.com/v1/chat/completions
+  num_threads: 8
+  evaluate_function: win_rate
+  strong_prompting: false
+
