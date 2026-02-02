@@ -46,6 +46,11 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
     generate(
         ctx=wrap_arguments(
             f"++prompt_config=/nemo_run/code/recipes/openmathreasoning/prompts/extract-problems.yaml "
+            f"++inference.tokens_to_generate=120000 "
+            f"++inference.temperature=1.0 "
+            f"++inference.top_p=1.0 "
+            f"++server.enable_soft_fail=True "
+            f"++chat_template_kwargs.reasoning_effort=high "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
