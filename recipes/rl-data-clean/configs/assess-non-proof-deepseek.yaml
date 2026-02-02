@@ -1,0 +1,38 @@
+# Configuration for assessing non-proof problems with solutions - DeepSeek Version
+# This evaluates problem-answer-solution triplets for RL training
+
+cluster: dfw
+base_output_dir: /workspace/rl-data-clean/non-proof-clean
+model_name: DeepSeek-V3.2  # DeepSeek model
+expname: assess-non-proof-${model_name}
+suffix: single-stage
+
+# Input: Your JSONL file with problem, expected_answer, extracted_solution keys
+# CHANGE THIS to your actual input file path
+input_file: ${base_output_dir}/super_holdout_problems_cleaned.jsonl
+
+# Model configuration for DeepSeek
+generate_kwargs:
+  model: /hf_models/${model_name}
+  server_type: sglang  # DeepSeek uses sglang
+  server_gpus: 8
+  server_nodes: 2
+  num_chunks: 1  # Increase for large dataset
+
+# Pipeline stages - only one stage
+pipeline_stages:
+  - assess_complete_solution_quality
+
+# Output directory
+directories:
+  step-1-assess: ${base_output_dir}/${model_name}/step-1-assess-complete-solution
+
+# Stage configuration
+stages:
+  assess_complete_solution_quality:
+    output_dir: ${directories.step-1-assess}
+    input_file: ${input_file}
+    dependencies: null
+    stage_kwargs: ${generate_kwargs}
+    # DeepSeek specific server args (optional, defaults provided in pipeline)
+    server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
