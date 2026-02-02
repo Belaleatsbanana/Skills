@@ -17,7 +17,7 @@ generate_kwargs:
   server_type: sglang  # DeepSeek uses sglang
   server_gpus: 8
   server_nodes: 2
-  num_chunks: 1  # Increase for large dataset
+  num_chunks: 4  # Increase for large dataset
 
 # Pipeline stages - only one stage
 pipeline_stages:
