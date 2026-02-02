@@ -25,7 +25,7 @@ pipeline_stages:
   - classify_if_mcq
   - classify_if_binary
   - classify_if_invalid
-  - filter_classifications  # Note: This is a script, not LLM generation
+  # filter_classifications is manual - run merge_and_filter_classifications.py after classifications complete
   - extract_answers
   - extract_solution
   - assess_problem_answer_quality
@@ -81,24 +81,21 @@ stages:
       - extract_problems
     stage_kwargs: ${generate_kwargs}
 
-  # Filter based on classifications
-  # Note: This needs to be run as a separate script that combines all 4 classification outputs
-  filter_classifications:
-    output_dir: ${directories.step-3-filter}
-    # This stage requires a special script to merge all 4 classification outputs
-    # See: scripts/postprocess_classification_filter.py
-    dependencies:
-      - classify_if_proof
-      - classify_if_mcq
-      - classify_if_binary
-      - classify_if_invalid
+  # NOTE: After classify stages complete, manually run:
+  # python recipes/rl-data-clean/scripts/merge_and_filter_classifications.py \
+  #   --base-file ${directories.step-1-extract}/extracted-problems.jsonl \
+  #   --proof-file ${directories.step-2a-classify-proof}/output.jsonl \
+  #   --mcq-file ${directories.step-2b-classify-mcq}/output.jsonl \
+  #   --binary-file ${directories.step-2c-classify-binary}/output.jsonl \
+  #   --invalid-file ${directories.step-2d-classify-invalid}/output.jsonl \
+  #   --output-dir ${directories.step-3-filter}/
 
-  # Extract answers
+  # Extract answers (will fail if filter not run manually first)
   extract_answers:
     output_dir: ${directories.step-4-extract-answers}
     input_file: ${directories.step-3-filter}/non-proof.jsonl
     dependencies:
-      - filter_classifications
+      - classify_if_invalid  # Last classification stage
     stage_kwargs: ${generate_kwargs}
 
   # Extract solution
