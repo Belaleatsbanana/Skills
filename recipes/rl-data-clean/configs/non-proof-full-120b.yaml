@@ -21,11 +21,7 @@ generate_kwargs:
 # Pipeline stages
 pipeline_stages:
   - extract_problems
-  - classify_if_proof
-  - classify_if_mcq
-  - classify_if_binary
-  - classify_if_invalid
-  # filter_classifications is manual - run merge_and_filter_classifications.py after classifications complete
+  - classify_problems  # Serial filtering: proof -> mcq -> binary -> invalid
   - extract_answers
   - extract_solution
   - assess_problem_answer_quality
@@ -34,15 +30,11 @@ pipeline_stages:
 # Output directories
 directories:
   step-1-extract: ${base_output_dir}/${model_name}/step-1-extract-problems
-  step-2a-classify-proof: ${base_output_dir}/${model_name}/step-2a-classify-proof
-  step-2b-classify-mcq: ${base_output_dir}/${model_name}/step-2b-classify-mcq
-  step-2c-classify-binary: ${base_output_dir}/${model_name}/step-2c-classify-binary
-  step-2d-classify-invalid: ${base_output_dir}/${model_name}/step-2d-classify-invalid
-  step-3-filter: ${base_output_dir}/${model_name}/step-3-filter
-  step-4-extract-answers: ${base_output_dir}/${model_name}/step-4-extract-answers
-  step-5-extract-solution: ${base_output_dir}/${model_name}/step-5-extract-solution
-  step-6a-problem-answer: ${base_output_dir}/${model_name}/step-6a-assess-problem-answer
-  step-6b-complete-solution: ${base_output_dir}/${model_name}/step-6b-assess-complete-solution
+  step-2-classify: ${base_output_dir}/${model_name}/step-2-classify-problems
+  step-3-extract-answers: ${base_output_dir}/${model_name}/step-3-extract-answers
+  step-4-extract-solution: ${base_output_dir}/${model_name}/step-4-extract-solution
+  step-5a-problem-answer: ${base_output_dir}/${model_name}/step-5a-assess-problem-answer
+  step-5b-complete-solution: ${base_output_dir}/${model_name}/step-5b-assess-complete-solution
 
 # Stage configurations
 stages:
@@ -52,72 +44,49 @@ stages:
     dependencies: null
     stage_kwargs: ${generate_kwargs}
 
-  # Classification stages (all run on extracted problems)
-  classify_if_proof:
-    output_dir: ${directories.step-2a-classify-proof}
+  # Classification stage with serial filtering
+  # Order: proof -> mcq -> binary -> invalid
+  # Final output: step-2-classify/invalid/no.jsonl (valid non-proof problems)
+  classify_problems:
+    output_dir: ${directories.step-2-classify}
     input_file: ${directories.step-1-extract}/extracted-problems.jsonl
+    modes:
+      - proof
+      - mcq
+      - binary
+      - invalid
     dependencies:
       - extract_problems
     stage_kwargs: ${generate_kwargs}
 
-  classify_if_mcq:
-    output_dir: ${directories.step-2b-classify-mcq}
-    input_file: ${directories.step-1-extract}/extracted-problems.jsonl
-    dependencies:
-      - extract_problems
-    stage_kwargs: ${generate_kwargs}
-
-  classify_if_binary:
-    output_dir: ${directories.step-2c-classify-binary}
-    input_file: ${directories.step-1-extract}/extracted-problems.jsonl
-    dependencies:
-      - extract_problems
-    stage_kwargs: ${generate_kwargs}
-
-  classify_if_invalid:
-    output_dir: ${directories.step-2d-classify-invalid}
-    input_file: ${directories.step-1-extract}/extracted-problems.jsonl
-    dependencies:
-      - extract_problems
-    stage_kwargs: ${generate_kwargs}
-
-  # NOTE: After classify stages complete, manually run:
-  # python recipes/rl-data-clean/scripts/merge_and_filter_classifications.py \
-  #   --base-file ${directories.step-1-extract}/extracted-problems.jsonl \
-  #   --proof-file ${directories.step-2a-classify-proof}/output.jsonl \
-  #   --mcq-file ${directories.step-2b-classify-mcq}/output.jsonl \
-  #   --binary-file ${directories.step-2c-classify-binary}/output.jsonl \
-  #   --invalid-file ${directories.step-2d-classify-invalid}/output.jsonl \
-  #   --output-dir ${directories.step-3-filter}/
-
-  # Extract answers (will fail if filter not run manually first)
+  # Extract answers from valid non-proof problems
   extract_answers:
-    output_dir: ${directories.step-4-extract-answers}
-    input_file: ${directories.step-3-filter}/non-proof.jsonl
+    output_dir: ${directories.step-3-extract-answers}
+    input_file: ${directories.step-2-classify}/invalid/no.jsonl  # Final filtered result
     dependencies:
-      - classify_if_invalid  # Last classification stage
+      - classify_problems
     stage_kwargs: ${generate_kwargs}
 
   # Extract solution
   extract_solution:
-    output_dir: ${directories.step-5-extract-solution}
-    input_file: ${directories.step-4-extract-answers}/extracted-answers.jsonl
+    output_dir: ${directories.step-4-extract-solution}
+    input_file: ${directories.step-3-extract-answers}/extracted-answers.jsonl
     dependencies:
       - extract_answers
     stage_kwargs: ${generate_kwargs}
 
   # Quality assessment - Problem + Answer only
   assess_problem_answer_quality:
-    output_dir: ${directories.step-6a-problem-answer}
-    input_file: ${directories.step-5-extract-solution}/extracted-solutions.jsonl
+    output_dir: ${directories.step-5a-problem-answer}
+    input_file: ${directories.step-4-extract-solution}/extracted-solutions.jsonl
     dependencies:
       - extract_solution
     stage_kwargs: ${generate_kwargs}
 
   # Quality assessment - Complete triplet
   assess_complete_solution_quality:
-    output_dir: ${directories.step-6b-complete-solution}
-    input_file: ${directories.step-5-extract-solution}/extracted-solutions.jsonl
+    output_dir: ${directories.step-5b-complete-solution}
+    input_file: ${directories.step-4-extract-solution}/extracted-solutions.jsonl
     dependencies:
       - extract_solution
     stage_kwargs: ${generate_kwargs}

@@ -58,91 +58,46 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
     )
 
 
-def classify_if_proof(cluster, expname, run_after, stage_config, **kwargs):
-    """Binary classification: proof vs non-proof problem."""
+def classify_problems(cluster, expname, run_after, stage_config, **kwargs):
+    """
+    Classifies extracted problems into different types using serial filtering.
+    Each classifier outputs yes.jsonl and no.jsonl, with the next classifier
+    processing the previous no.jsonl.
+    """
     output_dir = stage_config["output_dir"]
     input_file = stage_config["input_file"]
+    modes = stage_config["modes"]
 
-    generate(
-        ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/openmathreasoning/prompts/classify-if-proof.yaml "
-            f"++generation_key=is_proof_generation "
-            f"{stage_config.get('inline_args', '')} "
-        ),
-        cluster=cluster,
-        input_file=input_file,
-        output_dir=output_dir,
-        expname=expname,
-        run_after=run_after,
-        **stage_config.get("stage_kwargs", {}),
-    )
+    current_run_after = run_after
+    current_input_file = input_file
 
+    for mode in modes:
+        mode_output_dir = f"{output_dir}/{mode}"
+        mode_expname = f"{expname}-{mode}"
 
-def classify_if_mcq(cluster, expname, run_after, stage_config, **kwargs):
-    """Binary classification: MCQ vs non-MCQ problem."""
-    output_dir = stage_config["output_dir"]
-    input_file = stage_config["input_file"]
+        postprocess_cmd = (
+            f"python /nemo_run/code/recipes/openmathreasoning/scripts/postprocess_classification.py "
+            f"    {mode_output_dir}/output.jsonl "
+            f"    {mode_output_dir}/yes.jsonl "
+            f"    {mode_output_dir}/no.jsonl "
+            f"    --mode={mode}"
+        )
 
-    generate(
-        ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/openmathreasoning/prompts/classify-if-mcq.yaml "
-            f"++generation_key=is_mcq_generation "
-            f"{stage_config.get('inline_args', '')} "
-        ),
-        cluster=cluster,
-        input_file=input_file,
-        output_dir=output_dir,
-        expname=expname,
-        run_after=run_after,
-        **stage_config.get("stage_kwargs", {}),
-    )
-
-
-def classify_if_binary(cluster, expname, run_after, stage_config, **kwargs):
-    """Binary classification: binary question vs non-binary."""
-    output_dir = stage_config["output_dir"]
-    input_file = stage_config["input_file"]
-
-    generate(
-        ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/openmathreasoning/prompts/classify-if-binary.yaml "
-            f"++generation_key=is_binary_generation "
-            f"{stage_config.get('inline_args', '')} "
-        ),
-        cluster=cluster,
-        input_file=input_file,
-        output_dir=output_dir,
-        expname=expname,
-        run_after=run_after,
-        **stage_config.get("stage_kwargs", {}),
-    )
-
-
-def classify_if_invalid(cluster, expname, run_after, stage_config, **kwargs):
-    """Binary classification: invalid vs valid problem."""
-    output_dir = stage_config["output_dir"]
-    input_file = stage_config["input_file"]
-
-    generate(
-        ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/openmathreasoning/prompts/classify-if-invalid.yaml "
-            f"++generation_key=is_invalid_generation "
-            f"{stage_config.get('inline_args', '')} "
-        ),
-        cluster=cluster,
-        input_file=input_file,
-        output_dir=output_dir,
-        expname=expname,
-        run_after=run_after,
-        **stage_config.get("stage_kwargs", {}),
-    )
-
-
-def filter_classifications(cluster, expname, run_after, stage_config, **kwargs):
-    """Filter problems based on 4 classifications."""
-    # This is not an LLM generation stage, it's a filtering script
-    # We'll handle this differently in the main loop
-    pass
+        generate(
+            ctx=wrap_arguments(
+                f"++prompt_config=/nemo_run/code/recipes/openmathreasoning/prompts/classify-if-{mode}.yaml "
+                f"{stage_config.get('inline_args', '')} "
+            ),
+            cluster=cluster,
+            input_file=current_input_file,
+            output_dir=mode_output_dir,
+            postprocess_cmd=postprocess_cmd,
+            expname=mode_expname,
+            run_after=current_run_after,
+            **stage_config.get("stage_kwargs", {}),
+        )
+        current_run_after = mode_expname
+        current_input_file = f"{mode_output_dir}/no.jsonl"
 
 
 def extract_answers(cluster, expname, run_after, stage_config, **kwargs):
@@ -275,11 +230,7 @@ def assess_complete_solution_quality(cluster, expname, run_after, stage_config, 
 
 stages_map = {
     "extract_problems": extract_problems,
-    "classify_if_proof": classify_if_proof,
-    "classify_if_mcq": classify_if_mcq,
-    "classify_if_binary": classify_if_binary,
-    "classify_if_invalid": classify_if_invalid,
-    "filter_classifications": filter_classifications,
+    "classify_problems": classify_problems,
     "extract_answers": extract_answers,
     "extract_solution": extract_solution,
     "assess_problem_answer_quality": assess_problem_answer_quality,
