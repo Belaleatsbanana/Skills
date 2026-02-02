@@ -369,17 +369,6 @@ done
 
 echo "All $NUM_WORKERS workers started - waiting for readiness..."
 
-# Write actual port assignments to shared storage for master to collect
-PORTS_FILE="$PORTS_REPORT_DIR/${CURRENT_NODE_SHORT}_ports.txt"
-echo "Writing port assignments to $PORTS_FILE"
-> "$PORTS_FILE"
-for i in $(seq 1 $NUM_WORKERS); do
-    idx=$((i - 1))
-    echo "${i}:${ACTUAL_WORKER_PORTS[$idx]}" >> "$PORTS_FILE"
-done
-echo "PORT_REPORT_COMPLETE" >> "$PORTS_FILE"
-echo "Port assignments written for $NUM_WORKERS workers"
-
 # =============================================================================
 # Wait for workers to be ready (parallel health checks for faster startup)
 # =============================================================================
@@ -490,7 +479,8 @@ echo "[$_H] First 3 worker ports (actual assignments):"
 for i in 0 1 2; do
     if [ $i -lt ${#ACTUAL_WORKER_PORTS[@]} ]; then
         p=${ACTUAL_WORKER_PORTS[$i]}
-        if ss -tlnp 2>/dev/null | grep -q ":${p} " ; then
+        # Use word boundary matching for port number (handles various ss output formats)
+        if ss -tlnp 2>/dev/null | grep -qE ":${p}($|[^0-9])" ; then
             echo "[$_H]   Worker $((i+1)) port $p: LISTENING"
         else
             echo "[$_H]   Worker $((i+1)) port $p: NOT LISTENING"
@@ -498,6 +488,22 @@ for i in 0 1 2; do
     fi
 done
 echo "[$_H] ==============================="
+
+# =============================================================================
+# Write port assignments to shared storage AFTER workers are verified ready
+# This ensures other nodes only see our ports after workers are actually listening
+# =============================================================================
+PORTS_FILE="$PORTS_REPORT_DIR/${CURRENT_NODE_SHORT}_ports.txt"
+echo "[$_H] Writing port assignments to $PORTS_FILE"
+> "$PORTS_FILE"
+for i in $(seq 1 $NUM_WORKERS); do
+    idx=$((i - 1))
+    echo "${i}:${ACTUAL_WORKER_PORTS[$idx]}" >> "$PORTS_FILE"
+done
+echo "PORT_REPORT_COMPLETE" >> "$PORTS_FILE"
+# Force flush to shared filesystem (critical for Lustre visibility across nodes)
+sync
+echo "[$_H] Port assignments written and synced for $NUM_WORKERS workers"
 
 # =============================================================================
 # Start nginx (master node only)
@@ -521,11 +527,15 @@ if [ "$IS_MASTER" = "1" ]; then
                 exit 1
             fi
 
+            # Force directory cache refresh on Lustre (stat the directory to refresh metadata)
+            ls "$PORTS_REPORT_DIR" > /dev/null 2>&1
+
             NODES_REPORTED=0
             for node in $ALL_NODES; do
                 node_short="${node%%.*}"
                 port_file="$PORTS_REPORT_DIR/${node_short}_ports.txt"
-                if [ -f "$port_file" ] && grep -q "PORT_REPORT_COMPLETE" "$port_file" 2>/dev/null; then
+                # Use stat to refresh file metadata cache, then check
+                if stat "$port_file" > /dev/null 2>&1 && grep -q "PORT_REPORT_COMPLETE" "$port_file" 2>/dev/null; then
                     NODES_REPORTED=$((NODES_REPORTED + 1))
                 fi
             done
