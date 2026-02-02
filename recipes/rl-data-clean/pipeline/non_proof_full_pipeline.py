@@ -63,13 +63,16 @@ def classify_problems(cluster, expname, run_after, stage_config, **kwargs):
     Classifies extracted problems into different types using serial filtering.
     Each classifier outputs yes.jsonl and no.jsonl, with the next classifier
     processing the previous no.jsonl.
+
+    Returns: dict with last_expname for dependency tracking
     """
     output_dir = stage_config["output_dir"]
     input_file = stage_config["input_file"]
     modes = stage_config["modes"]
 
-    current_run_after = run_after
+    current_run_after = run_after  # Initially from external dependency
     current_input_file = input_file
+    last_mode_expname = None
 
     for mode in modes:
         mode_output_dir = f"{output_dir}/{mode}"
@@ -96,8 +99,13 @@ def classify_problems(cluster, expname, run_after, stage_config, **kwargs):
             run_after=current_run_after,
             **stage_config.get("stage_kwargs", {}),
         )
+        # Update for next iteration: run_after becomes a single expname (not list)
         current_run_after = mode_expname
         current_input_file = f"{mode_output_dir}/no.jsonl"
+        last_mode_expname = mode_expname
+
+    # Return the last expname so dependent stages wait for the complete chain
+    return {"last_expname": last_mode_expname}
 
 
 def extract_answers(cluster, expname, run_after, stage_config, **kwargs):
@@ -301,6 +309,8 @@ if __name__ == "__main__":
     expname_base = config["expname"]
 
     # --- Run selected stages ---
+    last_expname_map = {}  # Track last expname for multi-sub-task stages
+
     for stage in stages_to_run:
         print(f"\n--- Running stage: {stage} ---")
         stage_func = stages_map[stage]
@@ -311,21 +321,27 @@ if __name__ == "__main__":
         # Determine dependencies
         dependencies_list = stage_config.get("dependencies", [])
         if dependencies_list:
-            run_after = [get_stage_expname(expname_base, dep, suffix) for dep in dependencies_list]
+            # Use last_expname if available (for multi-sub-task stages like classify_problems)
+            run_after = []
+            for dep in dependencies_list:
+                dep_expname = get_stage_expname(expname_base, dep, suffix)
+                # If this dependency has a "last" expname (multi-sub-tasks), use that
+                if dep in last_expname_map:
+                    run_after.append(last_expname_map[dep])
+                else:
+                    run_after.append(dep_expname)
         else:
             run_after = None
 
-        # Special handling for filter_classifications (non-LLM stage)
-        if stage == "filter_classifications":
-            print(f"Note: '{stage}' is a filtering script, not an LLM generation stage.")
-            print("Run the filter script manually after classification stages complete.")
-            continue
-
-        stage_func(
+        result = stage_func(
             cluster=cluster,
             expname=current_expname,
             run_after=run_after,
             stage_config=stage_config,
         )
+
+        # If stage returns a "last" expname, track it
+        if result and isinstance(result, dict) and "last_expname" in result:
+            last_expname_map[stage] = result["last_expname"]
 
     print("\n=== Pipeline execution completed! ===")
