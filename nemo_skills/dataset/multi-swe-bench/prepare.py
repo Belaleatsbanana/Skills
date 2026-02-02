@@ -38,18 +38,25 @@ if __name__ == "__main__":
     subset = args.subset
     container_formatter = args.container_formatter
 
-    assert subset == "flash"  # TODO: support mini and full subsets
-
     # Multi-SWE-bench has weird formatting in their jsonl files, so HF load_dataset doesn't work with it.
     # Instead, we download the jsonl directly and format it to work with our swebench generation module.
 
     output_file = Path(__file__).parent / f"{args.setup}.jsonl"
     temp_file = Path(__file__).parent / f"{args.setup}.temp.jsonl"
 
-    download_with_retries(
-        url="https://huggingface.co/datasets/ByteDance-Seed/Multi-SWE-bench-flash/resolve/main/multi_swe_bench_flash.jsonl",
-        output_file=temp_file,
-    )
+    if subset == "flash":
+        download_with_retries(
+            url="https://huggingface.co/datasets/ByteDance-Seed/Multi-SWE-bench-flash/resolve/main/multi_swe_bench_flash.jsonl",
+            output_file=temp_file,
+        )
+    elif subset == "mini":
+        download_with_retries(
+            url="https://huggingface.co/datasets/ByteDance-Seed/Multi-SWE-bench_mini/resolve/main/multi_swe_bench_mini.jsonl",
+            output_file=temp_file,
+        )
+    else:
+        # TODO: support full split
+        raise ValueError(f"Subset {subset} is not supported. Must be either 'flash' or 'mini'.")
 
     with open(temp_file, "r") as fin, open(output_file, "w") as fout:
         for i, line in enumerate(fin):
@@ -70,7 +77,11 @@ if __name__ == "__main__":
                 "problem_statement": issue["title"] + "\n" + issue["body"],
                 "container_formatter": container_formatter.format(docker_image=docker_image),
                 "container_id": i,
-                "dataset_name": "ByteDance-Seed/Multi-SWE-bench-flash",
+                "dataset_name": (
+                    "ByteDance-Seed/Multi-SWE-bench-flash"
+                    if subset == "flash"
+                    else "ByteDance-Seed/Multi-SWE-bench_mini"
+                ),
                 "split": "train",
                 # We save the original row because the evaluation harness will need it.
                 # We save it as a string to prevent HF load_dataset errors.
