@@ -38,14 +38,14 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
     input_file = stage_config["input_file"]
 
     postprocess_cmd = (
-        f"python /nemo_run/code/recipes/openmathreasoning/scripts/postprocess_problem_extraction.py "
+        f"python /nemo_run/code/recipes/rl-data-clean/scripts/postprocess_problem_extraction.py "
         f"    {output_dir}/output.jsonl "
         f"    {output_dir}/extracted-problems.jsonl "
     )
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/openmathreasoning/prompts/extract-problems.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/extract-problems.yaml "
             f"++inference.tokens_to_generate=120000 "
             f"++inference.temperature=1.0 "
             f"++inference.top_p=1.0 "
@@ -84,7 +84,7 @@ def classify_problems(cluster, expname, run_after, stage_config, **kwargs):
         mode_expname = f"{expname}-{mode}"
 
         postprocess_cmd = (
-            f"python /nemo_run/code/recipes/openmathreasoning/scripts/postprocess_classification.py "
+            f"python /nemo_run/code/recipes/rl-data-clean/scripts/postprocess_classification.py "
             f"    {mode_output_dir}/output.jsonl "
             f"    {mode_output_dir}/yes.jsonl "
             f"    {mode_output_dir}/no.jsonl "
@@ -93,7 +93,7 @@ def classify_problems(cluster, expname, run_after, stage_config, **kwargs):
 
         generate(
             ctx=wrap_arguments(
-                f"++prompt_config=/nemo_run/code/recipes/openmathreasoning/prompts/classify-if-{mode}.yaml "
+                f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/classify-if-{mode}.yaml "
                 f"++inference.tokens_to_generate=120000 "
                 f"++inference.temperature=1.0 "
                 f"++inference.top_p=1.0 "
@@ -124,14 +124,14 @@ def extract_answers(cluster, expname, run_after, stage_config, **kwargs):
     input_file = stage_config["input_file"]
 
     postprocess_cmd = (
-        f"python /nemo_run/code/recipes/openmathreasoning/scripts/postprocess_answer_extraction.py "
+        f"python /nemo_run/code/recipes/rl-data-clean/scripts/postprocess_answer_extraction.py "
         f"    {output_dir}/output.jsonl "
         f"    {output_dir}/extracted-answers.jsonl "
     )
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/openmathreasoning/prompts/extract-answers.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/extract-answers.yaml "
             f"++inference.tokens_to_generate=120000 "
             f"++inference.temperature=1.0 "
             f"++inference.top_p=1.0 "
