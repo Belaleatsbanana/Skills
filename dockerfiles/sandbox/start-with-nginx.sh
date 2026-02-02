@@ -290,24 +290,15 @@ find_free_port() {
     return 1
 }
 
-# Function to start a single worker with retry logic for port conflicts
-# Returns "pid:port" on success
-start_worker() {
+# Function to start a single worker (fast, no waiting)
+# Spawns uwsgi in background and returns immediately
+# Returns "pid:port" - caller must verify worker is healthy
+start_worker_fast() {
     local i=$1
-    local BASE_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
-    local MAX_RETRIES=10
-    local retry=0
-    local WORKER_PORT
-    local pid
+    local WORKER_PORT=$2
 
-    while [ $retry -lt $MAX_RETRIES ]; do
-        # Find a free port starting from base + retry offset
-        WORKER_PORT=$(find_free_port $((BASE_PORT + retry * 100)))
-
-        echo "Starting worker $i on TCP port $WORKER_PORT (attempt $((retry + 1)))..." >&2
-
-        # Create a custom uwsgi.ini for this worker
-        cat > /tmp/worker${i}_uwsgi.ini << EOF
+    # Create a custom uwsgi.ini for this worker
+    cat > /tmp/worker${i}_uwsgi.ini << EOF
 [uwsgi]
 module = main
 callable = app
@@ -333,71 +324,139 @@ log-prefix = [worker${i}]
 logto = /var/log/worker${i}.log
 EOF
 
-        if [ -n "$UWSGI_CHEAPER" ]; then
-            echo "cheaper = ${UWSGI_CHEAPER}" >> /tmp/worker${i}_uwsgi.ini
-        fi
+    if [ -n "$UWSGI_CHEAPER" ]; then
+        echo "cheaper = ${UWSGI_CHEAPER}" >> /tmp/worker${i}_uwsgi.ini
+    fi
 
-        # Start worker with custom config
-        (
-            cd /app && env WORKER_NUM=$i uwsgi --ini /tmp/worker${i}_uwsgi.ini
-        ) &
-        pid=$!
+    # Clear any old log
+    > /var/log/worker${i}.log
 
-        # Wait briefly for uwsgi to attempt binding
-        sleep 0.5
+    # Start worker with custom config (returns immediately)
+    (
+        cd /app && env WORKER_NUM=$i uwsgi --ini /tmp/worker${i}_uwsgi.ini
+    ) &
+    local pid=$!
 
-        # Check if process is still running (didn't crash on bind)
-        if kill -0 "$pid" 2>/dev/null; then
-            # Process running - check if it's actually listening on the port
-            sleep 0.5
-            if ss -tlnp 2>/dev/null | grep -qE ":${WORKER_PORT}[^0-9]"; then
-                echo "Worker $i started with PID $pid on port ${WORKER_PORT}" >&2
-                echo "$pid:$WORKER_PORT"
-                return 0
-            fi
-        fi
-
-        # Process died or not listening - check log for port conflict
-        if grep -q "Address already in use" /var/log/worker${i}.log 2>/dev/null; then
-            echo "Worker $i: Port $WORKER_PORT conflict, retrying..." >&2
-            # Clear the log for next attempt
-            > /var/log/worker${i}.log
-            retry=$((retry + 1))
-            continue
-        fi
-
-        # Process died for another reason - still return what we have
-        # (the health check loop will handle dead workers)
-        echo "Worker $i started with PID $pid on port ${WORKER_PORT} (may have issues)" >&2
-        echo "$pid:$WORKER_PORT"
-        return 0
-    done
-
-    # All retries exhausted - return last attempt anyway
-    echo "Worker $i: All retries exhausted, using port $WORKER_PORT" >&2
     echo "$pid:$WORKER_PORT"
-    return 1
 }
 
-# Start all workers simultaneously
-echo "[$_H] === Starting Workers ==="
+# Check if a worker failed due to port conflict (check its log file)
+worker_had_port_conflict() {
+    local i=$1
+    grep -q "Address already in use" /var/log/worker${i}.log 2>/dev/null
+}
+
+# Check if a worker process is alive
+worker_is_alive() {
+    local pid=$1
+    kill -0 "$pid" 2>/dev/null
+}
+
+# Wrapper for monitoring loop restarts - uses existing port assignment
+start_worker() {
+    local i=$1
+    local idx=$((i - 1))
+    # Use existing port if available (from initial startup or previous restart)
+    local port=${ACTUAL_WORKER_PORTS[$idx]:-$((SANDBOX_WORKER_BASE_PORT + i - 1))}
+    start_worker_fast $i $port
+}
+
+# Start all workers simultaneously with parallel retry for port conflicts
+echo "[$_H] === Starting Workers (Parallel Algorithm) ==="
 echo "[$_H] IS_MASTER: $IS_MASTER"
 echo "[$_H] SANDBOX_WORKER_BASE_PORT: $SANDBOX_WORKER_BASE_PORT"
 echo "[$_H] NUM_WORKERS: $NUM_WORKERS"
 echo "[$_H] Port range: $SANDBOX_WORKER_BASE_PORT to $((SANDBOX_WORKER_BASE_PORT + NUM_WORKERS - 1))"
 echo "[$_H] =========================="
 
-# Start all workers - each call returns immediately after spawning uwsgi
-echo "Starting $NUM_WORKERS workers..."
+# =============================================================================
+# PARALLEL STARTUP ALGORITHM:
+# 1. Spawn ALL workers instantly (no waiting between them)
+# 2. Give them a moment to attempt port binding
+# 3. Check which workers failed due to port conflicts
+# 4. Restart failed workers with new port ranges (parallel)
+# 5. Repeat until all workers are running or max retries exceeded
+# =============================================================================
+
+MAX_STARTUP_RETRIES=5
+PORT_INCREMENT=200  # Jump by this much on each retry round
+
+# Initialize arrays for tracking workers
 for i in $(seq 1 $NUM_WORKERS); do
-    result=$(start_worker $i)
-    pid="${result%%:*}"
-    port="${result##*:}"
-    WORKER_PIDS+=($pid)
-    ACTUAL_WORKER_PORTS+=($port)
+    WORKER_PIDS+=("")
+    ACTUAL_WORKER_PORTS+=("")
 done
 
-echo "All $NUM_WORKERS workers started - waiting for readiness..."
+# Phase 1: Start all workers at once (no waiting)
+echo "Starting $NUM_WORKERS workers in parallel (no waiting between spawns)..."
+START_SPAWN=$(date +%s)
+
+for i in $(seq 1 $NUM_WORKERS); do
+    port=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+    result=$(start_worker_fast $i $port)
+    pid="${result%%:*}"
+    idx=$((i - 1))
+    WORKER_PIDS[$idx]=$pid
+    ACTUAL_WORKER_PORTS[$idx]=$port
+done
+
+SPAWN_ELAPSED=$(($(date +%s) - START_SPAWN))
+echo "All $NUM_WORKERS workers spawned in ${SPAWN_ELAPSED}s - checking for port conflicts..."
+
+# Phase 2: Parallel retry loop for port conflicts
+retry_round=0
+while [ $retry_round -lt $MAX_STARTUP_RETRIES ]; do
+    # Wait briefly for workers to attempt binding (all in parallel)
+    sleep 1
+
+    # Check for port conflicts by scanning logs
+    FAILED_WORKERS=()
+    for i in $(seq 1 $NUM_WORKERS); do
+        idx=$((i - 1))
+        pid=${WORKER_PIDS[$idx]}
+
+        # Skip if process is alive (might be okay)
+        if worker_is_alive "$pid"; then
+            continue
+        fi
+
+        # Process died - check if it was a port conflict
+        if worker_had_port_conflict $i; then
+            FAILED_WORKERS+=($i)
+        fi
+    done
+
+    if [ ${#FAILED_WORKERS[@]} -eq 0 ]; then
+        echo "No port conflicts detected after retry round $retry_round"
+        break
+    fi
+
+    echo "Retry round $((retry_round + 1)): ${#FAILED_WORKERS[@]} workers had port conflicts, restarting with offset..."
+
+    # Calculate new port offset for this retry round
+    PORT_OFFSET=$(( (retry_round + 1) * PORT_INCREMENT ))
+
+    # Restart failed workers with new ports (all at once, parallel)
+    for i in "${FAILED_WORKERS[@]}"; do
+        idx=$((i - 1))
+        old_port=${ACTUAL_WORKER_PORTS[$idx]}
+        new_port=$((SANDBOX_WORKER_BASE_PORT + i - 1 + PORT_OFFSET))
+
+        echo "  Worker $i: port $old_port conflict -> trying port $new_port"
+        result=$(start_worker_fast $i $new_port)
+        pid="${result%%:*}"
+        WORKER_PIDS[$idx]=$pid
+        ACTUAL_WORKER_PORTS[$idx]=$new_port
+    done
+
+    retry_round=$((retry_round + 1))
+done
+
+if [ $retry_round -ge $MAX_STARTUP_RETRIES ]; then
+    echo "WARNING: Max startup retries reached, some workers may have issues"
+fi
+
+echo "All $NUM_WORKERS workers spawned - waiting for readiness..."
 
 # =============================================================================
 # Wait for workers to be ready (parallel health checks for faster startup)
