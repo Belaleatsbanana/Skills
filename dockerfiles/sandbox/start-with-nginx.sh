@@ -290,22 +290,24 @@ find_free_port() {
     return 1
 }
 
-# Function to start a single worker and return "pid:port"
+# Function to start a single worker with retry logic for port conflicts
+# Returns "pid:port" on success
 start_worker() {
     local i=$1
-    local DESIRED_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+    local BASE_PORT=$((SANDBOX_WORKER_BASE_PORT + i - 1))
+    local MAX_RETRIES=10
+    local retry=0
+    local WORKER_PORT
+    local pid
 
-    # Find a free port (may be different from desired if that port is busy)
-    local WORKER_PORT=$(find_free_port $DESIRED_PORT)
+    while [ $retry -lt $MAX_RETRIES ]; do
+        # Find a free port starting from base + retry offset
+        WORKER_PORT=$(find_free_port $((BASE_PORT + retry * 100)))
 
-    if [ "$WORKER_PORT" != "$DESIRED_PORT" ]; then
-        echo "Worker $i: Port $DESIRED_PORT busy, using $WORKER_PORT instead" >&2
-    fi
+        echo "Starting worker $i on TCP port $WORKER_PORT (attempt $((retry + 1)))..." >&2
 
-    echo "Starting worker $i on TCP port $WORKER_PORT..." >&2
-
-    # Create a custom uwsgi.ini for this worker
-    cat > /tmp/worker${i}_uwsgi.ini << EOF
+        # Create a custom uwsgi.ini for this worker
+        cat > /tmp/worker${i}_uwsgi.ini << EOF
 [uwsgi]
 module = main
 callable = app
@@ -331,22 +333,50 @@ log-prefix = [worker${i}]
 logto = /var/log/worker${i}.log
 EOF
 
-    if [ -n "$UWSGI_CHEAPER" ]; then
-        echo "cheaper = ${UWSGI_CHEAPER}" >> /tmp/worker${i}_uwsgi.ini
-    fi
+        if [ -n "$UWSGI_CHEAPER" ]; then
+            echo "cheaper = ${UWSGI_CHEAPER}" >> /tmp/worker${i}_uwsgi.ini
+        fi
 
-    echo "Created custom uwsgi config for worker $i (port ${WORKER_PORT})" >&2
+        # Start worker with custom config
+        (
+            cd /app && env WORKER_NUM=$i uwsgi --ini /tmp/worker${i}_uwsgi.ini
+        ) &
+        pid=$!
 
-    # Start worker with custom config
-    (
-        # Run uwsgi from /app in a subshell so the current directory of the main script is unaffected
-        cd /app && env WORKER_NUM=$i uwsgi --ini /tmp/worker${i}_uwsgi.ini
-    ) &
+        # Wait briefly for uwsgi to attempt binding
+        sleep 0.5
 
-    local pid=$!
-    echo "Worker $i started with PID $pid on port ${WORKER_PORT}" >&2
-    # Return both PID and actual port (format: "pid:port")
+        # Check if process is still running (didn't crash on bind)
+        if kill -0 "$pid" 2>/dev/null; then
+            # Process running - check if it's actually listening on the port
+            sleep 0.5
+            if ss -tlnp 2>/dev/null | grep -qE ":${WORKER_PORT}[^0-9]"; then
+                echo "Worker $i started with PID $pid on port ${WORKER_PORT}" >&2
+                echo "$pid:$WORKER_PORT"
+                return 0
+            fi
+        fi
+
+        # Process died or not listening - check log for port conflict
+        if grep -q "Address already in use" /var/log/worker${i}.log 2>/dev/null; then
+            echo "Worker $i: Port $WORKER_PORT conflict, retrying..." >&2
+            # Clear the log for next attempt
+            > /var/log/worker${i}.log
+            retry=$((retry + 1))
+            continue
+        fi
+
+        # Process died for another reason - still return what we have
+        # (the health check loop will handle dead workers)
+        echo "Worker $i started with PID $pid on port ${WORKER_PORT} (may have issues)" >&2
+        echo "$pid:$WORKER_PORT"
+        return 0
+    done
+
+    # All retries exhausted - return last attempt anyway
+    echo "Worker $i: All retries exhausted, using port $WORKER_PORT" >&2
     echo "$pid:$WORKER_PORT"
+    return 1
 }
 
 # Start all workers simultaneously
