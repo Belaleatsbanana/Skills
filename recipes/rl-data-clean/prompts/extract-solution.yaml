@@ -1,0 +1,146 @@
+user: |-
+  I will give you a math computation problem and a series of forum posts discussing its solution.
+  Your task is to extract the most complete and clear solution/calculation steps from the discussion.
+
+  Guidelines:
+  - Extract the mathematical solution or calculation steps, focusing on numerical computations and reasoning
+  - Remove social comments like "Thanks!", "Nice solution", "I agree", etc.
+  - Remove personal commentary, questions, or off-topic discussions
+  - If multiple solutions are presented, choose the most complete and clear one
+  - If no valid solution is found, output "Solution not found."
+  - Keep all mathematical notation, formulas, calculations, and explanations
+  - Organize the solution in a clear, logical flow with step-by-step calculations
+
+  Here are some examples.
+
+  Example 1
+
+  Problem:
+  Let $EFGH$, $EFDC$, and $EHBC$ be three adjacent square faces of a cube, for which $EC = 8$. Let $I$, $J$, and $K$ be points on $\overline{{EF}}$, $\overline{{EH}}$, and $\overline{{EC}}$ respectively, so that $EI = EJ = EK = 2$. A solid $S$ is obtained by drilling a tunnel through the cube. Find $m + n + p$ where the surface area is $m + n\sqrt{{p}}$.
+
+  Forum discussions:
+  Post 1 by user123: Let's set up coordinates. Place $E$ at origin. Since the cube has side 8, we can place vertices accordingly.
+
+  The three adjacent faces share vertex $E$. Let $E = (0,0,0)$, $F = (8,0,0)$, $H = (0,8,0)$, $C = (0,0,8)$.
+
+  Then $I = (2,0,0)$, $J = (0,2,0)$, $K = (0,0,2)$.
+
+  The tunnel is formed by planes parallel to $\overline{{AE}}$ where $A$ is the eighth vertex at $(8,8,8)$.
+
+  The direction vector of $AE$ is $(8,8,8) - (0,0,0) = (8,8,8)$ or simplified $(1,1,1)$.
+
+  For the surface area calculation:
+  - Original cube surface area: $6 \times 8^2 = 384$
+  - The tunnel removes area from three faces: $3 \times (2 \times 2) = 12$
+  - The tunnel adds internal surface area. Each wall is a parallelogram.
+
+  The three edges $IJ$, $JK$, $KI$ form a triangle. Length $IJ = \sqrt{{(2-0)^2 + (0-2)^2 + 0^2}} = 2\sqrt{{2}}$.
+  Similarly $JK = 2\sqrt{{2}}$ and $KI = 2\sqrt{{2}}$.
+
+  The perimeter of triangle $IJK$ is $6\sqrt{{2}}$.
+
+  The tunnel extends through the cube along direction $(1,1,1)$. The length is $8\sqrt{{3}}$.
+
+  Tunnel wall area = perimeter × length = $6\sqrt{{2}} \times 8\sqrt{{3}} = 48\sqrt{{6}}$.
+
+  Total surface area: $384 - 12 + 48\sqrt{{6}} = 372 + 48\sqrt{{6}}$.
+
+  Therefore $m = 372$, $n = 48$, $p = 6$.
+
+  Answer: $m + n + p = 372 + 48 + 6 = 426$.
+
+  Post 2 by admin: Nice work!
+
+  Post 3 by student: I got a different answer, let me check...
+
+  Output:
+  **Solution:**
+
+  Set up coordinates with $E$ at the origin:
+  - $E = (0,0,0)$, $F = (8,0,0)$, $H = (0,8,0)$, $C = (0,0,8)$
+  - $I = (2,0,0)$, $J = (0,2,0)$, $K = (0,0,2)$
+  - Eighth vertex $A = (8,8,8)$
+
+  The tunnel is formed by planes parallel to $\overline{{AE}}$ with direction vector $(1,1,1)$.
+
+  **Calculate edge lengths:**
+  - $IJ = \sqrt{{(2-0)^2 + (0-2)^2 + 0^2}} = 2\sqrt{{2}}$
+  - Similarly, $JK = 2\sqrt{{2}}$ and $KI = 2\sqrt{{2}}$
+  - Perimeter of triangle $IJK$: $6\sqrt{{2}}$
+
+  **Calculate surface area:**
+  - Original cube surface: $6 \times 8^2 = 384$
+  - Area removed by tunnel entrance/exit: $3 \times (2 \times 2) = 12$
+  - Tunnel length along $(1,1,1)$: $8\sqrt{{3}}$
+  - Tunnel wall area: $6\sqrt{{2}} \times 8\sqrt{{3}} = 48\sqrt{{6}}$
+
+  **Total surface area:**
+  $384 - 12 + 48\sqrt{{6}} = 372 + 48\sqrt{{6}}$
+
+  Therefore: $m = 372$, $n = 48$, $p = 6$
+
+  **Answer:** $m + n + p = 372 + 48 + 6 = 426$
+
+
+
+  Example 2
+
+  Problem:
+  If $a + b = 31$ and $ab = 240$, find the sum of the reciprocals of $a$ and $b$.
+
+  Forum discussions:
+  Post 1 by Alice: Can someone help with this?
+
+  Post 2 by Bob: Sure! The sum of reciprocals is $\frac{{1}}{{a}} + \frac{{1}}{{b}} = \frac{{a+b}}{{ab}}$.
+
+  We know $a + b = 31$ and $ab = 240$.
+
+  So $\frac{{1}}{{a}} + \frac{{1}}{{b}} = \frac{{31}}{{240}}$.
+
+  Post 3 by Alice: Thanks! That makes sense.
+
+  Output:
+  **Solution:**
+
+  We need to find $\frac{{1}}{{a}} + \frac{{1}}{{b}}$.
+
+  Using the identity:
+  $$\frac{{1}}{{a}} + \frac{{1}}{{b}} = \frac{{a+b}}{{ab}}$$
+
+  Substitute the given values:
+  - $a + b = 31$
+  - $ab = 240$
+
+  Therefore:
+  $$\frac{{1}}{{a}} + \frac{{1}}{{b}} = \frac{{31}}{{240}}$$
+
+  **Answer:** $\frac{{31}}{{240}}$
+
+
+
+  Example 3
+
+  Problem:
+  What is the 100th digit after the decimal point in the decimal representation of $\frac{{1}}{{7}}$?
+
+  Forum discussions:
+  Post 1 by user456: Anyone know how to do this?
+
+  Post 2 by user789: I think you need to find the repeating pattern but I'm not sure how.
+
+  Post 3 by moderator: Please show your work first.
+
+  Output:
+  Solution not found.
+
+
+
+  Now here is the problem and forum discussion you need to extract the solution from.
+
+  Problem:
+  {problem}
+
+  Forum discussions:
+  {forum_discussions}
+
+  Output:

@@ -1,0 +1,126 @@
+# Full non-proof pipeline using gpt-oss-120b
+# Extracts and cleans non-proof math problems from AOPS data
+
+cluster: dfw
+base_output_dir: /workspace/rl-data-clean/non-proof
+model_name: gpt-oss-120b
+expname: non-proof-${model_name}
+suffix: full-pipeline
+
+# Full dataset
+input_file: ${base_output_dir}/raw_aops_data_sample_5000.jsonl
+
+# Model configuration
+generate_kwargs:
+  model: /hf_models/${model_name}
+  server_type: vllm
+  server_gpus: 8
+  server_nodes: 1
+  num_chunks: 1  # Increase for large dataset
+
+# Pipeline stages
+pipeline_stages:
+  - extract_problems
+  - classify_if_proof
+  - classify_if_mcq
+  - classify_if_binary
+  - classify_if_invalid
+  - filter_classifications  # Note: This is a script, not LLM generation
+  - extract_answers
+  - extract_solution
+  - assess_problem_answer_quality
+  - assess_complete_solution_quality
+
+# Output directories
+directories:
+  step-1-extract: ${base_output_dir}/${model_name}/step-1-extract-problems
+  step-2a-classify-proof: ${base_output_dir}/${model_name}/step-2a-classify-proof
+  step-2b-classify-mcq: ${base_output_dir}/${model_name}/step-2b-classify-mcq
+  step-2c-classify-binary: ${base_output_dir}/${model_name}/step-2c-classify-binary
+  step-2d-classify-invalid: ${base_output_dir}/${model_name}/step-2d-classify-invalid
+  step-3-filter: ${base_output_dir}/${model_name}/step-3-filter
+  step-4-extract-answers: ${base_output_dir}/${model_name}/step-4-extract-answers
+  step-5-extract-solution: ${base_output_dir}/${model_name}/step-5-extract-solution
+  step-6a-problem-answer: ${base_output_dir}/${model_name}/step-6a-assess-problem-answer
+  step-6b-complete-solution: ${base_output_dir}/${model_name}/step-6b-assess-complete-solution
+
+# Stage configurations
+stages:
+  extract_problems:
+    output_dir: ${directories.step-1-extract}
+    input_file: ${input_file}
+    dependencies: null
+    stage_kwargs: ${generate_kwargs}
+
+  # Classification stages (all run on extracted problems)
+  classify_if_proof:
+    output_dir: ${directories.step-2a-classify-proof}
+    input_file: ${directories.step-1-extract}/extracted-problems.jsonl
+    dependencies:
+      - extract_problems
+    stage_kwargs: ${generate_kwargs}
+
+  classify_if_mcq:
+    output_dir: ${directories.step-2b-classify-mcq}
+    input_file: ${directories.step-1-extract}/extracted-problems.jsonl
+    dependencies:
+      - extract_problems
+    stage_kwargs: ${generate_kwargs}
+
+  classify_if_binary:
+    output_dir: ${directories.step-2c-classify-binary}
+    input_file: ${directories.step-1-extract}/extracted-problems.jsonl
+    dependencies:
+      - extract_problems
+    stage_kwargs: ${generate_kwargs}
+
+  classify_if_invalid:
+    output_dir: ${directories.step-2d-classify-invalid}
+    input_file: ${directories.step-1-extract}/extracted-problems.jsonl
+    dependencies:
+      - extract_problems
+    stage_kwargs: ${generate_kwargs}
+
+  # Filter based on classifications
+  # Note: This needs to be run as a separate script that combines all 4 classification outputs
+  filter_classifications:
+    output_dir: ${directories.step-3-filter}
+    # This stage requires a special script to merge all 4 classification outputs
+    # See: scripts/postprocess_classification_filter.py
+    dependencies:
+      - classify_if_proof
+      - classify_if_mcq
+      - classify_if_binary
+      - classify_if_invalid
+
+  # Extract answers
+  extract_answers:
+    output_dir: ${directories.step-4-extract-answers}
+    input_file: ${directories.step-3-filter}/non-proof.jsonl
+    dependencies:
+      - filter_classifications
+    stage_kwargs: ${generate_kwargs}
+
+  # Extract solution
+  extract_solution:
+    output_dir: ${directories.step-5-extract-solution}
+    input_file: ${directories.step-4-extract-answers}/extracted-answers.jsonl
+    dependencies:
+      - extract_answers
+    stage_kwargs: ${generate_kwargs}
+
+  # Quality assessment - Problem + Answer only
+  assess_problem_answer_quality:
+    output_dir: ${directories.step-6a-problem-answer}
+    input_file: ${directories.step-5-extract-solution}/extracted-solutions.jsonl
+    dependencies:
+      - extract_solution
+    stage_kwargs: ${generate_kwargs}
+
+  # Quality assessment - Complete triplet
+  assess_complete_solution_quality:
+    output_dir: ${directories.step-6b-complete-solution}
+    input_file: ${directories.step-5-extract-solution}/extracted-solutions.jsonl
+    dependencies:
+      - extract_solution
+    stage_kwargs: ${generate_kwargs}
