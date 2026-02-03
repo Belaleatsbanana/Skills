@@ -8,7 +8,7 @@ expname: non-proof-${model_name}
 suffix: full-pipeline
 
 # Full dataset
-input_file: ${base_output_dir}/raw_aops_data_sample_5000.jsonl
+input_file: ${base_output_dir}/raw_aops_data.jsonl
 
 # Model configuration
 generate_kwargs:
