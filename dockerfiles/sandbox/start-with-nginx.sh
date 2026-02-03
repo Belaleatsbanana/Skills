@@ -941,18 +941,16 @@ done
 echo "Monitoring processes (Ctrl+C to stop)..."
 
 # Only run load monitor on master node
-if [ "$IS_MASTER" = "1" ]; then
-    monitor_load() {
-        echo "Starting worker load monitor (updates every 60s)..."
-        while true; do
-            sleep 60
-            echo "--- Worker Load Stats (Top 10) at $(date) ---"
-            grep "upstream:" /var/log/nginx/access.log | awk -F'upstream: ' '{print $2}' | awk -F' session: ' '{print $1}' | sort | uniq -c | sort -nr | head -n 10 || echo "No logs yet"
-            echo "--- End Stats ---"
-        done
-    }
-    monitor_load &  # Run in background
-fi
+monitor_load() {
+    echo "Starting worker load monitor (updates every 60s)..."
+    while true; do
+        sleep 60
+        echo "--- Worker $(hostname) Load Stats (Top 10) at $(date) ---"
+        grep "upstream:" /var/log/nginx/access.log | awk -F'upstream: ' '{print $2}' | awk -F' session: ' '{print $1}' | sort | uniq -c | sort -nr | head -n 10 || echo "No logs yet"
+        echo "--- End Stats ---"
+    done
+}
+monitor_load &  # Run in background
 
 while true; do
     # Check if any worker died
