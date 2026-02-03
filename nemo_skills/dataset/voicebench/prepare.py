@@ -28,6 +28,7 @@ SUBTESTS = {
         "has_reference": True,
         "metrics_type": "exact_match",
         "eval_args": "++eval_type=exact_match",
+        "extra_fields": ["id"],  # Required for BBH evaluator to determine task type
     },
     "alpacaeval": {
         "splits": ["test"],
