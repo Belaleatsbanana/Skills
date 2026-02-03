@@ -48,7 +48,66 @@ REQUIRES_GPT_JUDGE = {
 }
 
 
-def convert_entry(entry: dict) -> dict:
+def infer_bbh_task_type(prompt: str) -> str:
+    """Infer the BBH task type from the prompt content.
+
+    The BBH evaluator uses the task type to determine how to extract answers.
+    Task types: navigate, sports_understanding, hyperbaton, web_of_lies
+    """
+    prompt_lower = prompt.lower()
+
+    # Navigate task - directional instructions
+    if any(
+        phrase in prompt_lower
+        for phrase in [
+            "turn right",
+            "turn left",
+            "turn around",
+            "take steps",
+            "take 1 step",
+            "take 2 steps",
+            "return to the starting point",
+        ]
+    ):
+        return "navigate"
+
+    # Sports understanding - plausibility of sports sentences
+    if "is the following sentence plausible" in prompt_lower and any(
+        sport in prompt_lower
+        for sport in [
+            "touchdown",
+            "home run",
+            "corner kick",
+            "penalty kick",
+            "free throw",
+            "slam dunk",
+            "field goal",
+            "worked a full count",
+            "hit a triple",
+            "scored a goal",
+            "threw a curveball",
+        ]
+    ):
+        return "sports_understanding"
+
+    # Hyperbaton - adjective order
+    if "adjective order" in prompt_lower or "which sentence has the correct adjective order" in prompt_lower:
+        return "hyperbaton"
+
+    # Web of lies - truth-telling puzzles
+    if "tells the truth" in prompt_lower or "does .* tell the truth" in prompt_lower:
+        return "web_of_lies"
+
+    # Default fallback - try to infer from Yes/No pattern
+    if "yes or no" in prompt_lower:
+        if "is the following sentence plausible" in prompt_lower:
+            return "sports_understanding"
+        return "navigate"
+
+    return "unknown"
+
+
+def convert_entry(entry: dict, entry_index: int = 0) -> dict:
     """Convert a single nemo-skills entry to VoiceBench format.
 
     nemo-skills format:
@@ -66,8 +125,9 @@ def convert_entry(entry: dict) -> dict:
         - Additional fields preserved as-is
     """
     # Prefer 'prompt' if it exists (e.g., for ifeval), otherwise use 'problem'
+    prompt_text = entry.get("prompt") or entry.get("problem", "")
     converted = {
-        "prompt": entry.get("prompt") or entry.get("problem", ""),
+        "prompt": prompt_text,
         "response": entry.get("generation", ""),
         # Default reference to empty string if not present (e.g., for mtbench)
         "reference": entry.get("expected_answer") or "",
@@ -77,6 +137,11 @@ def convert_entry(entry: dict) -> dict:
     # For BBH evaluator - needs 'id' field
     if "id" in entry:
         converted["id"] = entry["id"]
+    else:
+        # Infer task type for BBH if no id present
+        task_type = infer_bbh_task_type(prompt_text)
+        if task_type != "unknown":
+            converted["id"] = f"{task_type}_{entry_index}"
 
     # For IFEval evaluator - needs instruction_id_list and kwargs
     if "instruction_id_list" in entry:
@@ -100,10 +165,10 @@ def convert_file(input_path: str, output_path: str) -> int:
     """
     entries = []
     with open(input_path, "r", encoding="utf-8") as f:
-        for line in f:
+        for idx, line in enumerate(f):
             if line.strip():
                 entry = json.loads(line)
-                converted = convert_entry(entry)
+                converted = convert_entry(entry, entry_index=idx)
                 entries.append(converted)
 
     output_path = Path(output_path)
