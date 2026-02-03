@@ -34,6 +34,7 @@ Key parameters matching the latest inference recipe:
 
 import os
 import random
+import re
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -455,6 +456,25 @@ class S2SBackend(InferenceBackend):
 
         return audio
 
+    def _clean_special_tokens(self, text: str) -> str:
+        """Remove special timing/frame tokens from model output.
+
+        The S2S model outputs special tokens like:
+        - <$X.XX$> - energy/confidence markers
+        - <|X.XX|> - timing/duration markers
+
+        These should be stripped for clean text output.
+        """
+        if not text:
+            return text
+        # Remove <$X.XX$> patterns (energy/confidence)
+        text = re.sub(r'<\$[\d.]+\$>', '', text)
+        # Remove <|X.XX|> patterns (timing)
+        text = re.sub(r'<\|[\d.]+\|>', '', text)
+        # Clean up extra whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
     def _parse_batch_output(
         self, outputs: Dict[str, Any], batch_idx: int, request: GenerationRequest
     ) -> GenerationResult:
@@ -466,6 +486,9 @@ class S2SBackend(InferenceBackend):
                 text_output = outputs["text"][batch_idx]
             elif not isinstance(outputs["text"], list):
                 text_output = outputs["text"]
+
+        # Clean special tokens from output
+        text_output = self._clean_special_tokens(text_output)
 
         # Count tokens if available
         num_tokens = 0
