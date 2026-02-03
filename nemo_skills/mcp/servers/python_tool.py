@@ -96,13 +96,14 @@ def main():
 class PythonTool(MCPClientTool):
     def __init__(self) -> None:
         super().__init__()
-        # Defaults for stdio Python MCP using explicit client class
+        # Use connection pool for concurrent tool calls with persistent connections
         self.apply_config_updates(
             {
-                "client": "nemo_skills.mcp.clients.MCPStdioClient",
+                "client": "nemo_skills.mcp.clients.MCPStdioConnectionPool",
                 "client_params": {
                     "command": "python",
                     "args": ["-m", "nemo_skills.mcp.servers.python_tool"],
+                    "pool_size": 32,  # Support up to 32 concurrent tool calls
                 },
                 # hide args from schemas and sanitize at runtime
                 "hide_args": {"stateful_python_code_exec": ["session_id", "timeout"]},
@@ -130,7 +131,9 @@ class PythonTool(MCPClientTool):
         return output
 
     async def shutdown(self) -> None:
-        return None
+        """Close the connection pool."""
+        if self._client is not None and hasattr(self._client, "close"):
+            await self._client.close()
 
 
 if __name__ == "__main__":
