@@ -49,6 +49,66 @@ This will prepare `test.jsonl` for each benchmark with pointers to the files on 
 /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/tmp/data_dir
 ```
 
+### EmergentTTS-Eval (new test set)
+
+EmergentTTS-Eval does **not** rely on cluster-local pre-existing audio paths. Instead, it is prepared by downloading the dataset and writing the NeMo-Skills `test.jsonl` + Emergent artifacts into your shared `data_dir`.
+
+**Prerequisites:**
+- Your environment/container must have Python deps required for dataset prep: `datasets`, `numpy`, `pydub`, `tqdm`.
+- `prepare.py` downloads from HuggingFace + Zenodo, so it must run in an environment with network access.
+
+**Prepare EmergentTTS-Eval under your shared data_dir:**
+
+```bash
+cd /home/vmendelev/workspace/expressiveness/src/ns_eval && source .venv/bin/activate && \
+python nemo_skills/dataset/emergent_tts/prepare.py \
+  --output_dir <data_dir>/emergent_tts
+```
+
+Optional flags:
+- `--num_samples 10` (debug: only write first 10)
+- `--overwrite` (re-download and regenerate outputs)
+
+This creates:
+- `<data_dir>/emergent_tts/emergent/test.jsonl` (NeMo-Skills generation input)
+- `<data_dir>/emergent_tts/data/emergent_tts_eval_data.jsonl`
+- `<data_dir>/emergent_tts/data/baseline_audios/<unique_id_eval>.wav`
+- `<data_dir>/emergent_tts/data/wv_mos.ckpt`
+
+**Run Emergent generation/scoring:**
+
+- Use the example config: `nemo_skills/dataset/emergent_tts/scripts/config/default.yaml`
+- Set in the config:
+  - `generation.data_dir: <data_dir>`
+  - `scoring.emergent_data_dir: <data_dir>/emergent_tts/data`
+  - `scoring.scoring_code_path: <path_to_EmergentTTS-Eval-public>`
+
+```bash
+cd /home/vmendelev/workspace/expressiveness/src/ns_eval && source .venv/bin/activate && \
+NEMO_SKILLS_DISABLE_UNCOMMITTED_CHANGES_CHECK=1 \
+python -m nemo_skills.dataset.emergent_tts.scripts.run_tts_eval \
+  --config nemo_skills/dataset/emergent_tts/scripts/config/default.yaml \
+  --stage all \
+  --expname emergent_eval
+```
+
+**Required env vars (Emergent scoring):**
+
+```bash
+export JUDGER_API_KEY=<your_nvidia_inference_api_key>
+```
+
+**Verification flow (recommended):**
+- **Generation-only smoke test (10 samples)**:
+  - set `partition: interactive`, `generation.num_chunks: 1`
+  - set `generation.extra_args: "++max_samples=10 ++server.server_type=vllm_multimodal"`
+  - run: `python -m nemo_skills.dataset.emergent_tts.scripts.run_tts_eval --config <cfg> --stage generation`
+- **Full run (~1645)**:
+  - restore `partition: batch` and your usual `generation.num_chunks`
+  - run: `python -m nemo_skills.dataset.emergent_tts.scripts.run_tts_eval --config <cfg> --stage all`
+- **Scoring-only**:
+  - run: `python -m nemo_skills.dataset.emergent_tts.scripts.run_tts_eval --config <cfg> --stage scoring`
+
 ### 4. Configuration Files
 
 Review the config file and ensure all required artifacts are in the specified locations:
