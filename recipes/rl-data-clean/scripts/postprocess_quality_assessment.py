@@ -13,6 +13,8 @@ import jsonlines
 
 def parse_field(text: str, field_name: str) -> Optional[str]:
     """Extract a field value from model output"""
+    if not text or not isinstance(text, str):
+        return None
     pattern = rf"{field_name}:\s*(.+?)(?=\n[A-Z_]+:|$)"
     match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
     if match:
@@ -149,6 +151,11 @@ def filter_by_decision(
                 serialized = item.get("serialized_output", [])
                 if serialized and len(serialized) > 0:
                     generation = serialized[0].get("content", "")
+
+            # Skip items with no generation content
+            if not generation:
+                print("Warning: Skipping item with no generation content")
+                continue
 
             assessment = parse_func(generation)
 
