@@ -8,7 +8,7 @@ user: |-
   {expected_answer}
 
   Solution:
-  {extracted_solution}
+  {solution}
 
   Evaluate the complete triplet:
 

@@ -1,0 +1,98 @@
+# Full non-proof pipeline using DeepSeek-V3.2
+# Extracts and cleans non-proof math problems from AOPS data
+
+cluster: dfw
+base_output_dir: /workspace/rl-data-clean/non-proof
+model_name: DeepSeek-V3.2
+expname: non-proof-${model_name}
+suffix: full-pipeline
+
+# Full dataset
+input_file: ${base_output_dir}/raw_aops_data_sample_5000.jsonl
+
+# Model configuration for DeepSeek
+generate_kwargs:
+  model: /hf_models/${model_name}
+  server_type: sglang
+  server_gpus: 8
+  server_nodes: 2
+  num_chunks: 1  # Increase for large dataset
+
+# Pipeline stages
+pipeline_stages:
+  - extract_problems
+  - classify_problems  # Serial filtering: proof -> mcq -> binary -> invalid
+  - extract_answers
+  - extract_solution
+  - assess_problem_answer_quality
+  - assess_complete_solution_quality
+
+# Output directories
+directories:
+  step-1-extract: ${base_output_dir}/${model_name}/step-1-extract-problems
+  step-2-classify: ${base_output_dir}/${model_name}/step-2-classify-problems
+  step-3-extract-answers: ${base_output_dir}/${model_name}/step-3-extract-answers
+  step-4-extract-solution: ${base_output_dir}/${model_name}/step-4-extract-solution
+  step-5a-problem-answer: ${base_output_dir}/${model_name}/step-5a-assess-problem-answer
+  step-5b-complete-solution: ${base_output_dir}/${model_name}/step-5b-assess-complete-solution
+
+# Stage configurations
+stages:
+  extract_problems:
+    output_dir: ${directories.step-1-extract}
+    input_file: ${input_file}
+    dependencies: null
+    stage_kwargs: ${generate_kwargs}
+    server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
+
+  # Classification stage with serial filtering
+  # Order: proof -> mcq -> binary -> invalid
+  # Final output: step-2-classify/invalid/no.jsonl (valid non-proof problems)
+  classify_problems:
+    output_dir: ${directories.step-2-classify}
+    input_file: ${directories.step-1-extract}/extracted-problems.jsonl
+    modes:
+      - proof
+      - mcq
+      - binary
+      - invalid
+    dependencies:
+      - extract_problems
+    stage_kwargs: ${generate_kwargs}
+    server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
+
+  # Extract answers from valid non-proof problems
+  extract_answers:
+    output_dir: ${directories.step-3-extract-answers}
+    input_file: ${directories.step-2-classify}/invalid/no.jsonl  # Final filtered result
+    dependencies:
+      - classify_problems
+    stage_kwargs: ${generate_kwargs}
+    server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
+
+  # Extract solution
+  extract_solution:
+    output_dir: ${directories.step-4-extract-solution}
+    input_file: ${directories.step-3-extract-answers}/extracted-answers.jsonl
+    dependencies:
+      - extract_answers
+    stage_kwargs: ${generate_kwargs}
+    server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
+
+  # Quality assessment - Problem + Answer only
+  assess_problem_answer_quality:
+    output_dir: ${directories.step-5a-problem-answer}
+    input_file: ${directories.step-4-extract-solution}/extracted-solutions.jsonl
+    dependencies:
+      - extract_solution
+    stage_kwargs: ${generate_kwargs}
+    server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
+
+  # Quality assessment - Complete triplet
+  assess_complete_solution_quality:
+    output_dir: ${directories.step-5b-complete-solution}
+    input_file: ${directories.step-4-extract-solution}/extracted-solutions.jsonl
+    dependencies:
+      - extract_solution
+    stage_kwargs: ${generate_kwargs}
+    server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
