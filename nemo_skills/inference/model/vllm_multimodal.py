@@ -32,6 +32,7 @@ from .audio_utils import (
     audio_file_to_base64,
     chunk_audio,
     load_audio_file,
+    make_audio_content_block,
     save_audio_chunk_to_base64,
 )
 from .vllm import VLLMModel
@@ -46,7 +47,7 @@ class VLLMMultimodalModel(VLLMModel):
     """VLLMModel with support for audio input and output.
 
     Audio INPUT capabilities:
-    1. Converts audio file paths to base64-encoded audio_url format
+    1. Converts audio file paths to base64-encoded input_audio format
     2. Chunks long audio files for models with duration limits
     3. Aggregates results from chunked audio processing
 
@@ -158,7 +159,7 @@ class VLLMMultimodalModel(VLLMModel):
         """Convert message content with audio to proper list format.
 
         Handles 'audio' or 'audios' keys in messages and converts them to
-        base64-encoded audio_url content items.
+        base64-encoded input_audio content items.
 
         CRITICAL: Audio must come BEFORE text for Qwen models to transcribe correctly.
 
@@ -171,7 +172,9 @@ class VLLMMultimodalModel(VLLMModel):
         if "audio" not in message and "audios" not in message:
             return message
 
-        content = message.get("content", "")
+        if "content" not in message:
+            raise KeyError("Missing required 'content' in message")
+        content = message["content"]
         if isinstance(content, str):
             message["content"] = [{"type": "text", "text": content}]
         elif isinstance(content, list):
@@ -185,15 +188,13 @@ class VLLMMultimodalModel(VLLMModel):
             audio = message["audio"]
             audio_path = os.path.join(self.data_dir, audio["path"])
             base64_audio = audio_file_to_base64(audio_path)
-            audio_message = {"type": "audio_url", "audio_url": {"url": f"data:audio/wav;base64,{base64_audio}"}}
-            audio_items.append(audio_message)
+            audio_items.append(make_audio_content_block(base64_audio, "input_audio"))
             del message["audio"]  # Remove original audio field after conversion
         elif "audios" in message:
             for audio in message["audios"]:
                 audio_path = os.path.join(self.data_dir, audio["path"])
                 base64_audio = audio_file_to_base64(audio_path)
-                audio_message = {"type": "audio_url", "audio_url": {"url": f"data:audio/wav;base64,{base64_audio}"}}
-                audio_items.append(audio_message)
+                audio_items.append(make_audio_content_block(base64_audio, "input_audio"))
             del message["audios"]  # Remove original audios field after conversion
 
         # Insert audio items at the BEGINNING of content list (before text)
@@ -235,11 +236,14 @@ class VLLMMultimodalModel(VLLMModel):
 
         # Find audio in messages
         for msg in messages:
-            if msg.get("role") == "user":
-                audio_info = msg.get("audio")
-                if not audio_info:
-                    audios = msg.get("audios", [])
+            if msg["role"] == "user":
+                if "audio" in msg:
+                    audio_info = msg["audio"]
+                elif "audios" in msg:
+                    audios = msg["audios"]
                     audio_info = audios[0] if audios else {}
+                else:
+                    continue
                 if audio_info and "path" in audio_info:
                     audio_path = os.path.join(self.data_dir, audio_info["path"])
 
@@ -300,16 +304,16 @@ class VLLMMultimodalModel(VLLMModel):
                 if msg_copy["role"] == "user" and ("audio" in msg_copy or "audios" in msg_copy):
                     chunk_base64 = save_audio_chunk_to_base64(audio_chunk, sampling_rate)
 
-                    content = msg_copy.get("content", "")
+                    if "content" not in msg_copy:
+                        raise KeyError("Missing required 'content' in message")
+                    content = msg_copy["content"]
                     if isinstance(content, str):
                         text_content = [{"type": "text", "text": content}]
                     else:
                         text_content = content
 
                     # Add audio chunk at the beginning (before text)
-                    msg_copy["content"] = [
-                        {"type": "audio_url", "audio_url": {"url": f"data:audio/wav;base64,{chunk_base64}"}}
-                    ] + text_content
+                    msg_copy["content"] = [make_audio_content_block(chunk_base64, "input_audio")] + text_content
 
                     # Remove original audio fields
                     msg_copy.pop("audio", None)

@@ -16,7 +16,7 @@
 
 This module provides a multimodal model class that handles:
 - Audio INPUT: encoding audio files to base64, chunking long audio
-- Uses input_audio format (OpenAI native) for NVIDIA API/Gemini/Azure
+- Uses input_audio format (OpenAI native)
 """
 
 import copy
@@ -71,7 +71,7 @@ class APIMultimodal(OpenAIModel):
             enable_audio_chunking: Master switch for audio chunking.
             audio_chunk_task_types: If None, chunk all task types; if specified, only chunk these.
             chunk_audio_threshold_sec: Audio duration threshold for chunking (in seconds).
-            audio_format: Format for audio content ("input_audio" for NVIDIA API/Gemini, "audio_url" for vLLM).
+            audio_format: Format for audio content (must be "input_audio").
             **kwargs: Other parameters passed to OpenAIModel/BaseModel.
         """
         # Use NVIDIA API as default if no base_url specified
@@ -88,6 +88,8 @@ class APIMultimodal(OpenAIModel):
         self.enable_audio_chunking = enable_audio_chunking
         self.audio_chunk_task_types = audio_chunk_task_types
         self.chunk_audio_threshold_sec = chunk_audio_threshold_sec
+        if audio_format != "input_audio":
+            raise ValueError(f"Unsupported audio_format '{audio_format}'. Only 'input_audio' is supported.")
         self.audio_format = audio_format
 
     # =====================
@@ -111,7 +113,9 @@ class APIMultimodal(OpenAIModel):
         if "audio" not in message and "audios" not in message:
             return message
 
-        content = message.get("content", "")
+        if "content" not in message:
+            raise KeyError("Missing required 'content' in message")
+        content = message["content"]
         if isinstance(content, str):
             message["content"] = [{"type": "text", "text": content}]
         elif isinstance(content, list):
@@ -171,11 +175,14 @@ class APIMultimodal(OpenAIModel):
 
         # Find audio in messages
         for msg in messages:
-            if msg.get("role") == "user":
-                audio_info = msg.get("audio")
-                if not audio_info:
-                    audios = msg.get("audios", [])
+            if msg["role"] == "user":
+                if "audio" in msg:
+                    audio_info = msg["audio"]
+                elif "audios" in msg:
+                    audios = msg["audios"]
                     audio_info = audios[0] if audios else {}
+                else:
+                    continue
                 if audio_info and "path" in audio_info:
                     audio_path = os.path.join(self.data_dir, audio_info["path"])
 
@@ -236,7 +243,9 @@ class APIMultimodal(OpenAIModel):
                 if msg_copy["role"] == "user" and ("audio" in msg_copy or "audios" in msg_copy):
                     chunk_base64 = save_audio_chunk_to_base64(audio_chunk, sampling_rate)
 
-                    content = msg_copy.get("content", "")
+                    if "content" not in msg_copy:
+                        raise KeyError("Missing required 'content' in message")
+                    content = msg_copy["content"]
                     if isinstance(content, str):
                         text_content = [{"type": "text", "text": content}]
                     else:

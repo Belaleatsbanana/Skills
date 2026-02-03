@@ -206,17 +206,15 @@ class GenerationTaskConfig:
     enable_litellm_cache: bool = False
 
     # List of content types to drop from messages (e.g., base64 audio) to keep output files smaller
-    drop_content_types: list[str] = field(default_factory=lambda: ["audio_url", "input_audio"])
+    drop_content_types: list[str] = field(default_factory=lambda: ["input_audio"])
 
     # Audio configuration - set by benchmarks that need audio processing (mmau-pro, audiobench, etc.)
     enable_audio: bool = False  # Enable audio preprocessing (set by benchmark configs)
     enable_audio_chunking: bool = True
     audio_chunk_task_types: list[str] | None = None  # If None, chunk all task types; if specified, only chunk these
     chunk_audio_threshold_sec: int = 30  # Duration in seconds for each audio chunk
-    # Audio format for API requests:
-    #   - "audio_url": data URI format for vLLM/Qwen (default)
-    #   - "input_audio": OpenAI native format for NVIDIA API/Gemini/Azure
-    audio_format: str = "audio_url"
+    # Audio format for API requests (input_audio only)
+    audio_format: str = "input_audio"
 
     # Evaluation setup if requested. If eval_type is set to None, evaluation is skipped
     eval_type: str | None = None  # "lean4-proof", "math", etc.

@@ -130,21 +130,16 @@ def save_audio_chunk_to_base64(audio_chunk, sampling_rate) -> str:
     return encoded
 
 
-def make_audio_content_block(base64_audio: str, audio_format: str = "audio_url") -> dict:
-    """Create an audio content block in the specified format.
+def make_audio_content_block(base64_audio: str, audio_format: str = "input_audio") -> dict:
+    """Create an audio content block in the OpenAI native input_audio format.
 
     Args:
         base64_audio: Base64-encoded audio data.
-        audio_format: Format to use:
-            - "audio_url": Data URI format for vLLM/Qwen
-            - "input_audio": OpenAI native format for NVIDIA API/Gemini/Azure
+        audio_format: Must be "input_audio".
 
     Returns:
         Audio content block dict for API request.
     """
-    if audio_format == "input_audio":
-        # OpenAI native format (works with NVIDIA API / Gemini / Azure)
-        return {"type": "input_audio", "input_audio": {"data": base64_audio, "format": "wav"}}
-    else:
-        # Data URI format (works with vLLM / Qwen)
-        return {"type": "audio_url", "audio_url": {"url": f"data:audio/wav;base64,{base64_audio}"}}
+    if audio_format != "input_audio":
+        raise ValueError(f"Unsupported audio_format '{audio_format}'. Only 'input_audio' is supported.")
+    return {"type": "input_audio", "input_audio": {"data": base64_audio, "format": "wav"}}
