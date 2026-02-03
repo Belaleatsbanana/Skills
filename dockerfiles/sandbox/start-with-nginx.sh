@@ -148,15 +148,33 @@ SANDBOX_WORKER_BASE_PORT=${SANDBOX_WORKER_BASE_PORT:-50001}
 # Each node will find free ports dynamically and report them to shared storage.
 # Master will collect all port assignments before generating nginx config.
 # IMPORTANT: Must use shared filesystem (Lustre), NOT /tmp (which is node-local)
-if [ -n "$SLURM_JOB_ID" ]; then
-    # Use job-specific directory on shared storage (Lustre)
-    # /workspace is typically mounted to Lustre in our cluster configs
-    PORTS_REPORT_DIR="${SANDBOX_PORTS_DIR:-/workspace/sandbox_ports_${SLURM_JOB_ID}}"
+#
+# Directory priority (must be mounted and shared across nodes):
+#   1. SANDBOX_PORTS_DIR env var (explicit override)
+#   2. /nemo_run/sandbox_ports_* (always mounted in training jobs)
+#   3. /workspace/sandbox_ports_* (legacy, may not be mounted)
+#   4. /tmp/sandbox_ports_* (local only, for single-node testing)
+if [ -n "$SANDBOX_PORTS_DIR" ]; then
+    PORTS_REPORT_DIR="$SANDBOX_PORTS_DIR"
+elif [ -n "$SLURM_JOB_ID" ]; then
+    # In SLURM jobs, use /nemo_run which is reliably mounted to shared storage
+    if [ -d "/nemo_run" ]; then
+        PORTS_REPORT_DIR="/nemo_run/sandbox_ports_${SLURM_JOB_ID}"
+    elif [ -d "/workspace" ]; then
+        # Fallback to /workspace if mounted
+        PORTS_REPORT_DIR="/workspace/sandbox_ports_${SLURM_JOB_ID}"
+    else
+        echo "ERROR: Neither /nemo_run nor /workspace are mounted - cannot share ports across nodes"
+        echo "Available mounts:"
+        mount | grep -E '(nemo_run|workspace|lustre)' || echo "  (none found)"
+        exit 1
+    fi
 else
     PORTS_REPORT_DIR="/tmp/sandbox_ports_$$"
 fi
 mkdir -p "$PORTS_REPORT_DIR"
-echo "Port reporting directory: $PORTS_REPORT_DIR"
+echo "[$_H] Port reporting directory: $PORTS_REPORT_DIR"
+echo "[$_H] Directory exists: $([ -d "$PORTS_REPORT_DIR" ] && echo 'yes' || echo 'no')"
 
 # Array to track actual ports assigned to workers (may differ from base calculation if ports are busy)
 declare -a ACTUAL_WORKER_PORTS
@@ -616,15 +634,23 @@ if [ "$IS_MASTER" = "1" ]; then
                 exit 1
             fi
 
-            # Force directory cache refresh on Lustre (stat the directory to refresh metadata)
-            ls "$PORTS_REPORT_DIR" > /dev/null 2>&1
+            # Force Lustre cache invalidation - more aggressive than stat/ls
+            # 1. Create and delete a temp file to invalidate directory cache
+            _tmp_invalidate="$PORTS_REPORT_DIR/.cache_invalidate_$$_$(date +%s%N)"
+            touch "$_tmp_invalidate" 2>/dev/null && rm -f "$_tmp_invalidate" 2>/dev/null || true
+
+            # 2. List directory with -la to force metadata refresh
+            ls -la "$PORTS_REPORT_DIR" > /dev/null 2>&1
+
+            # 3. Sync to ensure any pending writes are visible
+            sync
 
             NODES_REPORTED=0
             for node in $ALL_NODES; do
                 node_short="${node%%.*}"
                 port_file="$PORTS_REPORT_DIR/${node_short}_ports.txt"
-                # Use stat to refresh file metadata cache, then check
-                if stat "$port_file" > /dev/null 2>&1 && grep -q "PORT_REPORT_COMPLETE" "$port_file" 2>/dev/null; then
+                # Use cat to actually READ the file (not just stat) - forces Lustre to fetch latest
+                if [ -f "$port_file" ] && cat "$port_file" 2>/dev/null | grep -q "PORT_REPORT_COMPLETE"; then
                     NODES_REPORTED=$((NODES_REPORTED + 1))
                 fi
             done
