@@ -150,11 +150,18 @@ def filter_by_decision(
                 # Try to get from serialized_output[0]['content']
                 serialized = item.get("serialized_output", [])
                 if serialized and len(serialized) > 0:
-                    generation = serialized[0].get("content", "")
+                    content = serialized[0].get("content", "")
+                    # Ensure we get a string, not None
+                    generation = content if content else ""
+
+            # Also try reasoning_content as last resort
+            if not generation and "reasoning_content" in item:
+                reasoning = item.get("reasoning_content", "")
+                generation = reasoning if reasoning else ""
 
             # Skip items with no generation content
-            if not generation:
-                print("Warning: Skipping item with no generation content")
+            if not generation or not isinstance(generation, str):
+                print("Warning: Skipping item with no valid generation content")
                 continue
 
             assessment = parse_func(generation)
