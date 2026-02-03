@@ -23,6 +23,7 @@ server_args: >-
   --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/S2S-full-duplex/inference_references/Emma_S3_A1_SC7_singleturntarget_21_channel_1_audio_in.wav
   --tts_ckpt_path /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Duplex_EARTTS/eartts_rvq_cont_task_nanov2_tts_pretraining_wordlist_duplex_data_new_branch_4nodes_duplex_eartts_2_delay_4rd_stage_fp32_wd_1500_et_eos_dp_eos_dup_step_10004.ckpt
   --extra_decoding_seconds 20
+  --dtype float32
   --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
 
 # Container with NeMo and S2S support
@@ -42,7 +43,7 @@ subtests:
 
 # Scoring settings
 api_type: nvidia
-nvidia_model: azure/openai/gpt-4o-mini
+nvidia_model: us/azure/openai/gpt-5-mini
 
 # Installation commands
 installation_command: ""
@@ -53,6 +54,6 @@ expname: voicebench_sdqa_test
 max_samples: 10  # Limit to 10 samples for quick testing
 
 # Run modes
-generation_only: false
+generation_only: true
 scoring_only: false
 dry_run: false
