@@ -33,10 +33,6 @@ user: |-
   - Minor disorganization is acceptable if the solution is clear
   - Reject if: Completely incoherent or impossible to follow
 
-  ## 5. MULTIPLE_APPROACHES (Bonus)
-  Are multiple solution approaches discussed?
-  - This is a bonus but not required for ACCEPT
-  - Multiple clear approaches add pedagogical value
 
   ## Decision Criteria for ACCEPT:
   - Discussion contains meaningful mathematical content
@@ -57,9 +53,6 @@ user: |-
 
   DISCUSSION_COHERENCE_ANALYSIS:
   <Is the discussion organized? Does it flow logically? Any major coherence issues?>
-
-  MULTIPLE_APPROACHES: <yes/no>
-  APPROACHES_DESCRIPTION: <If yes, list the approaches. If no, state "Single approach" or "No approaches">
 
   CRITICAL_ISSUES:
   <List any serious problems: no solution, unclear reasoning, incoherent discussion, etc. If none, state "None">
