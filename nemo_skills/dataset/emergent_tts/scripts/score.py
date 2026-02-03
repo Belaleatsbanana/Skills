@@ -93,24 +93,33 @@ def _run_emergent_scoring(
     # Tell Emergent code where to find `emergent_tts_eval_data.jsonl` and `wv_mos.ckpt`.
     os.environ["EMERGENT_TTS_DATA_BASE_PATH"] = str(emergent_data_base_path)
 
-    emergent_inference.eval_api_closed_model(
-        model_client=_NoopModelClient(),
-        accelerator=None,
-        depths_to_evaluate=depths_to_evaluate,
-        categories_to_evaluate=categories_to_evaluate,
-        seed=42,
-        output_dir=str(benchmark_dir),
-        num_samples=None,
-        baseline_audios_path=str(baseline_audios_path),
-        fetch_audios_from_path=str(fetch_audios_from_path),
-        judge_model=judge_model,
-        temperature=0.0,
-        evaluate_function=evaluate_function,
-        strong_prompting=strong_prompting,
-        judger_base_url=_normalize_openai_base_url(judger_base_url) if judger_base_url else None,
-        num_threads=num_threads,
-        model_name="nemo-skills-generated",
-    )
+    # EmergentTTS-Eval expects paths like "data/emergent_tts_eval_data.jsonl" relative
+    # to its *data base directory* (repo root). We keep the dataset in a shared path:
+    #   <...>/emergent_tts/data/{emergent_tts_eval_data.jsonl,wv_mos.ckpt,baseline_audios/}
+    # So we temporarily `chdir` into the directory that contains the "data/" folder.
+    prev_cwd = os.getcwd()
+    try:
+        os.chdir(str(emergent_data_base_path.parent))
+        emergent_inference.eval_api_closed_model(
+            model_client=_NoopModelClient(),
+            accelerator=None,
+            depths_to_evaluate=depths_to_evaluate,
+            categories_to_evaluate=categories_to_evaluate,
+            seed=42,
+            output_dir=str(benchmark_dir),
+            num_samples=None,
+            baseline_audios_path=str(baseline_audios_path),
+            fetch_audios_from_path=str(fetch_audios_from_path),
+            judge_model=judge_model,
+            temperature=0.0,
+            evaluate_function=evaluate_function,
+            strong_prompting=strong_prompting,
+            judger_base_url=_normalize_openai_base_url(judger_base_url) if judger_base_url else None,
+            num_threads=num_threads,
+            model_name="nemo-skills-generated",
+        )
+    finally:
+        os.chdir(prev_cwd)
 
 
 def run_scoring(

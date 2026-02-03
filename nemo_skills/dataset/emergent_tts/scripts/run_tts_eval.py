@@ -10,6 +10,7 @@ EmergentTTS-Eval scoring logic.
 
 import argparse
 import os
+from pathlib import Path
 
 import yaml
 
@@ -100,6 +101,7 @@ def main():
         emergent_data_dir = scoring.get("emergent_data_dir", "")
         install_cmd = scoring.get("installation_command")
         scoring_container = scoring.get("container") or "nemo-skills"
+        emergent_data_base_dir = str(Path(emergent_data_dir).parent) if emergent_data_dir else ""
 
         # Required by Emergent's judge clients
         judger_api_key = (
@@ -115,16 +117,17 @@ def main():
             benchmark = benchmark.strip()
             short_name = benchmark.split(".")[-1]
             score_cmd = (
-                f"JUDGER_API_KEY={judger_api_key} "
-                f"PYTHONPATH={scoring_code_path}:$PYTHONPATH "
-                f"python -m nemo_skills.dataset.emergent_tts.scripts.score "
-                f"--results_dir {output_dir} "
-                f"--benchmark {benchmark} "
-                f"--emergent_data_dir {emergent_data_dir} "
-                f"--judge_model {scoring.get('judge_model', 'gcp/google/gemini-2.5-pro')} "
-                f"--judger_base_url {scoring.get('judger_base_url', 'https://inference-api.nvidia.com/v1/chat/completions')} "
-                f"--num_threads {int(scoring.get('num_threads', 8))} "
-                f"--evaluate_function {scoring.get('evaluate_function', 'win_rate')}"
+                (f"cd {emergent_data_base_dir} && " if emergent_data_base_dir else "")
+                + f"JUDGER_API_KEY={judger_api_key} "
+                + f"PYTHONPATH={scoring_code_path}:$PYTHONPATH "
+                + "python -m nemo_skills.dataset.emergent_tts.scripts.score "
+                + f"--results_dir {output_dir} "
+                + f"--benchmark {benchmark} "
+                + f"--emergent_data_dir {emergent_data_dir} "
+                + f"--judge_model {scoring.get('judge_model', 'gcp/google/gemini-2.5-pro')} "
+                + f"--judger_base_url {scoring.get('judger_base_url', 'https://inference-api.nvidia.com/v1/chat/completions')} "
+                + f"--num_threads {int(scoring.get('num_threads', 8))} "
+                + f"--evaluate_function {scoring.get('evaluate_function', 'win_rate')}"
             )
             if scoring.get("strong_prompting"):
                 score_cmd += " --strong_prompting"
@@ -139,6 +142,9 @@ def main():
                 command=score_cmd,
                 installation_command=install_cmd,
                 run_after=run_after,
+                # Ensure we ship the current repo state for scoring jobs.
+                # (Otherwise nemo_run may reuse an older code snapshot and miss fixes.)
+                reuse_code=False,
                 expname=f"{args.expname}_score_{short_name}",
                 log_dir=f"{output_dir}/eval-logs",
             )
@@ -156,6 +162,7 @@ def main():
             num_gpus=0,
             mount_paths=cfg["mount_paths"],
             command=agg_cmd,
+            reuse_code=False,
             expname=f"{args.expname}_agg",
             log_dir=f"{output_dir}/eval-logs",
         )

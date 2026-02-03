@@ -43,7 +43,9 @@ scoring:
   container: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/containters/nemo-25.11.sqsh
   # Install missing Python deps at job start (runs inside the scoring container).
   # Keep this conservative: avoid upgrading core deps inside the base container.
-  installation_command: pip install editdistance whisper-normalizer json-repair tenacity
+  # EmergentTTS-Eval imports `from google import genai`, so ensure google-genai exists
+  # but install it without pulling/upgrading transitive deps (to avoid httpx/transformers churn).
+  installation_command: pip install editdistance whisper-normalizer json-repair tenacity && pip install --no-deps google-genai
 
   # Path to EmergentTTS-Eval-public on the cluster (added to PYTHONPATH)
   scoring_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/code/EmergentTTS-Eval-public
