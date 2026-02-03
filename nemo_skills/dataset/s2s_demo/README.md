@@ -230,8 +230,7 @@ See [example report](scripts/comparison_report.md) for output format.
 ## TODOs
 0. Refactor the backends to directly call Niva.
 1. Integrate vLLM and Triton.
-2. Add a new offline backend.
-3. Add WandB integration.
+2. Add WandB integration.
 4. Refactor configs and scripts used to run the tests.
 5. Refactor decmo scoding script.
 6. Add batching support.

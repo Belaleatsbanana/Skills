@@ -186,7 +186,36 @@ def main():
         "--silence_padding_sec",
         type=float,
         default=5.0,
-        help="Seconds of silence to append after audio (S2S backends)",
+        help="Seconds of silence to append after audio (legacy, prefer --extra_decoding_seconds)",
+    )
+    parser.add_argument(
+        "--extra_decoding_seconds",
+        type=float,
+        default=0.0,
+        help="Extra decoding time in seconds (0 for FDB, 20 for Voicebench)",
+    )
+    parser.add_argument(
+        "--tts_ckpt_path",
+        default=None,
+        help="Path to TTS checkpoint (s2s offline backend)",
+    )
+    parser.add_argument(
+        "--inference_pad_boost",
+        type=float,
+        default=0.0,
+        help="Boost for PAD token logits during inference",
+    )
+    parser.add_argument(
+        "--inference_bos_boost",
+        type=float,
+        default=0.0,
+        help="Boost for BOS token logits during inference",
+    )
+    parser.add_argument(
+        "--inference_eos_boost",
+        type=float,
+        default=0.0,
+        help="Boost for EOS token logits during inference",
     )
 
     # S2S Incremental backend options
@@ -314,6 +343,25 @@ def main():
         if args.silence_padding_sec != 5.0:
             extra_config["silence_padding_sec"] = args.silence_padding_sec
 
+    # S2S offline backend specific options
+    if args.backend == "s2s":
+        if args.extra_decoding_seconds:
+            extra_config["extra_decoding_seconds"] = args.extra_decoding_seconds
+        if args.config_path:
+            extra_config["config_path"] = args.config_path
+        if args.tts_ckpt_path:
+            extra_config["tts_ckpt_path"] = args.tts_ckpt_path
+        if args.speaker_reference:
+            extra_config["speaker_reference"] = args.speaker_reference
+        if args.code_path:
+            extra_config["code_path"] = args.code_path
+        if args.inference_pad_boost:
+            extra_config["inference_pad_boost"] = args.inference_pad_boost
+        if args.inference_bos_boost:
+            extra_config["inference_bos_boost"] = args.inference_bos_boost
+        if args.inference_eos_boost:
+            extra_config["inference_eos_boost"] = args.inference_eos_boost
+
     # S2S Incremental/Session backend options (shared config)
     if args.backend in ("s2s_incremental", "s2s_session"):
         if args.config_path:
@@ -356,6 +404,15 @@ def main():
     print(f"  Batch Timeout: {args.batch_timeout}s")
     print(f"  Device: {args.device}")
     print(f"  Dtype: {args.dtype}")
+    if args.backend == "s2s":
+        if args.config_path:
+            print(f"  Config Path: {args.config_path}")
+        if args.tts_ckpt_path:
+            print(f"  TTS Checkpoint: {args.tts_ckpt_path}")
+        if args.speaker_reference:
+            print(f"  Speaker Reference: {args.speaker_reference}")
+        print(f"  Extra Decoding Seconds: {args.extra_decoding_seconds}")
+        print(f"  Inference Boosts: pad={args.inference_pad_boost}, bos={args.inference_bos_boost}, eos={args.inference_eos_boost}")
     if args.backend in ("s2s_incremental", "s2s_session"):
         if args.config_path:
             print(f"  Config Path: {args.config_path}")

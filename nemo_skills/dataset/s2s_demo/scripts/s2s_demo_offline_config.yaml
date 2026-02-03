@@ -1,0 +1,68 @@
+# S2S Demo Evaluation Config with offline backend
+# Based on: /lustre/fsw/portfolios/llmservice/users/kevinhu/s2s/NeMo/scripts/training/iad/s2s/sdv2_hf/conv/nano_9b/inf/infer_nano9b_s2s.sh
+# Usage: python run_s2s_demo_eval.py --config s2s_demo_offline_config.yaml
+
+# Cluster settings
+cluster: oci_iad
+partition: batch_block1,batch_block3,batch_block4
+
+# Model checkpoint - latest IAD nano9b model (Jan 2026)
+# STT checkpoint in HuggingFace format
+model: /lustre/fsw/portfolios/llmservice/users/apasad/projects/nemo_s2s_merged_dec/exp_SFT-nano9b/IAD_nano9b_parakeet600m_from_PT_32k_64gpu_5e-5_PT0.7_SFT0.05_QA0.02_TEXT0.1_loss0.5_MCQ0.03_ASR0.01_sysp0.03_NoiseProb0.5_SNR-30-60_asr_dtc2_dst15_loss_text5.0_bos10.0_eos5.0_pad1.0_eosplacementsfix_nospecaug_ei0.1_ot8_TN_all_data_v3.2_ir/checkpoints_hf_step-12556-last.ckpt
+
+server_type: vllm
+server_gpus: 1
+
+# Use serve_unified with S2S offline backend
+server_entrypoint: "-m nemo_skills.inference.server.serve_unified"
+server_args: >-
+  --backend s2s
+  --config_path /lustre/fsw/portfolios/llmservice/users/kevinhu/projects/duplex-stt/config/inference/infer_nano_eartts_Fullduplexbench_Jan22_2026.yaml
+  --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/S2S-full-duplex/inference_references/Emma_S3_A1_SC7_singleturntarget_21_channel_1_audio_in.wav
+  --tts_ckpt_path /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Duplex_EARTTS/eartts_rvq_cont_task_nanov2_tts_pretraining_wordlist_duplex_data_new_branch_4nodes_duplex_eartts_2_delay_4rd_stage_fp32_wd_1500_et_eos_dp_eos_dup_step_10004.ckpt
+  --extra_decoding_seconds 0
+  --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
+
+# Container with NeMo and S2S support
+server_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/nemo_duplex_november_eartts.sqsh
+
+# Hydra overrides for generation
+server_server_type: vllm_multimodal
+
+# Data and output
+data_dir: /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/voicebench_test/data_dir
+benchmark: s2s_demo.demo_20251124
+output_dir: /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/s2s_demo_offline/runs/demo_20251124
+
+# Job settings
+expname: s2s_demo_offline
+num_chunks: 8
+# max_samples: 2  # Uncomment to limit samples for testing
+
+# Pipeline control (can also be set via CLI flags)
+# generation_only: false  # Only run generation, skip scoring
+# scoring_only: false     # Only run scoring, skip generation
+# llm_judge_only: false   # Only run LLM judge, skip generation and scoring
+
+# Scoring settings
+scoring_container: /lustre/fsw/portfolios/llmservice/users/pzelasko/containers/nemo-25.04-pytorch2.7-28may25.sqsh
+scoring_partition: batch_block1,batch_block3,batch_block4
+
+scoring:
+  barge_in_threshold_sec: 1.5
+  tt_latency_threshold_sec: 1.5
+  tt_precision_buffer_sec: 0.5
+  tt_recall_buffer_sec: 0.5
+  vad_min_silence_duration_ms: 1500
+  verbose: true
+  disable_transcription: false
+  save_per_sample_results: true  # Saves segmentation/ASR to output_with_eval.jsonl
+  force_recompute: false  # Recompute segmentation/ASR even if cached
+  segment_buffer_sec: 1
+
+# LLM Judge settings
+llm_judge:
+  enabled: true
+  model: us/azure/openai/gpt-4.1
+  server_type: openai
+  base_url: https://inference-api.nvidia.com/v1
