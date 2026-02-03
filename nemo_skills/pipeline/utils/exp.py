@@ -36,7 +36,21 @@ except ImportError:
     get_packaging_job_key = None
 
 
-from torchx.specs.api import AppState
+try:
+    from torchx.specs.api import AppState
+except ImportError:
+    # Fallback for environments where torchx can't be installed due to urllib3 conflicts
+    from enum import Enum
+
+    class AppState(Enum):
+        RUNNING = "RUNNING"
+        PENDING = "PENDING"
+        SUBMITTED = "SUBMITTED"
+        UNKNOWN = "UNKNOWN"
+        SUCCEEDED = "SUCCEEDED"
+        FAILED = "FAILED"
+        CANCELLED = "CANCELLED"
+
 
 from nemo_skills.pipeline.utils.cluster import (
     get_env_variables,
