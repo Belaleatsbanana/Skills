@@ -16,7 +16,28 @@
 
 import argparse
 import json
+import re
 from pathlib import Path
+
+
+def clean_special_tokens(text: str) -> str:
+    """Remove special timing/frame tokens from S2S model output.
+
+    The S2S model outputs special tokens like:
+    - <$X.XX$> - energy/confidence markers
+    - <|X.XX|> - timing/duration markers
+
+    These should be stripped for clean text output used in evaluation.
+    """
+    if not text:
+        return text
+    # Remove <$X.XX$> patterns (energy/confidence)
+    text = re.sub(r'<\$[\d.]+\$>', '', text)
+    # Remove <|X.XX|> patterns (timing)
+    text = re.sub(r'<\|[\d.]+\|>', '', text)
+    # Clean up extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 # Mapping from VoiceBench subtests to evaluator types
 SUBTEST_TO_EVALUATOR = {
@@ -126,9 +147,11 @@ def convert_entry(entry: dict, entry_index: int = 0) -> dict:
     """
     # Prefer 'prompt' if it exists (e.g., for ifeval), otherwise use 'problem'
     prompt_text = entry.get("prompt") or entry.get("problem", "")
+    # Clean special tokens from generation (S2S model outputs timing markers)
+    generation = clean_special_tokens(entry.get("generation", ""))
     converted = {
         "prompt": prompt_text,
-        "response": entry.get("generation", ""),
+        "response": generation,
         # Default reference to empty string if not present (e.g., for mtbench)
         "reference": entry.get("expected_answer") or "",
     }
