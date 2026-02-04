@@ -100,7 +100,7 @@ def test_content_text_to_list_with_multiple_audios(mock_vllm_multimodal_model, t
 
     assert isinstance(result["content"], list)
     assert len(result["content"]) == 3
-    # Audio MUST come before text for Qwen Audio
+    # Audio MUST come before text for models to process correctly.
     assert result["content"][0]["type"] == "input_audio"
     assert result["content"][1]["type"] == "input_audio"
     assert result["content"][2]["type"] == "text"

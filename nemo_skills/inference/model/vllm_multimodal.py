@@ -167,54 +167,38 @@ class VLLMMultimodalModel(VLLMModel):
             message: Message dict that may contain 'audio' or 'audios' fields.
 
         Returns:
-            Message dict with content converted to list format including audio.
+            New message dict with content converted to list format including audio.
         """
         if "audio" not in message and "audios" not in message:
             return message
 
-        if "content" not in message:
+        result = copy.deepcopy(message)
+
+        if "content" not in result:
             raise KeyError("Missing required 'content' in message")
-        content = message["content"]
+        content = result["content"]
         if isinstance(content, str):
-            message["content"] = [{"type": "text", "text": content}]
-        elif isinstance(content, list):
-            message["content"] = content
-        else:
+            result["content"] = [{"type": "text", "text": content}]
+        elif not isinstance(content, list):
             raise TypeError(f"Unexpected content type: {type(content)}")
 
         audio_items = []
 
-        if "audio" in message:
-            audio = message["audio"]
+        if "audio" in result:
+            audio = result.pop("audio")
             audio_path = os.path.join(self.data_dir, audio["path"])
             base64_audio = audio_file_to_base64(audio_path)
             audio_items.append(make_audio_content_block(base64_audio, "input_audio"))
-            del message["audio"]  # Remove original audio field after conversion
-        elif "audios" in message:
-            for audio in message["audios"]:
+        elif "audios" in result:
+            for audio in result.pop("audios"):
                 audio_path = os.path.join(self.data_dir, audio["path"])
                 base64_audio = audio_file_to_base64(audio_path)
                 audio_items.append(make_audio_content_block(base64_audio, "input_audio"))
-            del message["audios"]  # Remove original audios field after conversion
 
-        # Insert audio items at the BEGINNING of content list (before text)
         if audio_items:
-            message["content"] = audio_items + message["content"]
+            result["content"] = audio_items + result["content"]
 
-        return message
-
-    def _preprocess_messages_for_model(self, messages: list[dict]) -> list[dict]:
-        """Preprocess messages - creates copies to avoid mutation.
-
-        Note: /no_think suffix is passed through unchanged (handled by the model).
-
-        Args:
-            messages: List of message dicts.
-
-        Returns:
-            Copy of message dicts.
-        """
-        return [copy.deepcopy(msg) for msg in messages]
+        return result
 
     def _needs_audio_chunking(self, messages: list[dict], task_type: str = None) -> tuple[bool, str, float]:
         """Check if audio in messages needs chunking.
@@ -321,9 +305,6 @@ class VLLMMultimodalModel(VLLMModel):
 
                 chunk_messages.append(msg_copy)
 
-            # Preprocess messages (strip /no_think for Qwen)
-            chunk_messages = self._preprocess_messages_for_model(chunk_messages)
-
             # Generate for this chunk using parent's generate_async
             result = await super().generate_async(
                 prompt=chunk_messages, tokens_to_generate=tokens_to_generate, **kwargs
@@ -383,9 +364,7 @@ class VLLMMultimodalModel(VLLMModel):
                 return await self._generate_with_chunking(messages, audio_path, duration, tokens_to_generate, **kwargs)
 
             # No chunking needed - convert audio fields to base64 format
-            messages = [self.content_text_to_list(copy.deepcopy(msg)) for msg in messages]
-            messages = self._preprocess_messages_for_model(messages)
-            prompt = messages
+            prompt = [self.content_text_to_list(msg) for msg in messages]
 
         # Call parent's generate_async (which handles audio OUTPUT via _parse_chat_completion_response)
         return await super().generate_async(prompt=prompt, tokens_to_generate=tokens_to_generate, **kwargs)
@@ -404,7 +383,5 @@ class VLLMMultimodalModel(VLLMModel):
         Returns:
             Request parameters dict.
         """
-        # content_text_to_list THEN preprocess
-        messages = [self.content_text_to_list(copy.deepcopy(msg)) for msg in messages]
-        messages = self._preprocess_messages_for_model(messages)
+        messages = [self.content_text_to_list(msg) for msg in messages]
         return super()._build_chat_request_params(messages=messages, **kwargs)
