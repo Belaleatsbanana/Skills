@@ -87,12 +87,3 @@ stages:
     dependencies:
       - assess_proof_quality
     stage_kwargs: ${generate_kwargs}
-
-  decontaminate:
-    output_dir: ${directories.step-7-decontaminate}
-    input_file: ${directories.step-6-discussion-quality}/accepted.jsonl
-    datasets: ${decontamination_datasets}
-    dependencies:
-      - assess_discussion_quality
-    inline_args: ""
-    stage_kwargs: ${generate_kwargs}
