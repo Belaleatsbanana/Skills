@@ -54,7 +54,7 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/extract-problems.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/common/extract-problems.yaml "
             f"++inference.top_p=0.95 "
             f"++inference.temperature=1.0 "
             f"++inference.tokens_to_generate=120000 "
@@ -96,7 +96,7 @@ def classify_if_proof(cluster, expname, run_after, stage_config, **kwargs):
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/classify-if-proof.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/common/classify-if-proof.yaml "
             f"++inference.top_p=0.95 "
             f"++inference.temperature=1.0 "
             f"++inference.tokens_to_generate=120000 "
@@ -137,7 +137,7 @@ def extract_proof(cluster, expname, run_after, stage_config, **kwargs):
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/extract-proof.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/extract-proof.yaml "
             f"++inference.top_p=0.95 "
             f"++inference.temperature=1.0 "
             f"++inference.tokens_to_generate=120000 "
@@ -180,7 +180,7 @@ def assess_problem_quality(cluster, expname, run_after, stage_config, **kwargs):
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-problem-quality.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-problem-quality.yaml "
             f"++inference.top_p=0.95 "
             f"++inference.temperature=1.0 "
             f"++inference.tokens_to_generate=120000 "
@@ -223,7 +223,7 @@ def assess_discussion_quality(cluster, expname, run_after, stage_config, **kwarg
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-discussion-quality.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-discussion-quality.yaml "
             f"++inference.top_p=0.95 "
             f"++inference.temperature=1.0 "
             f"++inference.tokens_to_generate=120000 "
@@ -266,7 +266,7 @@ def assess_proof_quality(cluster, expname, run_after, stage_config, **kwargs):
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-proof-quality.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-proof-quality.yaml "
             f"++inference.top_p=0.95 "
             f"++inference.temperature=1.0 "
             f"++inference.tokens_to_generate=120000 "
@@ -309,7 +309,7 @@ def assess_imo_readiness(cluster, expname, run_after, stage_config, **kwargs):
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-imo-readiness.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-imo-readiness.yaml "
             f"++inference.top_p=0.95 "
             f"++inference.temperature=1.0 "
             f"++inference.tokens_to_generate=120000 "

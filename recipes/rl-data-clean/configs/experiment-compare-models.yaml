@@ -76,7 +76,7 @@ stages:
     input_file: ${directories.step-2-classify}/proof.jsonl
     dependencies:
       - classify_if_proof
-    inline_args: "++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-proof-quality.yaml"
+    inline_args: "++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-proof-quality.yaml"
     stage_kwargs: ${model_120b}
 
   # Proof quality assessment - Model 2 (DeepSeek)
@@ -85,7 +85,7 @@ stages:
     input_file: ${directories.step-2-classify}/proof.jsonl
     dependencies:
       - classify_if_proof
-    inline_args: "++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-proof-quality.yaml"
+    inline_args: "++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-proof-quality.yaml"
     stage_kwargs: ${model_deepseek}
 
   # Compare proof quality assessments
@@ -110,7 +110,7 @@ stages:
     input_file: ${directories.step-3-proof-120b}/output.jsonl
     dependencies:
       - assess_proof_quality_120b
-    inline_args: "++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-imo-readiness.yaml"
+    inline_args: "++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-imo-readiness.yaml"
     stage_kwargs: ${model_120b}
 
   # IMO readiness - Model 2 (DeepSeek)
@@ -119,7 +119,7 @@ stages:
     input_file: ${directories.step-3-proof-deepseek}/output.jsonl
     dependencies:
       - assess_proof_quality_deepseek
-    inline_args: "++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-imo-readiness.yaml"
+    inline_args: "++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-imo-readiness.yaml"
     stage_kwargs: ${model_deepseek}
 
   # Compare IMO readiness assessments
