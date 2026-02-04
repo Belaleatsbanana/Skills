@@ -20,6 +20,9 @@ from nemo_skills.utils import python_doc_to_cmd_help
 # NIM models (speech)
 from .asr_nim import ASRNIMModel
 
+# NeMo models (speech)
+from .nemo_asr import NemoASRModel
+
 # Audio utilities
 from .audio_utils import (
     audio_file_to_base64,
@@ -65,6 +68,7 @@ models = {
     "sglang": SGLangModel,
     "tts_nim": TTSNIMModel,
     "asr_nim": ASRNIMModel,
+    "nemo_asr": NemoASRModel,
 }
 
 

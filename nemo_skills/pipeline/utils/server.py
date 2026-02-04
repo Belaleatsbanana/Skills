@@ -26,6 +26,7 @@ class SupportedServersSelfHosted(str, Enum):
     vllm = "vllm"
     sglang = "sglang"
     megatron = "megatron"
+    nemo_asr = "nemo_asr"
     generic = "generic"
 
 
@@ -206,6 +207,17 @@ def get_server_command(
             num_tasks = 1
         else:
             num_tasks = num_gpus
+    elif server_type == "nemo_asr":
+        server_entrypoint = server_entrypoint or "-m nemo_skills.inference.server.serve_nemo_asr"
+        server_start_cmd = (
+            f"python3 {server_entrypoint} "
+            f"    --model {model_path} "
+            f"    --num_gpus {num_gpus} "
+            f"    --num_nodes {num_nodes} "
+            f"    --port {server_port} "
+            f"    {server_args} "
+        )
+        num_tasks = 1
     elif server_type == "generic":
         if not server_entrypoint:
             raise ValueError("For 'generic' server type, 'server_entrypoint' must be specified.")
