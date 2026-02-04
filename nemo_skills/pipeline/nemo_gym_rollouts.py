@@ -140,6 +140,12 @@ def nemo_gym_rollouts(
         help="If False (default), skip seeds that already have output files. "
         "If True, re-run all seeds even if output files exist.",
     ),
+    use_mounted_nemo_skills: bool = typer.Option(
+        True,
+        help="If True (default), use the nemo-skills code packaged to /nemo_run/code. "
+        "If False, avoid /nemo_run/code and use the container's installed nemo-skills instead. "
+        "Set to False when you want Gym to use its own bundled nemo-skills version.",
+    ),
     dry_run: bool = typer.Option(False, help="Validate without executing"),
     sbatch_kwargs: str = typer.Option("", help="Additional sbatch kwargs as JSON string"),
 ):
@@ -324,6 +330,8 @@ def nemo_gym_rollouts(
             script=nemo_gym_script,
             container=cluster_config["containers"]["nemo-rl"],
             name=f"{expname}_nemo_gym{job_suffix}",
+            # If use_mounted_nemo_skills=False, avoid /nemo_run/code so Gym uses its bundled version
+            avoid_nemo_run_code=not use_mounted_nemo_skills,
         )
         components.append(nemo_gym_cmd)
 
