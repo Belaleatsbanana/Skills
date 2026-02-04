@@ -368,20 +368,3 @@ class VLLMMultimodalModel(VLLMModel):
 
         # Call parent's generate_async (which handles audio OUTPUT via _parse_chat_completion_response)
         return await super().generate_async(prompt=prompt, tokens_to_generate=tokens_to_generate, **kwargs)
-
-    def _build_chat_request_params(
-        self,
-        messages: list[dict],
-        **kwargs,
-    ) -> dict:
-        """Build chat request parameters with audio preprocessing.
-
-        Args:
-            messages: List of message dicts.
-            **kwargs: Additional parameters for the request.
-
-        Returns:
-            Request parameters dict.
-        """
-        messages = [self.content_text_to_list(msg) for msg in messages]
-        return super()._build_chat_request_params(messages=messages, **kwargs)
