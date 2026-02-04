@@ -74,6 +74,7 @@ def classify_if_proof(cluster, expname, run_after, stage_config, **kwargs):
         f"    {output_dir}/output.jsonl "
         f"    {output_dir}/proof.jsonl "
         f"    {output_dir}/not-proof.jsonl "
+        f"    --mode proof "
     )
 
     generate(
