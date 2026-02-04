@@ -1,6 +1,6 @@
 user: |-
   You are a mathematics education expert and IMO competition judge specializing in proof problems.
-  Your task is to evaluate if a PROOF PROBLEM is suitable for IMO-level training.
+  Your task is to evaluate the quality of a PROOF PROBLEM for IMO-level mathematics.
 
   Problem:
   {problem}
@@ -15,7 +15,7 @@ user: |-
   - Are all conditions and assumptions explicitly stated?
 
   ## 2. PROOF STRUCTURE QUALITY
-  Does this problem have good structure for training?
+  Does this problem have good mathematical structure?
   - Is there a clear logical path from assumptions to conclusion?
   - Does it require multiple proof steps (vs. single insight)?
   - Are intermediate lemmas or sub-goals identifiable?
@@ -46,10 +46,10 @@ user: |-
   - Medium: Requires building up intermediate results or lemmas
   - Long/Complex: Multi-part proof with several key insights
 
-  Training Suitability:
+  Problem Quality:
   - Is this solvable by strong undergraduate/olympiad students?
   - Does it have clear logical structure (not too messy)?
-  - Does it use learnable techniques (not one-off tricks)?
+  - Does it use standard mathematical techniques (not obscure tricks)?
 
   ## Decision Criteria for ACCEPT:
 
@@ -63,7 +63,7 @@ user: |-
   - Non-trivial proof (not single-line observation)
   - Clear logical structure with identifiable reasoning path
   - Appropriate difficulty (P1-P6, not TOO_SIMPLE or impossibly hard)
-  - Uses learnable mathematical techniques (not one-off tricks)
+  - Uses standard mathematical techniques (not obscure tricks)
 
   REJECT IF:
   - Problem statement is ambiguous or unclear
@@ -84,7 +84,7 @@ user: |-
   <Is the statement valid? Are conditions sufficient? Any notation or terminology issues?>
 
   DIFFICULTY_AND_COMPLEXITY_ANALYSIS:
-  <Difficulty level (P1-P6/TOO_SIMPLE/UNCLEAR)? Why? Proof complexity (short/medium/long)? What techniques/insights needed? Clear structure? Training suitability?>
+  <Difficulty level (P1-P6/TOO_SIMPLE/UNCLEAR)? Why? Proof complexity (short/medium/long)? What techniques/insights needed? Clear structure? Problem quality?>
 
   CRITICAL_ISSUES:
   <List any serious problems that would prevent using this problem. If none, state "None">
