@@ -118,6 +118,39 @@ def classify_problems(cluster, expname, run_after, stage_config, **kwargs):
     return {"last_expname": last_mode_expname}
 
 
+def assess_problem_quality(cluster, expname, run_after, stage_config, **kwargs):
+    """Assess problem-only quality (before extracting answers)."""
+    output_dir = stage_config["output_dir"]
+    input_file = stage_config["input_file"]
+
+    postprocess_cmd = (
+        f"python /nemo_run/code/recipes/rl-data-clean/scripts/postprocess_quality_assessment.py "
+        f"    {output_dir}/output.jsonl "
+        f"    {output_dir}/accepted.jsonl "
+        f"    {output_dir}/rejected.jsonl "
+        f"    --stage problem_only_quality "
+    )
+
+    generate(
+        ctx=wrap_arguments(
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-problem-only-quality.yaml "
+            f"++inference.tokens_to_generate=120000 "
+            f"++inference.temperature=1.0 "
+            f"++inference.top_p=1.0 "
+            f"++server.enable_soft_fail=True "
+            f"++chat_template_kwargs.reasoning_effort=high "
+            f"{stage_config.get('inline_args', '')} "
+        ),
+        cluster=cluster,
+        input_file=input_file,
+        output_dir=output_dir,
+        postprocess_cmd=postprocess_cmd,
+        expname=expname,
+        run_after=run_after,
+        **stage_config.get("stage_kwargs", {}),
+    )
+
+
 def extract_answers(cluster, expname, run_after, stage_config, **kwargs):
     """Extract answers from forum discussions."""
     output_dir = stage_config["output_dir"]
@@ -249,9 +282,10 @@ def assess_complete_solution_quality(cluster, expname, run_after, stage_config, 
 stages_map = {
     "extract_problems": extract_problems,
     "classify_problems": classify_problems,
+    "assess_problem_quality": assess_problem_quality,
     "extract_answers": extract_answers,
-    "extract_solution": extract_solution,
     "assess_problem_answer_quality": assess_problem_answer_quality,
+    "extract_solution": extract_solution,
     "assess_complete_solution_quality": assess_complete_solution_quality,
 }
 

@@ -1,0 +1,73 @@
+user: |-
+  You are a mathematics education expert. Your task is to evaluate the quality of a math problem statement.
+
+  Problem:
+  {problem}
+
+  Evaluate the problem across these dimensions:
+
+  ## 1. CLARITY & WELL-DEFINEDNESS
+  Is the problem statement clear and unambiguous?
+  - Are all terms, variables, and mathematical objects well-defined?
+  - Is the question being asked completely clear?
+  - Is mathematical notation standard and correct?
+  - Are all conditions and constraints explicitly stated?
+
+  ## 2. COMPLETENESS
+  Does the problem contain all necessary information?
+  - Is the problem self-contained and solvable with given information?
+  - Are all required constraints, conditions, or parameters present?
+  - Is there missing information that would prevent solving?
+
+  ## 3. MATHEMATICAL CORRECTNESS
+  Is the problem mathematically sound?
+  - Is the problem statement mathematically valid?
+  - Are the given conditions consistent (no contradictions)?
+  - Is notation used correctly?
+  - Are there any mathematical errors?
+
+  ## 4. PROBLEM TYPE & DIFFICULTY
+  What type and difficulty level is this problem?
+
+  Type:
+  - Computational: Primarily calculation-based
+  - Conceptual: Requires understanding and reasoning
+  - Mixed: Combines calculation and conceptual understanding
+
+  Difficulty:
+  - Easy: Straightforward application of basic concepts
+  - Medium: Requires multiple steps or non-trivial reasoning
+  - Hard: Requires insight, creativity, or advanced techniques
+
+  ## Decision Criteria:
+
+  ACCEPT if:
+  - Problem is clear, complete, and unambiguous
+  - All necessary information is present
+  - Mathematically valid and correct
+  - Question is well-defined and answerable
+
+  REJECT if:
+  - Problem is unclear or ambiguous
+  - Missing critical information
+  - Mathematically invalid or contradictory
+  - Cannot determine what is being asked
+
+  Provide your assessment in EXACT format:
+
+  CLARITY_AND_COMPLETENESS_ANALYSIS:
+  <Is the problem clear and complete? Well-defined terms? All information present? Any ambiguities or missing info?>
+
+  MATHEMATICAL_CORRECTNESS_ANALYSIS:
+  <Is the problem valid? Any contradictions? Notation correct? Any errors?>
+
+  PROBLEM_TYPE_AND_DIFFICULTY:
+  <Type (computational/conceptual/mixed)? Difficulty (easy/medium/hard)? Why? What skills/concepts needed?>
+
+  CRITICAL_ISSUES:
+  <List any serious problems. If none, state "None">
+
+  DECISION: <ACCEPT/REJECT>
+  DECISION_REASONING: <Why accept or reject? Reference specific issues or strengths.>
+
+  Output:

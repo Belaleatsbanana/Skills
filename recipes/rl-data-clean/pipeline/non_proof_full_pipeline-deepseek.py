@@ -138,6 +138,49 @@ def classify_problems(cluster, expname, run_after, stage_config, **kwargs):
     return {"last_expname": last_mode_expname}
 
 
+def assess_problem_quality(cluster, expname, run_after, stage_config, **kwargs):
+    """Assess problem-only quality (before extracting answers)."""
+    output_dir = stage_config["output_dir"]
+    input_file = stage_config["input_file"]
+
+    postprocess_cmd = (
+        f"python /nemo_run/code/recipes/rl-data-clean/scripts/postprocess_quality_assessment.py "
+        f"    {output_dir}/output.jsonl "
+        f"    {output_dir}/accepted.jsonl "
+        f"    {output_dir}/rejected.jsonl "
+        f"    --stage problem_only_quality "
+    )
+
+    # Get server args from stage config with deepseek defaults
+    server_args = stage_config.get(
+        "server_args",
+        "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8",
+    )
+
+    stage_kwargs = stage_config.get("stage_kwargs", {}).copy()
+    stage_kwargs["server_args"] = server_args
+
+    generate(
+        ctx=wrap_arguments(
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-problem-only-quality.yaml "
+            f"++inference.top_p=0.95 "
+            f"++inference.temperature=1.0 "
+            f"++inference.tokens_to_generate=120000 "
+            f"++max_concurrent_requests=1024 "
+            f"++inference.endpoint_type=chat "
+            f"++chat_template_kwargs.thinking=true "
+            f"{stage_config.get('inline_args', '')} "
+        ),
+        cluster=cluster,
+        input_file=input_file,
+        output_dir=output_dir,
+        postprocess_cmd=postprocess_cmd,
+        expname=expname,
+        run_after=run_after,
+        **stage_kwargs,
+    )
+
+
 def extract_answers(cluster, expname, run_after, stage_config, **kwargs):
     """Extract answers from forum discussions."""
     output_dir = stage_config["output_dir"]
@@ -309,9 +352,10 @@ def assess_complete_solution_quality(cluster, expname, run_after, stage_config, 
 stages_map = {
     "extract_problems": extract_problems,
     "classify_problems": classify_problems,
+    "assess_problem_quality": assess_problem_quality,
     "extract_answers": extract_answers,
-    "extract_solution": extract_solution,
     "assess_problem_answer_quality": assess_problem_answer_quality,
+    "extract_solution": extract_solution,
     "assess_complete_solution_quality": assess_complete_solution_quality,
 }
 

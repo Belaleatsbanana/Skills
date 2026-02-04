@@ -22,19 +22,21 @@ generate_kwargs:
 pipeline_stages:
   - extract_problems
   - classify_problems  # Serial filtering: proof -> mcq -> binary -> invalid
+  - assess_problem_quality  # NEW: Assess problem-only quality first
   - extract_answers
-  - extract_solution
   - assess_problem_answer_quality
+  - extract_solution
   - assess_complete_solution_quality
 
 # Output directories
 directories:
   step-1-extract: ${base_output_dir}/${model_name}/step-1-extract-problems
   step-2-classify: ${base_output_dir}/${model_name}/step-2-classify-problems
-  step-3-extract-answers: ${base_output_dir}/${model_name}/step-3-extract-answers
-  step-4-extract-solution: ${base_output_dir}/${model_name}/step-4-extract-solution
-  step-5a-problem-answer: ${base_output_dir}/${model_name}/step-5a-assess-problem-answer
-  step-5b-complete-solution: ${base_output_dir}/${model_name}/step-5b-assess-complete-solution
+  step-3-problem-quality: ${base_output_dir}/${model_name}/step-3-assess-problem-quality
+  step-4-extract-answers: ${base_output_dir}/${model_name}/step-4-extract-answers
+  step-5-problem-answer: ${base_output_dir}/${model_name}/step-5-assess-problem-answer
+  step-6-extract-solution: ${base_output_dir}/${model_name}/step-6-extract-solution
+  step-7-complete-solution: ${base_output_dir}/${model_name}/step-7-assess-complete-solution
 
 # Stage configurations
 stages:
@@ -61,37 +63,46 @@ stages:
     stage_kwargs: ${generate_kwargs}
     server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
 
-  # Extract answers from valid non-proof problems
-  extract_answers:
-    output_dir: ${directories.step-3-extract-answers}
-    input_file: ${directories.step-2-classify}/invalid/no.jsonl  # Final filtered result
+  # NEW: Assess problem quality first
+  assess_problem_quality:
+    output_dir: ${directories.step-3-problem-quality}
+    input_file: ${directories.step-2-classify}/invalid/no.jsonl  # Valid non-proof problems
     dependencies:
       - classify_problems
     stage_kwargs: ${generate_kwargs}
     server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
 
-  # Extract solution
-  extract_solution:
-    output_dir: ${directories.step-4-extract-solution}
-    input_file: ${directories.step-3-extract-answers}/extracted-answers.jsonl
+  # Extract answers from high-quality problems only
+  extract_answers:
+    output_dir: ${directories.step-4-extract-answers}
+    input_file: ${directories.step-3-problem-quality}/accepted.jsonl  # Only high-quality problems
+    dependencies:
+      - assess_problem_quality
+    stage_kwargs: ${generate_kwargs}
+    server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
+
+  # Assess problem + answer quality
+  assess_problem_answer_quality:
+    output_dir: ${directories.step-5-problem-answer}
+    input_file: ${directories.step-4-extract-answers}/extracted-answers.jsonl
     dependencies:
       - extract_answers
     stage_kwargs: ${generate_kwargs}
     server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
 
-  # Quality assessment - Problem + Answer only
-  assess_problem_answer_quality:
-    output_dir: ${directories.step-5a-problem-answer}
-    input_file: ${directories.step-4-extract-solution}/extracted-solutions.jsonl
+  # Extract solution from good problem+answer pairs
+  extract_solution:
+    output_dir: ${directories.step-6-extract-solution}
+    input_file: ${directories.step-5-problem-answer}/accepted.jsonl  # Only good problem+answer pairs
     dependencies:
-      - extract_solution
+      - assess_problem_answer_quality
     stage_kwargs: ${generate_kwargs}
     server_args: "--ep-size 16 --dp 16 --enable-dp-attention --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3 --mem-fraction-static=0.8"
 
-  # Quality assessment - Complete triplet
+  # Final quality assessment - Complete triplet
   assess_complete_solution_quality:
-    output_dir: ${directories.step-5b-complete-solution}
-    input_file: ${directories.step-4-extract-solution}/extracted-solutions.jsonl
+    output_dir: ${directories.step-7-complete-solution}
+    input_file: ${directories.step-6-extract-solution}/extracted-solutions.jsonl
     dependencies:
       - extract_solution
     stage_kwargs: ${generate_kwargs}

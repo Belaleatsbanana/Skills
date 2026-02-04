@@ -105,6 +105,18 @@ def parse_complete_solution_quality(generation: str) -> Dict[str, Any]:
     }
 
 
+def parse_problem_only_quality(generation: str) -> Dict[str, Any]:
+    """Parse problem-only quality assessment output"""
+    return {
+        "decision": parse_decision(generation),
+        "clarity_and_completeness_analysis": parse_field(generation, "CLARITY_AND_COMPLETENESS_ANALYSIS"),
+        "mathematical_correctness_analysis": parse_field(generation, "MATHEMATICAL_CORRECTNESS_ANALYSIS"),
+        "problem_type_and_difficulty": parse_field(generation, "PROBLEM_TYPE_AND_DIFFICULTY"),
+        "critical_issues": parse_field(generation, "CRITICAL_ISSUES"),
+        "decision_reasoning": parse_field(generation, "DECISION_REASONING"),
+    }
+
+
 def parse_problem_answer_quality(generation: str) -> Dict[str, Any]:
     """Parse problem-answer quality assessment output (quick screening)"""
     return {
@@ -130,8 +142,9 @@ def filter_by_decision(
         "discussion_quality": parse_discussion_quality,
         "proof_quality": parse_proof_quality,
         "imo_readiness": parse_imo_readiness,
-        "complete_solution_quality": parse_complete_solution_quality,
+        "problem_only_quality": parse_problem_only_quality,
         "problem_answer_quality": parse_problem_answer_quality,
+        "complete_solution_quality": parse_complete_solution_quality,
     }
 
     parse_func = parse_funcs[stage]
@@ -210,8 +223,9 @@ def main():
             "discussion_quality",
             "proof_quality",
             "imo_readiness",
-            "complete_solution_quality",
+            "problem_only_quality",
             "problem_answer_quality",
+            "complete_solution_quality",
         ],
         help="Which assessment stage",
     )
