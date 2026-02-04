@@ -228,7 +228,7 @@ def assess_problem_answer_quality(cluster, expname, run_after, stage_config, **k
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/assess-problem-answer-quality.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/non-proof/assess-problem-answer-quality.yaml "
             f"++inference.tokens_to_generate=120000 "
             f"++inference.temperature=1.0 "
             f"++inference.top_p=1.0 "
