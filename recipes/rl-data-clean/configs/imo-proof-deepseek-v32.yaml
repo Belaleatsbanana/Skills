@@ -23,8 +23,8 @@ generate_kwargs:
 pipeline_stages:
   - extract_problems
   - classify_if_proof
-  - assess_problem_quality  # ← 先评估问题质量
-  - extract_proof           # ← 再提取proof（只处理高质量问题）
+  - assess_problem_quality
+  - extract_proof
   - assess_discussion_quality
   - assess_proof_quality
   - assess_imo_readiness
@@ -44,8 +44,8 @@ decontamination_datasets:
 directories:
   step-1-extract: ${base_output_dir}/${model_name}/step-1-extract-problems
   step-2-classify: ${base_output_dir}/${model_name}/step-2-classify-proof
-  step-3-problem-quality: ${base_output_dir}/${model_name}/step-3-problem-quality  # ← 先评估问题
-  step-4-extract-proof: ${base_output_dir}/${model_name}/step-4-extract-proof      # ← 再提取proof
+  step-3-problem-quality: ${base_output_dir}/${model_name}/step-3-problem-quality
+  step-4-extract-proof: ${base_output_dir}/${model_name}/step-4-extract-proof
   step-5-discussion-quality: ${base_output_dir}/${model_name}/step-5-discussion-quality
   step-6-proof-quality: ${base_output_dir}/${model_name}/step-6-proof-quality
   step-7-imo-readiness: ${base_output_dir}/${model_name}/step-7-imo-readiness
@@ -67,21 +67,21 @@ stages:
 
   assess_problem_quality:
     output_dir: ${directories.step-3-problem-quality}
-    input_file: ${directories.step-2-classify}/proof.jsonl  # ← 先评估分类出的proof问题
+    input_file: ${directories.step-2-classify}/proof.jsonl
     dependencies:
       - classify_if_proof
     stage_kwargs: ${generate_kwargs}
 
   extract_proof:
     output_dir: ${directories.step-4-extract-proof}
-    input_file: ${directories.step-3-problem-quality}/accepted.jsonl  # ← 只提取高质量问题的proof
+    input_file: ${directories.step-3-problem-quality}/accepted.jsonl
     dependencies:
       - assess_problem_quality
     stage_kwargs: ${generate_kwargs}
 
   assess_discussion_quality:
     output_dir: ${directories.step-5-discussion-quality}
-    input_file: ${directories.step-4-extract-proof}/extracted-proofs.jsonl  # ← 评估提取的proof
+    input_file: ${directories.step-4-extract-proof}/extracted-proofs.jsonl  #
     dependencies:
       - extract_proof
     stage_kwargs: ${generate_kwargs}
