@@ -2,7 +2,7 @@
 # Use this if Phase 1 experiment shows >90% agreement
 
 cluster: dfw
-base_output_dir: /workspace/rl-data-clean/test
+base_output_dir: /workspace/rl-data-clean/proof
 model_name: gpt-oss-120b # Model name for organizing outputs
 expname: imo-proof-${model_name}
 suffix: single-model
