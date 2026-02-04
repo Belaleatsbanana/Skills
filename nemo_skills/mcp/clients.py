@@ -17,6 +17,7 @@ import functools
 import json
 import logging
 import os
+import time
 from abc import abstractmethod
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, List
@@ -406,11 +407,23 @@ class MCPStreamableHttpClient(MCPClient):
 
     async def call_tool(self, tool: str, args: dict) -> Any:
         self._assert_tool_allowed(tool)
-        async with streamablehttp_client(self.base_url) as (read_stream, write_stream, _):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                result = await session.call_tool(tool, arguments=args)
-                return _extract_tool_result(result)
+
+        # Extract trace_id for logging (if provided in args)
+        trace_id = args.get("trace_id")
+        if trace_id:
+            LOG.info(f"[TRACE:{trace_id}] layer=mcp_http_client event=request_start url={self.base_url}")
+
+        start_time = time.perf_counter()
+        try:
+            async with streamablehttp_client(self.base_url) as (read_stream, write_stream, _):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    result = await session.call_tool(tool, arguments=args)
+                    return _extract_tool_result(result)
+        finally:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            if trace_id:
+                LOG.info(f"[TRACE:{trace_id}] layer=mcp_http_client event=request_done elapsed_ms={elapsed_ms:.1f}")
 
 
 class MCPStdioClient(MCPClient):

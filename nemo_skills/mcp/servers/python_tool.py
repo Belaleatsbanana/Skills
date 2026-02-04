@@ -14,6 +14,7 @@
 
 import argparse
 import logging
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Annotated, Any, Dict
@@ -53,15 +54,25 @@ async def stateful_python_code_exec(
     code: Annotated[str, Field(description="Code to execute")],
     session_id: Annotated[str | None, Field(description="Session id for session persistence")] = None,
     timeout: Annotated[float, Field(description="Time in seconds to allow the job to run")] = 10,
+    trace_id: Annotated[str | None, Field(description="Trace ID for call correlation")] = None,
 ) -> ExecutionResult:
     language = "ipython"
+
+    if trace_id:
+        logger.info(f"[TRACE:{trace_id}] layer=python_tool_server event=received")
+
+    start_time = time.perf_counter()
     try:
         output_dict, session_id = await sandbox.execute_code(
-            code, language=language, timeout=timeout, session_id=session_id
+            code, language=language, timeout=timeout, session_id=session_id, trace_id=trace_id
         )
     except RemoteProtocolError:
         output_dict = {"process_status": "fail", "stdout": "", "stderr": "Error connecting to sandbox"}
         session_id = None
+    finally:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        if trace_id:
+            logger.info(f"[TRACE:{trace_id}] layer=python_tool_server event=done elapsed_ms={elapsed_ms:.1f}")
 
     return {"output_dict": output_dict, "session_id": session_id}
 
@@ -139,7 +150,7 @@ class PythonTool(MCPClientTool):
                     "base_url": base_url or self.DEFAULT_BASE_URL,
                 },
                 # hide args from schemas and sanitize at runtime
-                "hide_args": {"stateful_python_code_exec": ["session_id", "timeout"]},
+                "hide_args": {"stateful_python_code_exec": ["session_id", "timeout", "trace_id"]},
                 # execution-specific default
                 "exec_timeout_s": 10,
             }
@@ -149,11 +160,24 @@ class PythonTool(MCPClientTool):
     async def execute(self, tool_name: str, arguments: Dict[str, Any], extra_args: Dict[str, Any] | None = None):
         # Ensure timeout is sent via extra_args (post-sanitize), not in main arguments
         arguments = dict(arguments)
+        extra_args = dict(extra_args or {})
         request_id = extra_args.pop("request_id")
-        merged_extra = dict(extra_args or {})
+        trace_id = extra_args.get("trace_id")  # Keep trace_id in extra_args for passing through
+
+        merged_extra = dict(extra_args)
         merged_extra.setdefault("timeout", self._config.get("exec_timeout_s", 10))
         merged_extra["session_id"] = self.requests_to_sessions[request_id]
-        result = await self._client.call_tool(tool=tool_name, args=arguments, extra_args=merged_extra)
+
+        if trace_id:
+            logger.info(f"[TRACE:{trace_id}] layer=python_tool event=mcp_call_start")
+
+        start_time = time.perf_counter()
+        try:
+            result = await self._client.call_tool(tool=tool_name, args=arguments, extra_args=merged_extra)
+        finally:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            if trace_id:
+                logger.info(f"[TRACE:{trace_id}] layer=python_tool event=mcp_call_done elapsed_ms={elapsed_ms:.1f}")
 
         # Handle error responses that don't contain session_id
         if "error" in result:
