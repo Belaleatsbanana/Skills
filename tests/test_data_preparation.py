@@ -109,6 +109,7 @@ def test_code_sft_data():
             f"    ++exclude_optional_keys=false "
             f"    ++filters.drop_incorrect_code_blocks=false "
             f"    ++do_shuffle=false "
+            f"    ++input_key=question "
         ),
     )
 

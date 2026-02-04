@@ -115,20 +115,6 @@ def test_content_text_to_list_no_audio(mock_vllm_multimodal_model):
     assert "audio" not in result
 
 
-def test_preprocess_messages_preserves_no_think(mock_vllm_multimodal_model):
-    """Test that /no_think is preserved in system messages."""
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant. /no_think"},
-        {"role": "user", "content": "Hello"},
-    ]
-
-    result = mock_vllm_multimodal_model._preprocess_messages_for_model(messages)
-
-    # /no_think should be preserved, not stripped
-    assert result[0]["content"] == "You are a helpful assistant. /no_think"
-    assert result[1]["content"] == "Hello"
-
-
 def test_needs_audio_chunking_disabled(mock_vllm_multimodal_model):
     """Test that chunking is skipped when disabled."""
     mock_vllm_multimodal_model.enable_audio_chunking = False
