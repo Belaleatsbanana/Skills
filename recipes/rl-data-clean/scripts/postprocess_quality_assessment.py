@@ -109,11 +109,9 @@ def parse_problem_answer_quality(generation: str) -> Dict[str, Any]:
     """Parse problem-answer quality assessment output (quick screening)"""
     return {
         "decision": parse_decision(generation),
-        "problem_clarity_analysis": parse_field(generation, "PROBLEM_CLARITY_ANALYSIS"),
-        "problem_completeness_analysis": parse_field(generation, "PROBLEM_COMPLETENESS_ANALYSIS"),
-        "answer_clarity_analysis": parse_field(generation, "ANSWER_CLARITY_ANALYSIS"),
+        "problem_quality_analysis": parse_field(generation, "PROBLEM_QUALITY_ANALYSIS"),
+        "answer_quality_analysis": parse_field(generation, "ANSWER_QUALITY_ANALYSIS"),
         "consistency_analysis": parse_field(generation, "CONSISTENCY_ANALYSIS"),
-        "rl_training_suitability": parse_field(generation, "RL_TRAINING_SUITABILITY"),
         "critical_issues": parse_field(generation, "CRITICAL_ISSUES"),
         "decision_reasoning": parse_field(generation, "DECISION_REASONING"),
     }
