@@ -1,6 +1,6 @@
 user: |-
   You are a mathematics education expert and IMO competition judge specializing in proof problems.
-  Your task is to evaluate if a PROOF PROBLEM is suitable for IMO-level RL training.
+  Your task is to evaluate if a PROOF PROBLEM is suitable for IMO-level training.
 
   Problem:
   {problem}
@@ -15,7 +15,7 @@ user: |-
   - Are all conditions and assumptions explicitly stated?
 
   ## 2. PROOF STRUCTURE QUALITY
-  Does this problem have good structure for RL training?
+  Does this problem have good structure for training?
   - Is there a clear logical path from assumptions to conclusion?
   - Does it require multiple proof steps (vs. single insight)?
   - Are intermediate lemmas or sub-goals identifiable?
@@ -28,29 +28,28 @@ user: |-
   - Is notation correct and follows conventions?
   - Are there any mathematical errors or imprecision?
 
-  ## 4. PROOF COMPLEXITY & SOLVABILITY
-  Assess if this proof problem is suitable for training:
+  ## 4. DIFFICULTY & PROOF COMPLEXITY
+  Assess the difficulty and structure of this proof problem:
 
-  **Proof Length & Structure:**
-  - Based on the problem statement, estimate: short proof (2-3 steps), medium (4-6 steps), or long (7+ steps)?
-  - Does the problem appear to have clear logical structure?
-  - Are there obvious sub-goals or intermediate results to prove?
+  Difficulty Classification:
+  - P1: Accessible - Uses standard techniques, straightforward approach
+  - P2: Moderate - Requires some insight, non-trivial but clear path
+  - P3: Challenging - Non-obvious approach, combines multiple ideas
+  - P4: Hard - Requires creativity, significant insight needed
+  - P5: Very Hard - Deep mathematical insight, sophisticated proof structure
+  - P6: Extremely Hard - Olympiad-defining difficulty, exceptional creativity required
+  - TOO_SIMPLE: Routine/trivial (but acceptable)
+  - UNCLEAR: Ambiguous or ill-defined (unsuitable)
 
-  **Difficulty Appropriateness:**
-  - Is this solvable by a strong undergraduate/olympiad student?
-  - Is it too trivial (routine application) or too obscure (requires exotic knowledge)?
-  - Does it require only standard techniques or novel insights?
+  Proof Complexity:
+  - Short/Direct: Can be proven with straightforward logical flow
+  - Medium: Requires building up intermediate results or lemmas
+  - Long/Complex: Multi-part proof with several key insights
 
-  ## 5. IMO DIFFICULTY LEVEL
-  What is the approximate IMO difficulty?
-  - P1: Accessible, standard techniques, 2-3 key steps
-  - P2: Moderate, requires some insight, 3-5 steps
-  - P3: Challenging, non-obvious approach, multiple techniques
-  - P4: Hard, requires creativity and multiple insights
-  - P5: Very hard, deep insight required, complex proof structure
-  - P6: Extremely hard, olympiad-defining difficulty
-  - TOO_SIMPLE: Single-step or routine application (limited RL value but okay)
-  - UNCLEAR: Ambiguous or ill-defined (unsuitable for RL)
+  Training Suitability:
+  - Is this solvable by strong undergraduate/olympiad students?
+  - Does it have clear logical structure (not too messy)?
+  - Does it use learnable techniques (not one-off tricks)?
 
   ## Decision Criteria for ACCEPT:
 
@@ -88,7 +87,7 @@ user: |-
   <Difficulty level (P1-P6/TOO_SIMPLE/UNCLEAR)? Why? Proof complexity (short/medium/long)? What techniques/insights needed? Clear structure? Training suitability?>
 
   CRITICAL_ISSUES:
-  <List any problems that prevent using this for RL training on proofs. If none, state "None">
+  <List any serious problems that would prevent using this problem. If none, state "None">
 
   DECISION: <ACCEPT/REJECT>
   DECISION_REASONING: <Why accept/reject? Focus on clarity, completeness, mathematical rigor, and proof complexity. Reference specific issues if rejecting.>
