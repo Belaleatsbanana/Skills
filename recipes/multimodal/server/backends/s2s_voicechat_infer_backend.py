@@ -147,12 +147,19 @@ class S2SVoiceChatInferBackend(InferenceBackend):
         if self.config.model_path:
             OmegaConf.update(cfg, "model.stt.model.pretrained_s2s_model", self.config.model_path, force_add=True)
 
+        # TTS override semantics (match Kevin's inference recipe):
+        # - `pretrained_model`: checkpoint file (.ckpt/.nemo)
+        # - `pretrained_tts_model`: exported model directory (expects config.json inside)
         if self.vc_config.tts_ckpt_path:
-            OmegaConf.update(cfg, "model.speech_generation.model.pretrained_model", self.vc_config.tts_ckpt_path, force_add=True)
-            # Some configs use this name instead.
-            OmegaConf.update(
-                cfg, "model.speech_generation.model.pretrained_tts_model", self.vc_config.tts_ckpt_path, force_add=True
-            )
+            tts_path = self.vc_config.tts_ckpt_path
+            if os.path.isdir(tts_path):
+                OmegaConf.update(cfg, "model.speech_generation.model.pretrained_tts_model", tts_path, force_add=True)
+                # Avoid accidentally also loading weights from an old checkpoint path.
+                OmegaConf.update(cfg, "model.speech_generation.model.pretrained_model", None, force_add=True)
+            else:
+                OmegaConf.update(cfg, "model.speech_generation.model.pretrained_model", tts_path, force_add=True)
+                # Ensure we don't trigger directory-based loading by mistake.
+                OmegaConf.update(cfg, "model.speech_generation.model.pretrained_tts_model", None, force_add=True)
 
         if self.vc_config.speaker_reference:
             OmegaConf.update(cfg, "model.inference_speaker_reference", self.vc_config.speaker_reference, force_add=True)
