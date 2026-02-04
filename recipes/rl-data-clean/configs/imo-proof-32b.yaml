@@ -22,11 +22,10 @@ generate_kwargs:
 pipeline_stages:
   - extract_problems
   - classify_if_proof
-  - extract_proof
   - assess_problem_quality
-  - assess_discussion_quality
+  - extract_proof
   - assess_proof_quality
-  - assess_imo_readiness
+  - assess_discussion_quality
   - decontaminate
 
 # Decontamination datasets
@@ -43,12 +42,11 @@ decontamination_datasets:
 directories:
   step-1-extract: ${base_output_dir}/${model_name}/step-1-extract-problems
   step-2-classify: ${base_output_dir}/${model_name}/step-2-classify-proof
-  step-3-extract-proof: ${base_output_dir}/${model_name}/step-3-extract-proof
-  step-4-problem-quality: ${base_output_dir}/${model_name}/step-4-problem-quality
-  step-5-discussion-quality: ${base_output_dir}/${model_name}/step-5-discussion-quality
-  step-6-proof-quality: ${base_output_dir}/${model_name}/step-6-proof-quality
-  step-7-imo-readiness: ${base_output_dir}/${model_name}/step-7-imo-readiness
-  step-8-decontaminate: ${base_output_dir}/${model_name}/step-8-decontamination
+  step-3-problem-quality: ${base_output_dir}/${model_name}/step-3-problem-quality
+  step-4-extract-proof: ${base_output_dir}/${model_name}/step-4-extract-proof
+  step-5-proof-quality: ${base_output_dir}/${model_name}/step-5-proof-quality
+  step-6-discussion-quality: ${base_output_dir}/${model_name}/step-6-discussion-quality
+  step-7-decontaminate: ${base_output_dir}/${model_name}/step-7-decontamination
 
 stages:
   extract_problems:
@@ -64,46 +62,39 @@ stages:
       - extract_problems
     stage_kwargs: ${generate_kwargs}
 
-  extract_proof:
-    output_dir: ${directories.step-3-extract-proof}
+  assess_problem_quality:
+    output_dir: ${directories.step-3-problem-quality}
     input_file: ${directories.step-2-classify}/proof.jsonl
     dependencies:
       - classify_if_proof
     stage_kwargs: ${generate_kwargs}
 
-  assess_problem_quality:
-    output_dir: ${directories.step-4-problem-quality}
-    input_file: ${directories.step-3-extract-proof}/extracted-proofs.jsonl
-    dependencies:
-      - extract_proof
-    stage_kwargs: ${generate_kwargs}
-
-  assess_discussion_quality:
-    output_dir: ${directories.step-5-discussion-quality}
-    input_file: ${directories.step-4-problem-quality}/accepted.jsonl
+  extract_proof:
+    output_dir: ${directories.step-4-extract-proof}
+    input_file: ${directories.step-3-problem-quality}/accepted.jsonl
     dependencies:
       - assess_problem_quality
     stage_kwargs: ${generate_kwargs}
 
   assess_proof_quality:
-    output_dir: ${directories.step-6-proof-quality}
-    input_file: ${directories.step-5-discussion-quality}/accepted.jsonl
+    output_dir: ${directories.step-5-proof-quality}
+    input_file: ${directories.step-4-extract-proof}/extracted-proofs.jsonl
     dependencies:
-      - assess_discussion_quality
+      - extract_proof
     stage_kwargs: ${generate_kwargs}
 
-  assess_imo_readiness:
-    output_dir: ${directories.step-7-imo-readiness}
-    input_file: ${directories.step-6-proof-quality}/accepted.jsonl
+  assess_discussion_quality:
+    output_dir: ${directories.step-6-discussion-quality}
+    input_file: ${directories.step-5-proof-quality}/accepted.jsonl
     dependencies:
       - assess_proof_quality
     stage_kwargs: ${generate_kwargs}
 
   decontaminate:
-    output_dir: ${directories.step-8-decontaminate}
-    input_file: ${directories.step-7-imo-readiness}/imo-ready.jsonl
+    output_dir: ${directories.step-7-decontaminate}
+    input_file: ${directories.step-6-discussion-quality}/accepted.jsonl
     datasets: ${decontamination_datasets}
     dependencies:
-      - assess_imo_readiness
+      - assess_discussion_quality
     inline_args: ""
     stage_kwargs: ${generate_kwargs}
