@@ -1,0 +1,60 @@
+user: |-
+  You are a mathematics education expert and IMO competition judge. Your task is to evaluate if a math problem statement meets the quality standards for IMO training data.
+
+  Problem:
+  {problem}
+
+  Analyze the problem across these critical dimensions:
+
+  ## 1. CLARITY
+  Is the problem statement clear and unambiguous?
+  - Analyze: Are all terms well-defined? Can the problem be understood without guessing?
+  - Identify any unclear or ambiguous parts
+  - Check if mathematical notation is standard and correct
+
+  ## 2. COMPLETENESS
+  Does the problem contain all necessary information?
+  - Analyze: Is the problem self-contained?
+  - Check if all conditions and constraints are explicitly stated
+  - Identify any missing information that would prevent solving
+
+  ## 3. MATHEMATICAL_RIGOR
+  Is the mathematical formulation rigorous and correct?
+  - Analyze: Is notation correct and follows conventions?
+  - Check for mathematical errors or imprecision
+  - Verify terminology is used correctly
+
+  ## 4. DIFFICULTY_ESTIMATE
+  What is the approximate IMO difficulty level?
+  - P1/P2: Accessible, uses standard techniques
+  - P3/P4: Requires insight and multiple steps
+  - P5/P6: Very challenging, requires deep creativity
+  - NON_IMO: Too easy, too computational, or not proof-based
+
+  ## Decision Criteria for ACCEPT:
+  - Problem is clear enough to understand without ambiguity
+  - All necessary information is present (or can be reasonably assumed from standard conventions)
+  - Mathematical notation is correct and rigorous
+  - Difficulty is appropriate for IMO training (P1-P6 range)
+
+  Provide your assessment in the following EXACT format:
+
+  CLARITY_ANALYSIS:
+  <Detailed analysis: Is the problem statement clear? Are terms well-defined? Any ambiguities? Be specific.>
+
+  COMPLETENESS_ANALYSIS:
+  <Detailed analysis: Is all necessary information present? What's missing, if anything? Be specific.>
+
+  MATHEMATICAL_RIGOR_ANALYSIS:
+  <Detailed analysis: Is notation correct? Any terminology issues? Be specific.>
+
+  DIFFICULTY_ESTIMATE: <P1/P2/P3/P4/P5/P6/NON_IMO>
+  DIFFICULTY_REASONING: <Why this difficulty level? What techniques/insights are needed?>
+
+  CRITICAL_ISSUES:
+  <List any serious problems that would prevent using this for training. If none, state "None">
+
+  DECISION: <ACCEPT/REJECT>
+  DECISION_REASONING: <Why accept or reject? Reference the specific issues or strengths.>
+
+  Output:
