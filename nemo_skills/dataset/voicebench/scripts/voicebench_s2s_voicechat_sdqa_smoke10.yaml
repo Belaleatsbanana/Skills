@@ -1,0 +1,49 @@
+# 10-sample smoke test for VoiceBench sd_qa using s2s_voicechat backend.
+#
+# Run:
+#   python nemo_skills/dataset/voicebench/scripts/generate_from_api_and_score_official.py \
+#     --config nemo_skills/dataset/voicebench/scripts/voicebench_s2s_voicechat_sdqa_smoke10.yaml
+
+cluster: oci_iad
+partition: batch_block1,batch_block3,batch_block4
+cpu_partition: cpu
+
+model: /lustre/fsw/portfolios/llmservice/users/apasad/projects/nemo_s2s_merged_dec/exp_SFT-nano9b/IAD_nano9b_parakeet600m_from_PT_32k_64gpu_5e-5_PT0.7_SFT0.05_QA0.02_TEXT0.1_loss0.5_MCQ0.03_ASR0.01_sysp0.03_NoiseProb0.5_SNR-30-60_asr_dtc2_dst15_loss_text5.0_bos10.0_eos5.0_pad1.0_eosplacementsfix_nospecaug_ei0.1_ot8_TN_all_data_v3.2_ir/checkpoints_hf_step-12556-last.ckpt
+
+server_type: vllm
+server_gpus: 1
+num_chunks: 1
+
+server_entrypoint: "-m nemo_skills.inference.server.serve_unified"
+server_args: >-
+  --backend s2s_voicechat
+  --config_path /lustre/fsw/portfolios/llmservice/users/kevinhu/projects/duplex-stt/config/inference/infer_nano_eartts_Voicebench_Jan22_2026.yaml
+  --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/S2S-full-duplex/inference_references/Emma_S3_A1_SC7_singleturntarget_21_channel_1_audio_in.wav
+  --tts_ckpt_path /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Duplex_EARTTS/eartts_rvq_cont_task_nanov2_tts_pretraining_wordlist_duplex_data_new_branch_4nodes_duplex_eartts_2_delay_4rd_stage_fp32_wd_1500_et_eos_dp_eos_dup_step_10004.ckpt
+  --extra_decoding_seconds 20
+  --dtype float32
+  --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
+  --output_dir /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/voicebench_s2s_voicechat_smoke/runs/sdqa_smoke10
+  --save_artifacts
+
+server_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/nemo_duplex_november_eartts.sqsh
+server_server_type: vllm_multimodal
+
+data_dir: /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/voicebench_test/data_dir
+output_dir: /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/voicebench_s2s_voicechat_smoke/runs/sdqa_smoke10
+voicebench_repo_path: /lustre/fsw/portfolios/llmservice/users/vmendelev/code/VoiceBench
+
+subtests: [sd_qa]
+max_samples: 10
+
+api_type: nvidia
+nvidia_model: azure/openai/gpt-4o-mini
+
+installation_command: ""
+scoring_installation_command: "pip install sacrebleu qa_metrics"
+
+expname: voicebench_s2s_voicechat_sdqa_smoke10
+generation_only: false
+scoring_only: false
+dry_run: false
+

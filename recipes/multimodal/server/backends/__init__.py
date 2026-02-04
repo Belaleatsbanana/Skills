@@ -40,6 +40,7 @@ BACKEND_REGISTRY = {
     "salm": ("salm_backend", "SALMBackend"),
     "tts": ("tts_backend", "TTSBackend"),
     "s2s": ("s2s_backend", "S2SBackend"),
+    "s2s_voicechat": ("s2s_voicechat_infer_backend", "S2SVoiceChatInferBackend"),
     "s2s_incremental": ("s2s_incremental_backend", "S2SIncrementalBackend"),
     "s2s_session": ("s2s_session_backend", "S2SSessionBackend"),
 }

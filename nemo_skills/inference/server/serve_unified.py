@@ -138,8 +138,8 @@ def main():
     parser.add_argument(
         "--backend",
         default="salm",
-        choices=["salm", "tts", "s2s", "s2s_incremental", "s2s_session"],
-        help="Backend type: salm (speech-augmented LM), tts (text-to-speech), s2s (speech-to-speech offline), s2s_incremental (frame-by-frame processing), s2s_session (session-aware multi-turn)",
+        choices=["salm", "tts", "s2s", "s2s_voicechat", "s2s_incremental", "s2s_session"],
+        help="Backend type: salm (speech-augmented LM), tts (text-to-speech), s2s (speech-to-speech offline), s2s_voicechat (NemotronVoiceChat offline, YAML-driven), s2s_incremental (frame-by-frame processing), s2s_session (session-aware multi-turn)",
     )
 
     # Backend-specific model paths
@@ -216,6 +216,23 @@ def main():
         type=float,
         default=0.0,
         help="Boost for EOS token logits during inference",
+    )
+
+    # s2s_voicechat (nemotron_voicechat_infer-like) options
+    parser.add_argument(
+        "--decode_audio",
+        action="store_true",
+        help="Enable audio decoding/output (s2s_voicechat backend; default: text-only)",
+    )
+    parser.add_argument(
+        "--output_dir",
+        default=None,
+        help="Base output directory for artifacts (s2s_voicechat backend)",
+    )
+    parser.add_argument(
+        "--save_artifacts",
+        action="store_true",
+        help="Save per-request artifacts under output_dir (s2s_voicechat backend)",
     )
 
     # S2S Incremental backend options
@@ -338,7 +355,7 @@ def main():
             extra_config["top_k"] = args.top_k
 
     # S2S backend options
-    if args.backend in ("s2s", "s2s_incremental", "s2s_session"):
+    if args.backend in ("s2s", "s2s_voicechat", "s2s_incremental", "s2s_session"):
         extra_config["ignore_system_prompt"] = args.ignore_system_prompt
         if args.silence_padding_sec != 5.0:
             extra_config["silence_padding_sec"] = args.silence_padding_sec
@@ -361,6 +378,31 @@ def main():
             extra_config["inference_bos_boost"] = args.inference_bos_boost
         if args.inference_eos_boost:
             extra_config["inference_eos_boost"] = args.inference_eos_boost
+
+    # s2s_voicechat backend specific options
+    if args.backend == "s2s_voicechat":
+        if args.extra_decoding_seconds:
+            extra_config["extra_decoding_seconds"] = args.extra_decoding_seconds
+        if args.config_path:
+            extra_config["config_path"] = args.config_path
+        if args.tts_ckpt_path:
+            extra_config["tts_ckpt_path"] = args.tts_ckpt_path
+        if args.speaker_reference:
+            extra_config["speaker_reference"] = args.speaker_reference
+        if args.code_path:
+            extra_config["code_path"] = args.code_path
+        if args.inference_pad_boost:
+            extra_config["inference_pad_boost"] = args.inference_pad_boost
+        if args.inference_bos_boost:
+            extra_config["inference_bos_boost"] = args.inference_bos_boost
+        if args.inference_eos_boost:
+            extra_config["inference_eos_boost"] = args.inference_eos_boost
+        if args.decode_audio:
+            extra_config["decode_audio"] = True
+        if args.output_dir:
+            extra_config["output_dir"] = args.output_dir
+        if args.save_artifacts:
+            extra_config["save_artifacts"] = True
 
     # S2S Incremental/Session backend options (shared config)
     if args.backend in ("s2s_incremental", "s2s_session"):
