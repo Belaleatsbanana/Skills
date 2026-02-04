@@ -8,7 +8,7 @@ expname: imo-proof-${model_name}
 suffix: single-model
 
 # Full dataset
-input_file: ${base_output_dir}/raw_aops_data_sample_5000.jsonl
+input_file: ${base_output_dir}/raw_aops_data.jsonl
 
 # Model configuration
 generate_kwargs:
@@ -16,7 +16,7 @@ generate_kwargs:
   server_type: vllm
   server_gpus: 8
   server_nodes: 1
-  num_chunks: 1  # Increase for large dataset
+  num_chunks: 5  # Increase for large dataset
 
 # Pipeline stages
 pipeline_stages:
@@ -26,7 +26,6 @@ pipeline_stages:
   - extract_proof
   - assess_proof_quality        # Reordered: assess proof first
   - assess_discussion_quality   # Then assess discussion
-  - decontaminate
 
 # Decontamination datasets
 decontamination_datasets:
@@ -46,7 +45,6 @@ directories:
   step-4-extract-proof: ${base_output_dir}/${model_name}/step-4-extract-proof
   step-5-proof-quality: ${base_output_dir}/${model_name}/step-5-proof-quality
   step-6-discussion-quality: ${base_output_dir}/${model_name}/step-6-discussion-quality
-  step-7-decontaminate: ${base_output_dir}/${model_name}/step-7-decontamination
 
 stages:
   extract_problems:
