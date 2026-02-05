@@ -46,3 +46,5 @@ nemo_skills/dataset/aalcr/lcr/
 CLAUDE.md
 
 .idea
+nemo_skills/dataset/fullduplexbench/data/
+nemo_skills/dataset/fullduplexbench/*/test.jsonl
