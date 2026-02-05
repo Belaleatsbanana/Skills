@@ -26,19 +26,12 @@ from itertools import chain, repeat
 from math import lcm
 from typing import Optional
 
-import ray
-from datasets import Dataset
 from nemo_rl.algorithms.grpo import MasterConfig, grpo_train, setup
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data.datasets import AllTaskProcessedDataset
 from nemo_rl.data.interfaces import DatumSpec
-from nemo_rl.distributed.ray_actor_environment_registry import (
-    get_actor_python_env,
-)
 from nemo_rl.distributed.virtual_cluster import init_ray
 from nemo_rl.environments.nemo_gym import (
-    NemoGym,
-    NemoGymConfig,
     nemo_gym_example_to_nemo_rl_datum_spec,
     setup_nemo_gym_config,
 )
@@ -71,19 +64,6 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
 
     args, overrides = parser.parse_known_args()
     return args, overrides
-
-
-def load_jsonl_dataset(filepath: str) -> Dataset:
-    """Load JSONL file as HuggingFace Dataset."""
-    records = []
-    with open(filepath, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            obj = json.loads(line)
-            records.append(obj)
-    return Dataset.from_list(records)
 
 
 def setup_single_nemo_gym_dataset(jsonl_fpath: str, tokenizer, num_repeats: Optional[int] = None):
@@ -190,10 +170,11 @@ The validation set you pass in will directly be used for validation with no addi
     config["grpo"]["max_val_samples"] = len(val_dataset)
     config["grpo"]["val_batch_size"] = config["grpo"]["max_val_samples"]
 
-    # Setup RL components
+    # Setup RL components (setup() returns 11 values including nemo_gym_env)
     (
         policy,
         policy_generation,
+        nemo_gym_env,  # NemoGym actor created and initialized inside setup()
         cluster,
         dataloader,
         val_dataloader,
@@ -204,26 +185,8 @@ The validation set you pass in will directly be used for validation with no addi
         master_config,
     ) = setup(config, tokenizer, train_dataset, val_dataset)
 
-    # Setup NemoGym environment
-    print("\n▶ Creating NemoGym environment...")
-    nemo_gym_config = NemoGymConfig(
-        model_name=policy_generation.cfg["model_name"],
-        base_urls=policy_generation.dp_openai_server_base_urls,
-        initial_global_config_dict=config["env"]["nemo_gym"],
-    )
-
-    # Register NemoGym environment
-    nemo_gym = NemoGym.options(
-        runtime_env={
-            "py_executable": get_actor_python_env("nemo_rl.environments.nemo_gym.NemoGym"),
-        }
-    ).remote(nemo_gym_config)
-
-    # Blocking wait for NeMo-Gym to spin up
-    ray.get(nemo_gym.health_check.remote())
-    print("✅ NemoGym environment ready!")
-
-    task_to_env = {"nemo_gym": nemo_gym}
+    # Use the NemoGym environment returned by setup() (already initialized on head node)
+    task_to_env = {"nemo_gym": nemo_gym_env}
     val_task_to_env = task_to_env
 
     # Start training

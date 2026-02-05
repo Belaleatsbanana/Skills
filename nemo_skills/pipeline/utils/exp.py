@@ -277,6 +277,14 @@ def get_executor(
                 f"$(scontrol show hostnames $SLURM_JOB_NODELIST_HET_GROUP_{group} | head -n1)"
             )
 
+    # Ray dashboard must be reachable from worker nodes; set defaults here so they
+    # are available at runtime (do not expand SLURM_MASTER_NODE on submit host).
+    if with_ray and cluster_config["executor"] == "slurm":
+        # Inject dashboard host into ray start command without touching nemo-run.
+        # nemo-run expands --dashboard-port=${DASHBOARD_PORT} without quotes, so
+        # we include an escaped space to keep this as a single env assignment.
+        env_vars.setdefault("DASHBOARD_PORT", "8265\\ --dashboard-host=0.0.0.0")
+
     if gpus_per_node is not None and gpus_per_node > 0:
         partition = partition or cluster_config.get("partition")
     else:

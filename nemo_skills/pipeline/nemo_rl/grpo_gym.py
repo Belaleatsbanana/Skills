@@ -136,11 +136,21 @@ class NemoRLGymTask:
     def get_cmd(self):
         self.logging_params = self.format_wandb_args()
         nsight_cmd = get_nsight_cmd(self.profile_step_range)
+        # NeMo-RL 环境变量设置 (与 super_nemo_rl/run_grpo_nanov3.sh 保持一致)
+        nrl_env_vars = (
+            "NRL_VLLM_USE_V1=1 "
+            "NRL_FORCE_REBUILD_VENVS=false "
+            "NRL_IGNORE_VERSION_MISMATCH=1 "
+            "RAY_ENABLE_UV_RUN_RUNTIME_ENV=0 "
+            "UV_HTTP_TIMEOUT=10 "
+            'TORCH_CUDA_ARCH_LIST="9.0 10.0" '
+        )
         cmd = (
             f"export PYTHONPATH=$PYTHONPATH:/opt/nemo-rl && "
             f"export UV_PROJECT=/opt/nemo-rl && "
             f"{nsight_cmd}"
             f"echo 'Starting GRPO training with NemoGym' && "
+            f"{nrl_env_vars}"
             f"uv run --active python /nemo_run/code/nemo_skills/training/nemo_rl/start_grpo_gym.py "
             f"  {self.format_train_args()} "
             f"  {self.format_data_args()} "
