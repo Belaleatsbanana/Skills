@@ -317,16 +317,64 @@ def main():
     if not in_path.exists():
         raise FileNotFoundError(f"Missing input jsonl: {in_path}")
 
-    vad = LazySileroVAD()
-    asr = LazyNeMoASR(args.asr_model)
-
     # Aggregate counts
     total_word_sub = total_word_ins = total_word_del = total_ref_words = 0
     total_char_sub = total_char_ins = total_char_del = total_ref_chars = 0
 
     out_rows: List[Dict[str, Any]] = []
 
-    for row in _read_jsonl(in_path):
+    rows_in = list(_read_jsonl(in_path))
+    has_any_audio = False
+    for row in rows_in:
+        if isinstance(row.get("audio"), dict) and row["audio"].get("path"):
+            has_any_audio = True
+            break
+
+    # Fast path: if no audio paths are present at all, emit output_asr.jsonl identical-in-text to output.jsonl
+    # so downstream "ASR scoring" is still meaningful (it will match generated scoring).
+    if not has_any_audio:
+        for row in rows_in:
+            generation_text = row.get("generation", "") or ""
+            debug_info = row.get("debug_info")
+            if not isinstance(debug_info, dict):
+                debug_info = {}
+            debug_info["agent_audio_missing"] = True
+            debug_info["agent_audio_asr"] = None
+            debug_info["agent_audio_wer"] = None
+            debug_info["agent_audio_cer"] = None
+
+            out_row = dict(row)
+            out_row["generation_text"] = generation_text
+            out_row["generation"] = generation_text
+            out_row["debug_info"] = debug_info
+            out_rows.append(out_row)
+
+        _write_jsonl(out_path, out_rows)
+        metrics = {
+            f"voicebench.{args.subtest}": {
+                "greedy": {
+                    "agent_wer": None,
+                    "agent_cer": None,
+                    "agent_ref_words": 0,
+                    "agent_ref_chars": 0,
+                    "agent_word_substitutions": 0,
+                    "agent_word_insertions": 0,
+                    "agent_word_deletions": 0,
+                    "agent_char_substitutions": 0,
+                    "agent_char_insertions": 0,
+                    "agent_char_deletions": 0,
+                }
+            }
+        }
+        with metrics_path.open("wt", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=2)
+        print(f"No audio paths found in {in_path}; wrote passthrough {out_path} and {metrics_path}")
+        return
+
+    vad = LazySileroVAD()
+    asr = LazyNeMoASR(args.asr_model)
+
+    for row in rows_in:
         generation_text = row.get("generation", "") or ""
         audio_path = None
         if isinstance(row.get("audio"), dict):
@@ -371,6 +419,8 @@ def main():
             total_ref_chars += c_counts.ref_len
         else:
             debug_info["agent_audio_missing"] = True
+            # Keep ASR output as generated text so ASR-scoring remains usable even when audio is missing.
+            agent_asr_text = generation_text
 
         debug_info["agent_audio_asr"] = agent_asr_text
         debug_info["agent_audio_wer"] = agent_wer
