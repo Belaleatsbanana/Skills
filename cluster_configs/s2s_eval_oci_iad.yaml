@@ -3,8 +3,8 @@ executor: slurm
 ssh_tunnel:
   host: draco-oci-login-01.draco-oci-iad.nvidia.com
   # ------------------------------- Fill this up! -------------------------------
-  user: ???
-  job_dir: /lustre/fsw/portfolios/llmservice/users/???/workspace/code/nemo-run
+  user: mmkrtchyan
+  job_dir: /lustre/fsw/portfolios/llmservice/users/mmkrtchyan/workspace/code/nemo-run
   identity: ""
   # -----------------------------------------------------------------------------
 
@@ -35,7 +35,7 @@ required_env_vars:
 
 env_vars:
   # ------------------------------- Fill this up! -------------------------------
-  - HF_HOME=/lustre/fsw/portfolios/llmservice/users/???/.cache/huggingface
+  - HF_HOME=/lustre/fsw/portfolios/llmservice/users/mmkrtchyan/.cache/huggingface
   # -----------------------------------------------------------------------------
 
 timeouts:

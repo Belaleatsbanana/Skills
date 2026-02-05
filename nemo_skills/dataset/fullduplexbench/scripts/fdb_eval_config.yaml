@@ -1,0 +1,30 @@
+# Full-Duplex-Bench evaluation configuration
+# Basic configuration for evaluating models on Full-Duplex-Bench
+# Run: python generate_from_api_and_score_official.py --config fdb_eval_config.yaml
+
+# Cluster settings
+cluster: oci_iad
+partition: batch_block1,batch_block3,batch_block4
+cpu_partition: cpu
+
+# Model settings - adjust based on your model
+model: your_model_path_here
+server_type: vllm
+server_gpus: 1
+
+# Paths
+data_dir: /path/to/fullduplexbench/data_dir
+output_dir: /path/to/output/runs/fullduplexbench
+fdb_repo_path: /path/to/Full-Duplex-Bench
+
+# Subtests to evaluate
+subtests: all  # or specify: pause, backchannel, turn_taking, interruption
+
+# Experiment settings
+expname: fullduplexbench
+# max_samples: 10  # Uncomment for smoke testing
+
+# Run modes
+generation_only: false
+scoring_only: false
+dry_run: false

@@ -1,0 +1,38 @@
+# Full-Duplex-Bench S2S Session evaluation configuration
+# For evaluating with a running S2S server session
+# Run: python generate_from_api_and_score_official.py --config fdb_s2s_session_config.yaml
+
+# Cluster settings
+cluster: oci_iad
+partition: batch_block1,batch_block3,batch_block4
+cpu_partition: cpu
+
+# Model and server settings - external API mode
+server_type: openai
+server_gpus: 0  # 0 means external API, not self-hosting
+server_address: "http://your-server-address:port/v1"  # Your S2S server endpoint
+api_key_env_var: "API_KEY"  # Environment variable containing API key
+model: "your-model-name"  # Model name as understood by your API
+
+# Server configuration override
+server_server_type: "openai"  # Tell nemo-skills to use OpenAI-compatible API
+
+# Paths
+data_dir: /path/to/fullduplexbench/data_dir
+output_dir: /path/to/output/runs/fullduplexbench_session
+fdb_repo_path: /path/to/Full-Duplex-Bench
+
+# Subtests to evaluate
+subtests: all  # or specify: pause, backchannel, turn_taking, interruption
+
+# Parallel processing (for API mode)
+num_chunks: 10  # Process in parallel chunks
+
+# Experiment settings
+expname: fullduplexbench_s2s_session
+# max_samples: 10  # Uncomment for smoke testing
+
+# Run modes
+generation_only: false
+scoring_only: false
+dry_run: false
