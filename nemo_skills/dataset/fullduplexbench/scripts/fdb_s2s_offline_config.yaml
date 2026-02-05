@@ -32,9 +32,9 @@ server_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/ne
 server_server_type: vllm_multimodal
 
 # Paths
-data_dir: /lustre/fsw/portfolios/llmservice/users/mmkrtchyan/fullduplexbench/data_dir
-output_dir: /lustre/fsw/portfolios/llmservice/users/mmkrtchyan/fullduplexbench/runs
-fdb_repo_path: /lustre/fsw/portfolios/llmservice/users/mmkrtchyan/Full-Duplex-Bench
+data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fullduplexbench_runs
+fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
 
 # Subtests to evaluate (all FDB subtests)
 subtests:
