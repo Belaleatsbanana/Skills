@@ -24,6 +24,7 @@ server_args: >-
   --extra_decoding_seconds 0
   --dtype float32
   --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
+  --audio_output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fullduplexbench_audio_outputs
 
 # Container with NeMo and S2S support
 server_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/nemo_duplex_november_eartts.sqsh
