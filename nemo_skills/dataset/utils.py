@@ -26,7 +26,10 @@ from typing import Dict
 from urllib.error import URLError
 
 from nemo_skills.evaluation.math_grader import extract_answer
-from nemo_skills.pipeline.utils import cluster_download_file, get_unmounted_path
+
+# NOTE: Do NOT import nemo_skills.pipeline.utils at module level!
+# It depends on nemo_run which may not be available in all environments
+# (e.g., ns_tools venv in Gym). Import lazily in functions that need it.
 
 
 @contextlib.contextmanager
@@ -73,6 +76,8 @@ class ExtraDatasetType(str, Enum):
 
 
 def _get_dataset_module_from_cluster(cluster_config, mounted_path):
+    from nemo_skills.pipeline.utils import cluster_download_file, get_unmounted_path
+
     # getting tmp path to download init.py
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = str(Path(tmpdir) / "init.py")
@@ -98,6 +103,8 @@ def get_default_dataset_module(dataset, data_dir=None, cluster_config=None):
             with add_to_path(data_dir):
                 dataset_module = importlib.import_module(dataset)
         else:
+            from nemo_skills.pipeline.utils import get_unmounted_path
+
             if cluster_config["executor"] == "local":
                 with add_to_path(get_unmounted_path(cluster_config, data_dir)):
                     dataset_module = importlib.import_module(dataset)
