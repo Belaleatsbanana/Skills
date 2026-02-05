@@ -58,14 +58,10 @@ version = { attr = "nemo_skills.version.__version__" }
 dependencies = {file = ["requirements/main.txt"]}
 
 [tool.setuptools.dynamic.optional-dependencies]
-# Core: minimal agent runtime (inference, evaluation, tool calling)
+# Core: agent runtime (inference, evaluation, tool calling, math/code grading)
 core = { file = ["requirements/core.txt"] }
 # Pipeline: orchestration, cluster management, CLI
 pipeline = { file = ["requirements/pipeline.txt"] }
-# Math: math evaluation dependencies
-math = { file = ["requirements/math.txt"] }
-# Code: code evaluation dependencies
-code = { file = ["requirements/code.txt"] }
 # Benchmarks: additional benchmark-specific dependencies
 benchmarks = { file = ["requirements/benchmarks.txt"] }
 # Dev: development and testing tools

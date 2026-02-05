@@ -23,10 +23,8 @@ Each extra maps to a requirements file under `requirements/`.
 
 | Extra | Requirements file | What it provides |
 |-------|-------------------|------------------|
-| `core` | `requirements/core.txt` | Agent runtime: inference, evaluation interface, tool calling (MCP), prompt formatting. No cluster orchestration. |
+| `core` | `requirements/core.txt` | Agent runtime: inference, evaluation, tool calling (MCP), prompt formatting, math/code grading. No cluster orchestration. |
 | `pipeline` | `requirements/pipeline.txt` | CLI (`ns` command), cluster management, experiment tracking (`nemo_run`, `typer`, `wandb`). |
-| `math` | `requirements/math.txt` | Math evaluation (`math-verify`, `sympy`). |
-| `code` | `requirements/code.txt` | Code evaluation (`evalplus`, `compute-eval`, `flask` for sandbox). |
 | `benchmarks` | `requirements/benchmarks.txt` | Assorted benchmark dependencies (BFCL, BIRD, translation, etc.). |
 | `dev` | `requirements/common-tests.txt`, `requirements/common-dev.txt` | Development and testing tools (`pytest`, `ruff`, `pre-commit`). |
 
@@ -35,9 +33,6 @@ Each extra maps to a requirements file under `requirements/`.
 ```bash
 # Core only — for NeMo Gym/RL integration or custom agent code
 pip install -e ".[core]"
-
-# Core + math evaluation
-pip install -e ".[core,math]"
 
 # Core + pipeline (cluster orchestration, no benchmark deps)
 pip install -e ".[core,pipeline]"
@@ -72,6 +67,8 @@ Core → Pipeline   ❌  (core modules must NOT import from pipeline)
 - `nemo_skills/prompt/`
 - `nemo_skills/mcp/`
 - `nemo_skills/code_execution/`
+- `nemo_skills/conversion/`
+- `nemo_skills/training/`
 - `nemo_skills/utils.py`, `nemo_skills/file_utils.py`
 
 **Pipeline** modules live under:

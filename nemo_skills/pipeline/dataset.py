@@ -98,12 +98,12 @@ def get_dataset_module(dataset, data_dir=None, cluster_config=None, extra_datase
             data_path = extra_datasets
             if extra_datasets is None:
                 raise RuntimeError(f"Dataset {dataset} not found in {data_dir if data_dir else 'nemo_skills.dataset'}")
-            if extra_datasets_type == ExtraDatasetType.local:
+            if extra_datasets_type == ExtraDatasetType.local or extra_datasets_type is None:
                 with add_to_path(extra_datasets):
                     dataset_module = importlib.import_module(dataset)
             else:
                 dataset_module = _get_dataset_module_from_cluster(
-                    cluster_config, f'{extra_datasets}/{dataset}/"__init__.py"'
+                    cluster_config, f"{extra_datasets}/{dataset}/__init__.py"
                 )
                 is_on_cluster = True
         except ModuleNotFoundError:

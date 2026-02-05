@@ -64,10 +64,8 @@ Core modules are everything under `nemo_skills/` **except** `nemo_skills/pipelin
 
 | If the dependency is needed for… | Add it to |
 |---|---|
-| Inference, model wrappers, MCP clients, prompt formatting | `requirements/core.txt` |
+| Inference, evaluation, math/code grading, MCP clients, prompt formatting | `requirements/core.txt` |
 | CLI commands, cluster orchestration, experiment tracking | `requirements/pipeline.txt` |
-| Math evaluation (graders, symbolic math) | `requirements/math.txt` |
-| Code evaluation (sandbox, code execution) | `requirements/code.txt` |
 | A specific benchmark (BFCL, BIRD, translation, etc.) | `requirements/benchmarks.txt` |
 
 Also add it to `requirements/main.txt` (the monolithic file used for default installs).
@@ -75,7 +73,7 @@ Also add it to `requirements/main.txt` (the monolithic file used for default ins
 **Examples of correct placement:**
 
 - `httpx` → `core.txt` (used by model inference clients)
-- `sympy` → `math.txt` (used by math graders)
+- `sympy` → `core.txt` (used by math graders)
 - `nemo_run` → `pipeline.txt` (cluster job orchestration)
 - `wandb` → `pipeline.txt` (experiment tracking for cluster jobs)
 - `faiss-cpu` → `benchmarks.txt` (only needed for BFCL benchmark)
@@ -84,7 +82,6 @@ Also add it to `requirements/main.txt` (the monolithic file used for default ins
 
 - Adding `nemo_run` to `core.txt` — nemo_run is a pipeline/orchestration dependency, core must not depend on it.
 - Adding `typer` to `core.txt` — typer is the CLI framework, only used by the pipeline layer.
-- Adding `sympy` to `core.txt` — sympy is only needed for math evaluation, not for the base agent runtime. A user running inference without math benchmarks shouldn't need it.
 - Adding a benchmark-specific package like `sacrebleu` to `core.txt` or `pipeline.txt` — it belongs in `benchmarks.txt`.
 - Adding a new dependency only to a subpackage file but forgetting `main.txt` — the default install would be missing it.
 
