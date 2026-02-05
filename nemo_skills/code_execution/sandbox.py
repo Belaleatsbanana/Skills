@@ -137,6 +137,7 @@ class Sandbox(abc.ABC):
         max_output_characters: int = 1000,
         session_id: Optional[str] = None,
         traceback_verbosity="plain",  # could be plain, context, verbose, or minimal
+        trace_id: Optional[str] = None,
     ) -> Tuple[Dict, str]:
         traceback_verbosity = traceback_verbosity.capitalize()
         if language in ["python", "pypy3", "python3", "lean4", "shell"] and session_id is not None:
@@ -161,10 +162,23 @@ class Sandbox(abc.ABC):
             TO_EXECUTE, timeout, language, std_input, max_output_characters, traceback_verbosity
         )
         request["session_id"] = request_session_id_str
+
+        if trace_id:
+            LOG.info(f"[TRACE:{trace_id}] layer=sandbox event=http_start url={self._get_execute_url()}")
+
+        http_start_time = time.time()
         try:
             output = await self._send_request(request, timeout)
         except httpx.TimeoutException:
             output = {"process_status": "timeout", "stdout": "", "stderr": "Client timed out\n"}
+        finally:
+            http_elapsed_ms = (time.time() - http_start_time) * 1000
+            if trace_id:
+                status = output.get("process_status", "unknown") if isinstance(output, dict) else "unknown"
+                LOG.info(
+                    f"[TRACE:{trace_id}] layer=sandbox event=http_done elapsed_ms={http_elapsed_ms:.1f} status={status}"
+                )
+
         new_session_created = output.pop("new_session_created", False)
 
         # Rebuild state by re-executing history first, then execute the new code.

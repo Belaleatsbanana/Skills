@@ -25,10 +25,14 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, List
 
 from nemo_skills.mcp.utils import locate
+
+LOG = logging.getLogger(__name__)
 
 
 class FatalToolError(Exception):
@@ -175,4 +179,17 @@ class ToolManager:
 
     async def execute_tool(self, raw_name: str, args: Dict[str, Any], extra_args: Dict[str, Any] | None = None):
         tool, bare = self._resolve(self._raw_to_qualified_map[raw_name])
-        return await tool.execute(bare, args, extra_args=extra_args)
+
+        # Extract trace_id for logging (if provided)
+        trace_id = (extra_args or {}).get("trace_id")
+        if trace_id:
+            LOG.info(f"[TRACE:{trace_id}] layer=tool_manager event=start tool={raw_name}")
+
+        start_time = time.perf_counter()
+        try:
+            result = await tool.execute(bare, args, extra_args=extra_args)
+            return result
+        finally:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            if trace_id:
+                LOG.info(f"[TRACE:{trace_id}] layer=tool_manager event=done elapsed_ms={elapsed_ms:.1f}")
