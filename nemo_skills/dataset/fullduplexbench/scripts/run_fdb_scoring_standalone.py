@@ -59,31 +59,40 @@ def run_fdb_evaluation(fdb_repo: Path, converted_jsonl: Path, subtest: str) -> d
     print(f"Running Full-Duplex-Bench evaluation for {subtest}")
     print(f"{'='*60}")
     
-    # The command depends on FDB's actual evaluation interface
-    # Adjust based on your FDB repository structure
-    evaluate_script = fdb_repo / "evaluate.py"
-    
-    if not evaluate_script.exists():
-        # Try alternative paths
-        evaluate_script = fdb_repo / "scripts" / "evaluate.py"
-        if not evaluate_script.exists():
-            evaluate_script = fdb_repo / "eval.py"
+    # Full-Duplex-Bench uses evaluation/evaluate.py
+    evaluate_script = fdb_repo / "evaluation" / "evaluate.py"
     
     if not evaluate_script.exists():
         raise FileNotFoundError(
-            f"Could not find evaluation script in {fdb_repo}. "
-            f"Expected evaluate.py or scripts/evaluate.py or eval.py"
+            f"Could not find evaluation script at {evaluate_script}. "
+            f"Make sure you cloned the Full-Duplex-Bench repo correctly."
         )
+    
+    # Map our subtest names to FDB task names
+    task_mapping = {
+        "pause": "pause_handling",
+        "backchannel": "backchannel",
+        "turn_taking": "smooth_turn_taking",
+        "interruption": "user_interruption",
+    }
+    
+    fdb_task = task_mapping.get(subtest, subtest)
+    
+    # FDB expects --root_dir pointing to a directory with the data
+    # We need to prepare the data in the expected format
+    eval_results_dir = converted_jsonl.parent
     
     cmd = [
         sys.executable,
         str(evaluate_script),
-        "--input_file", str(converted_jsonl),
-        "--task", subtest,
+        "--task", fdb_task,
+        "--root_dir", str(eval_results_dir),
     ]
     
     print(f"Evaluation command: {' '.join(cmd)}")
     print(f"Working directory: {fdb_repo}")
+    print(f"Note: FDB evaluation expects ASR-aligned transcripts.")
+    print(f"      You may need to run prepare_for_eval/asr.py first.")
     
     result = subprocess.run(
         cmd,

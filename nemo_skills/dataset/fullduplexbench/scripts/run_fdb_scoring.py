@@ -62,10 +62,18 @@ def run_scoring(
     # Step 2: Run Full-Duplex-Bench evaluation
     print(f"Running Full-Duplex-Bench evaluation for {subtest}...")
     
-    # Call the original FDB scoring script
-    # The exact command depends on FDB's evaluation script structure
-    # Typical usage: python evaluate.py --input_file <file> --task <task> --output_dir <dir>
-    cmd = f"cd {fdb_repo} && python evaluate.py --input_file {converted_jsonl} --task {subtest}"
+    # Map our subtest names to FDB task names
+    task_mapping = {
+        "pause": "pause_handling",
+        "backchannel": "backchannel",
+        "turn_taking": "smooth_turn_taking",
+        "interruption": "user_interruption",
+    }
+    fdb_task = task_mapping.get(subtest, subtest)
+    
+    # Full-Duplex-Bench uses evaluation/evaluate.py with --task and --root_dir
+    evaluate_script = f"{fdb_repo}/evaluation/evaluate.py"
+    cmd = f"cd {fdb_repo} && python {evaluate_script} --task {fdb_task} --root_dir {eval_results_dir}"
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
     # Print output
