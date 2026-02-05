@@ -50,20 +50,35 @@ def run_scoring(
 
     if metrics_variant not in ("generated", "asr"):
         raise ValueError("metrics_variant must be one of: generated, asr")
-    metrics_key = "greedy" if metrics_variant == "generated" else "greedy_asr"
+    # We always write into a single `greedy` dict; the ASR variant is stored with *_asr keys.
+    metrics_key = "greedy"
+    asr_suffix = "_asr"
 
     # Skip if this variant already exists (unless force is set)
     if metrics_file.exists() and not force:
         try:
             with open(metrics_file) as f:
                 existing_metrics = json.load(f)
-            existing = existing_metrics.get(f"voicebench.{subtest}", {})
-            if metrics_key in existing:
-                print(
-                    f"Scoring already done for voicebench.{subtest} ({metrics_key} exists in metrics.json). Skipping."
-                )
-                print("Use --force to re-run scoring.")
-                return 0
+            greedy = existing_metrics.get(f"voicebench.{subtest}", {}).get("greedy", {})
+            if isinstance(greedy, dict):
+                if metrics_variant == "asr":
+                    if any(k.endswith(asr_suffix) for k in greedy.keys()):
+                        print(
+                            f"Scoring already done for voicebench.{subtest} (ASR keys exist in metrics.json). Skipping."
+                        )
+                        print("Use --force to re-run scoring.")
+                        return 0
+                else:
+                    # Skip if we already have any non-agent, non-ASR VoiceBench metrics.
+                    has_generated_metrics = any(
+                        (not k.startswith("agent_")) and (not k.endswith(asr_suffix)) for k in greedy.keys()
+                    )
+                    if has_generated_metrics:
+                        print(
+                            f"Scoring already done for voicebench.{subtest} (generated metrics exist in metrics.json). Skipping."
+                        )
+                        print("Use --force to re-run scoring.")
+                        return 0
         except Exception:
             # If metrics.json is malformed, fall back to recomputing.
             pass
@@ -115,7 +130,12 @@ def run_scoring(
             except Exception:
                 print(f"Warning: Could not parse metrics from line: {line}", file=sys.stderr)
 
-    # Save metrics.json in nemo-skills format (supports multiple scoring variants).
+    # Rename ASR metrics keys to *_asr to keep a single structure:
+    # greedy.{panda,gpt,...} for generated text
+    # greedy.{panda_asr,gpt_asr,...} for ASR-scored text
+    if metrics_variant == "asr":
+        metrics = {f"{k}{asr_suffix}": v for k, v in metrics.items()}
+
     nemo_metrics: dict = {f"voicebench.{subtest}": {metrics_key: metrics}}
 
     # Merge agent-audio metrics (WER/CER) if present.
@@ -176,7 +196,7 @@ def main():
         "--metrics_variant",
         default="generated",
         choices=["generated", "asr"],
-        help="Which scoring variant to write into metrics.json (generated->greedy, asr->greedy_asr)",
+        help="Which scoring variant to compute (generated->panda/gpt keys, asr->panda_asr/gpt_asr keys)",
     )
     parser.add_argument("--api_type", default="openai", choices=["openai", "nvidia"], help="API type for judge")
     parser.add_argument("--nvidia_model", default="meta/llama-3.1-70b-instruct", help="Model for NVIDIA API")
