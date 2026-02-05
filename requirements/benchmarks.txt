@@ -1,0 +1,16 @@
+# Benchmark-specific dependencies that don't fit neatly into math/code categories.
+
+bs4
+datasets<4  # lcb problem with datasets 4.0.0
+editdistance
+faiss-cpu  # Needed for BFCLv4
+func-timeout  # Needed for BIRD benchmark
+gradio
+iso639-lang
+langcodes
+language-data
+rank_bm25  # Needed for BFCLv4
+sacrebleu
+scikit-learn
+sentence_transformers  # Needed for BFCLv4
+serpapi  # Needed for BFCLv4

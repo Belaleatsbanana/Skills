@@ -1,0 +1,4 @@
+# Math evaluation dependencies.
+
+math-verify[antlr4_9_3]
+sympy

@@ -1,0 +1,7 @@
+# Code evaluation dependencies.
+
+compute-eval @ git+https://github.com/NVIDIA/compute-eval.git@2d14770
+evalplus @ git+https://github.com/evalplus/evalplus@c91370f
+fire
+flask
+ipython

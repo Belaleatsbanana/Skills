@@ -21,9 +21,10 @@ from pathlib import Path
 from typing import Dict
 
 import nemo_skills.pipeline.utils as pipeline_utils
-from nemo_skills.dataset.utils import get_dataset_module, import_from_path
+from nemo_skills.dataset.utils import import_from_path
 from nemo_skills.inference import GENERATION_MODULE_MAP
-from nemo_skills.inference.generate import GenerationTask
+from nemo_skills.pipeline.dataset import get_dataset_module
+from nemo_skills.pipeline.utils.server import get_server_command
 from nemo_skills.utils import compute_chunk_ids, get_logger_name
 
 LOG = logging.getLogger(get_logger_name(__file__))
@@ -416,12 +417,13 @@ def prepare_eval_commands(
                     )
                 generation_task = generation_task.GENERATION_TASK_CLASS
                 requirements = generation_task.get_generation_requirements()
-                if (
-                    generation_task.get_server_command_fn.__func__ != GenerationTask.get_server_command_fn.__func__
-                    and num_jobs != total_evals
-                ):
+
+                # Allow subclasses to provide a custom server command function.
+                # The hook is checked here (pipeline-side) so core doesn't need to import pipeline.
+                has_custom_server_cmd = hasattr(generation_task, "get_server_command_fn")
+                if has_custom_server_cmd and num_jobs != total_evals:
                     raise ValueError(
-                        f"Class {generation_task} overrides get_server_command_fn, "
+                        f"Class {generation_task} defines get_server_command_fn, "
                         "which is not supported for evaluation when grouping jobs."
                     )
 
@@ -477,8 +479,7 @@ def prepare_eval_commands(
                             job_needs_sandbox_to_keep_mounts,
                             job_server_config,
                             job_server_address,
-                            # a check above guarantees that this is the same for all tasks in a job
-                            generation_task.get_server_command_fn(),
+                            generation_task.get_server_command_fn() if has_custom_server_cmd else get_server_command,
                             job_sandbox_env_overrides,
                         )
                     )

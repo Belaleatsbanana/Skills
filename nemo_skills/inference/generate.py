@@ -285,19 +285,6 @@ class GenerationTask:
         return ""
 
     @classmethod
-    def get_server_command_fn(cls) -> callable:
-        """
-        Returns the function to get the server command for the generation task.
-        Override this method to customize the server command function.
-
-        Returns:
-            callable: Function that returns the server command.
-        """
-        from nemo_skills.pipeline.utils import get_server_command
-
-        return get_server_command
-
-    @classmethod
     def get_generation_requirements(cls) -> list[str] | None:
         """Return extra requirements for this generation module, if any."""
         return None

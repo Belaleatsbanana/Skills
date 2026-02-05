@@ -1,0 +1,14 @@
+# Core dependencies for agent runtime (inference, evaluation, tool calling).
+# No cluster orchestration deps (nemo_run, typer, etc.)
+
+httpx
+huggingface_hub
+hydra-core
+litellm[caching]
+mcp
+numpy
+openai
+pyyaml
+requests
+tqdm
+transformers
