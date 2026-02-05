@@ -428,6 +428,7 @@ class S2SVoiceChatInferBackend(InferenceBackend):
 
             texts = outputs.get("text") or []
             tokens_len = outputs.get("tokens_len")
+            asr_hyps = outputs.get("asr_hyps")
             audio_out = outputs.get("audio")
             audio_len = outputs.get("audio_len")
 
@@ -483,6 +484,18 @@ class S2SVoiceChatInferBackend(InferenceBackend):
                     "source_sample_rate": int(self.vc_config.source_sample_rate),
                     "target_sample_rate": int(self.vc_config.target_sample_rate),
                 }
+
+                # User ASR (if model returns it). We attach the per-request hypothesis to debug_info.
+                # Expected shape: list[str] aligned to batch, or a single str.
+                user_asr = None
+                if asr_hyps is not None:
+                    if isinstance(asr_hyps, list):
+                        if bi < len(asr_hyps):
+                            user_asr = asr_hyps[bi]
+                    elif isinstance(asr_hyps, str):
+                        user_asr = asr_hyps
+                if user_asr:
+                    debug_info["asr_hyp"] = user_asr
 
                 artifacts = self._save_artifacts(
                     request_id=request_id,
