@@ -45,7 +45,7 @@ sacrebleu
 scikit-learn
 sentence_transformers # Needed for BFCLv4 
 sympy
-torchx
+# torchx  # DISABLED: conflicts with nemo-evaluator-launcher via docstring-parser version
 tqdm
 transformers
 typer >= 0.13
