@@ -569,9 +569,7 @@ class GenerationTask:
 
             # Filter out audio_url and input_audio items from list-style content
             message["content"] = [
-                content
-                for content in message["content"]
-                if content.get("type") not in ("audio_url", "input_audio")
+                content for content in message["content"] if content.get("type") not in ("audio_url", "input_audio")
             ]
 
     async def postprocess_single_output(self, output, original_data_point):

@@ -54,4 +54,3 @@ expname: voicebench_s2s_voicechat_sdqa_smoke10_sound
 generation_only: false
 scoring_only: false
 dry_run: false
-

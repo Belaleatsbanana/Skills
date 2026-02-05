@@ -32,6 +32,7 @@ Key parameters matching the latest inference recipe:
 - inference_pad_boost, inference_bos_boost, inference_eos_boost: Token logit adjustments
 """
 
+import io
 import os
 import random
 import re
@@ -68,7 +69,7 @@ class S2SConfig(BackendConfig):
 
     # Model behavior
     predict_user_text: bool = True  # Also transcribe user speech
-    decode_audio: bool = False  # Text-only output
+    decode_audio: bool = True  # Text-only output
 
     # Extra decoding time - duplex models need additional time to generate response
     # Default 0 for Fullduplexbench, 20 for Voicebench
@@ -242,9 +243,9 @@ class S2SBackend(InferenceBackend):
         if self.s2s_config.stt_ckpt_path:
             cfg["model"]["stt"]["model"]["pretrained_s2s_model"] = self.s2s_config.stt_ckpt_path
         elif self.config.model_path:
-            cfg.setdefault("model", {}).setdefault("stt", {}).setdefault("model", {})[
-                "pretrained_s2s_model"
-            ] = self.config.model_path
+            cfg.setdefault("model", {}).setdefault("stt", {}).setdefault("model", {})["pretrained_s2s_model"] = (
+                self.config.model_path
+            )
 
         if self.s2s_config.tts_ckpt_path:
             cfg["model"]["speech_generation"]["model"]["pretrained_model"] = self.s2s_config.tts_ckpt_path
@@ -303,11 +304,14 @@ class S2SBackend(InferenceBackend):
             print("[S2SBackend] Model loaded successfully")
             print(f"  Model path: {self.config.model_path}")
             print(f"  Device: {self.config.device}")
+            print(f"  decode_audio: {self.s2s_config.decode_audio}")
             print(f"  Frame length: {self.s2s_config.frame_length}s")
             print(f"  Source sample rate: {self.s2s_config.source_sample_rate}")
             print(f"  Extra decoding seconds: {self.s2s_config.extra_decoding_seconds}")
-            print(f"  Inference boosts: pad={self.s2s_config.inference_pad_boost}, "
-                  f"bos={self.s2s_config.inference_bos_boost}, eos={self.s2s_config.inference_eos_boost}")
+            print(
+                f"  Inference boosts: pad={self.s2s_config.inference_pad_boost}, "
+                f"bos={self.s2s_config.inference_bos_boost}, eos={self.s2s_config.inference_eos_boost}"
+            )
 
         except ImportError as e:
             raise RuntimeError(
@@ -390,6 +394,12 @@ class S2SBackend(InferenceBackend):
                     input_pad_len=input_pad_len,
                 )
 
+            # Diagnostic: when decode_audio=True, log whether model returned audio
+            if self.s2s_config.decode_audio:
+                out_keys = list(outputs.keys()) if isinstance(outputs, dict) else type(outputs).__name__
+                has_audio = isinstance(outputs, dict) and outputs.get("audio") is not None
+                print(f"[S2SBackend] decode_audio=True | outputs keys: {out_keys} | has 'audio': {has_audio}")
+
             # Step 4: Parse outputs back to individual results
             for batch_idx, req_idx in enumerate(valid_indices):
                 try:
@@ -468,11 +478,11 @@ class S2SBackend(InferenceBackend):
         if not text:
             return text
         # Remove <$X.XX$> patterns (energy/confidence)
-        text = re.sub(r'<\$[\d.]+\$>', '', text)
+        text = re.sub(r"<\$[\d.]+\$>", "", text)
         # Remove <|X.XX|> patterns (timing)
-        text = re.sub(r'<\|[\d.]+\|>', '', text)
+        text = re.sub(r"<\|[\d.]+\|>", "", text)
         # Clean up extra whitespace
-        text = re.sub(r'\s+', ' ', text).strip()
+        text = re.sub(r"\s+", " ", text).strip()
         return text
 
     def _parse_batch_output(
@@ -501,8 +511,39 @@ class S2SBackend(InferenceBackend):
             except (IndexError, TypeError):
                 pass
 
+        # Audio output (when decode_audio=True); same contract as s2s_voicechat_infer_backend
+        out_audio_bytes = None
+        out_sr = int(self.s2s_config.target_sample_rate)
+        if self.s2s_config.decode_audio:
+            audio_out = outputs.get("audio")
+            audio_len = outputs.get("audio_len")
+            if audio_out is None and batch_idx == 0:
+                print("[S2SBackend] decode_audio=True but outputs has no 'audio' key; model may not return audio.")
+            if audio_out is not None:
+                try:
+                    wav = audio_out[batch_idx]
+                    if hasattr(wav, "detach"):
+                        wav = wav.detach().float().cpu().numpy()
+                    wav = np.asarray(wav).squeeze()
+                    if audio_len is not None:
+                        try:
+                            n = int(audio_len[batch_idx].item())
+                            wav = wav[:n]
+                        except Exception:
+                            pass
+                    max_val = float(np.max(np.abs(wav))) if wav.size else 0.0
+                    if max_val > 0:
+                        wav = wav / max_val * 0.95
+                    buf = io.BytesIO()
+                    sf.write(buf, wav, out_sr, format="WAV")
+                    out_audio_bytes = buf.getvalue()
+                except Exception as e:
+                    print(f"[S2SBackend] Warning: failed encoding audio for {request.request_id}: {e}")
+
         return GenerationResult(
             text=text_output,
+            audio_bytes=out_audio_bytes,
+            audio_sample_rate=out_sr,
             request_id=request.request_id,
             num_tokens_generated=num_tokens,
         )

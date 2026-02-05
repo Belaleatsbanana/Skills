@@ -32,12 +32,13 @@ def clean_special_tokens(text: str) -> str:
     if not text:
         return text
     # Remove <$X.XX$> patterns (energy/confidence)
-    text = re.sub(r'<\$[\d.]+\$>', '', text)
+    text = re.sub(r"<\$[\d.]+\$>", "", text)
     # Remove <|X.XX|> patterns (timing)
-    text = re.sub(r'<\|[\d.]+\|>', '', text)
+    text = re.sub(r"<\|[\d.]+\|>", "", text)
     # Clean up extra whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
     return text
+
 
 # Mapping from VoiceBench subtests to evaluator types
 SUBTEST_TO_EVALUATOR = {

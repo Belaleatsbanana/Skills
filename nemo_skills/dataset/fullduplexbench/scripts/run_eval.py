@@ -13,13 +13,14 @@
 # limitations under the License.
 
 """
-Generate Full-Duplex-Bench responses using nemo-skills and score with official FDB package.
+Run Full-Duplex-Bench evaluation: generate responses with nemo-skills, then score with FDB metrics.
 
 Usage:
-    python generate_from_api_and_score_official.py --config fdb_eval_config.yaml
+    python run_eval.py --config fdb_s2s_offline_config.yaml
 """
 
 import argparse
+import shlex
 from datetime import datetime
 from pathlib import Path
 
@@ -41,7 +42,7 @@ def load_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def build_score_command(config: dict, subtest: str) -> str:
+def build_score_command(config: dict, subtest: str, force: bool = False) -> str:
     """Build the scoring command to run via run_cmd.
 
     Uses run_fdb_scoring.py to create output compatible with nemo-skills:
@@ -58,6 +59,11 @@ def build_score_command(config: dict, subtest: str) -> str:
         f"--fdb_repo {fdb_repo}",
         f"--subtest {subtest}",
     ]
+    if force:
+        cmd_args.append("--force")
+    fdb_data_path = config.get("fdb_data_path")
+    if fdb_data_path:
+        cmd_args.append(f"--fdb_data_path {shlex.quote(str(fdb_data_path))}")
 
     return " ".join(cmd_args)
 
@@ -134,13 +140,19 @@ def run_fdb_eval(config: dict):
         # Scoring phase
         if not generation_only:
             print("\n--- Running scoring ---")
-            score_command = build_score_command(config, subtest)
+            score_command = build_score_command(config, subtest, force=config.get("scoring_force", False))
             eval_results_path = f"{config['output_dir']}/eval-results/fullduplexbench.{subtest}"
+            # FDB scoring runs get_transcript/asr.py which requires NeMo + CUDA; use GPU partition and 1 GPU
+            scoring_container = config.get("scoring_container") or config.get("server_container") or "nemo-skills"
+            scoring_gpus = config.get("scoring_gpus", 1)  # ASR needs GPU; default 1
+            scoring_partition = config.get("scoring_partition") or config.get("partition")  # GPU partition, not cpu_partition
             run_cmd(
                 ctx=wrap_arguments(""),
                 cluster=config["cluster"],
                 command=score_command,
-                partition=config.get("cpu_partition") or config.get("partition"),
+                container=scoring_container,
+                partition=scoring_partition,
+                num_gpus=scoring_gpus,
                 run_after=[expname] if not scoring_only else None,
                 expname=f"{expname}_score",
                 installation_command=config.get("scoring_installation_command"),
@@ -150,11 +162,17 @@ def run_fdb_eval(config: dict):
 
     print(f"\n{'=' * 60}")
     print("Done!")
+    if not generation_only and len(subtests) > 1:
+        eval_results_parent = Path(config["output_dir"]) / "eval-results"
+        print(f"\nTo see aggregated metrics across all subtests, run:")
+        print(f"  python nemo_skills/dataset/fullduplexbench/scripts/aggregate_results.py \\")
+        print(f"    --eval_results_dir {eval_results_parent} \\")
+        print(f"    --json {eval_results_parent}/summary.json")
     print(f"{'=' * 60}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Full-Duplex-Bench evaluation with official scoring")
+    parser = argparse.ArgumentParser(description="Run Full-Duplex-Bench evaluation (generate + score)")
     parser.add_argument("--config", required=True, help="Path to YAML config file")
 
     # CLI overrides
@@ -167,6 +185,7 @@ def main():
     parser.add_argument("--dry_run", action="store_true", help="Print commands without executing")
     parser.add_argument("--generation_only", action="store_true", help="Only run generation")
     parser.add_argument("--scoring_only", action="store_true", help="Only run scoring")
+    parser.add_argument("--scoring_force", action="store_true", help="Re-run scoring even if metrics.json exists")
 
     args = parser.parse_args()
 
@@ -182,10 +201,12 @@ def main():
         config["generation_only"] = True
     if args.scoring_only:
         config["scoring_only"] = True
+    if getattr(args, "scoring_force", False):
+        config["scoring_force"] = True
 
-    # Add timestamp to output_dir if not present
+    # Add timestamp to output_dir for new runs (so each run has a unique dir). Skip when scoring_only so we use the existing dir.
     output_dir = config.get("output_dir", "")
-    if output_dir and not any(char.isdigit() for char in Path(output_dir).name):
+    if output_dir and not config.get("scoring_only") and not any(char.isdigit() for char in Path(output_dir).name):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         config["output_dir"] = f"{output_dir}_{timestamp}"
 

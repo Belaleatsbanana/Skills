@@ -21,15 +21,15 @@ import pytest
 
 from nemo_skills.inference.model.vllm import VLLMModel, audio_file_to_base64
 
-
 # -----------------------
 # Unit tests - no server required
 # -----------------------
 
+
 def test_audio_file_to_base64():
     """Test basic audio file encoding to base64."""
-    with tempfile.NamedTemporaryFile(mode='wb', suffix='.wav', delete=False) as f:
-        test_content = b'RIFF' + b'\x00' * 100
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".wav", delete=False) as f:
+        test_content = b"RIFF" + b"\x00" * 100
         f.write(test_content)
         temp_path = f.name
 
@@ -56,8 +56,8 @@ def test_content_text_to_list_with_audio(vllm_model, tmp_path):
     """Test converting string content with audio to list format."""
     audio_path = tmp_path / "audio" / "test.wav"
     audio_path.parent.mkdir(exist_ok=True)
-    with open(audio_path, 'wb') as f:
-        f.write(b'RIFF' + b'\x00' * 100)
+    with open(audio_path, "wb") as f:
+        f.write(b"RIFF" + b"\x00" * 100)
 
     message = {"role": "user", "content": "Describe this audio", "audio": {"path": "audio/test.wav"}}
 
@@ -76,8 +76,8 @@ def test_content_text_to_list_with_multiple_audios(vllm_model, tmp_path):
     audio_dir.mkdir(exist_ok=True)
 
     for i in range(2):
-        with open(audio_dir / f"test_{i}.wav", 'wb') as f:
-            f.write(b'RIFF' + b'\x00' * 100)
+        with open(audio_dir / f"test_{i}.wav", "wb") as f:
+            f.write(b"RIFF" + b"\x00" * 100)
 
     message = {
         "role": "user",
@@ -98,13 +98,14 @@ def test_content_text_to_list_with_multiple_audios(vllm_model, tmp_path):
 # Request building tests with audio
 # -----------------------
 
+
 def test_build_chat_request_with_audio(tmp_path, vllm_model):
     """Test that chat request params are correctly built with audio content."""
     # Create audio file
     audio_path = tmp_path / "audio" / "test.wav"
     audio_path.parent.mkdir(exist_ok=True)
-    with open(audio_path, 'wb') as f:
-        f.write(b'RIFF' + b'\x00' * 100)
+    with open(audio_path, "wb") as f:
+        f.write(b"RIFF" + b"\x00" * 100)
 
     messages = [{"role": "user", "content": "Test audio", "audio": {"path": "audio/test.wav"}}]
 
@@ -125,7 +126,7 @@ def test_build_chat_request_with_audio(tmp_path, vllm_model):
     assert audio_url.startswith("data:audio/wav;base64,")
     audio_b64 = audio_url.split(",", 1)[1]
     decoded = base64.b64decode(audio_b64)
-    assert decoded.startswith(b'RIFF')
+    assert decoded.startswith(b"RIFF")
 
 
 @pytest.mark.asyncio
@@ -134,14 +135,14 @@ async def test_generate_with_audio_mocked_response(tmp_path, vllm_model):
     # Create audio file
     audio_path = tmp_path / "audio" / "test.wav"
     audio_path.parent.mkdir(exist_ok=True)
-    with open(audio_path, 'wb') as f:
-        f.write(b'RIFF' + b'\x00' * 100)
+    with open(audio_path, "wb") as f:
+        f.write(b"RIFF" + b"\x00" * 100)
 
     messages = [{"role": "user", "content": "Describe this audio", "audio": {"path": "audio/test.wav"}}]
 
     # Mock the entire generate_async method - no actual API call made
     mock_response = {"generation": "This audio contains speech", "num_generated_tokens": 5}
-    
+
     with patch.object(vllm_model, "generate_async", new_callable=AsyncMock) as mock_generate:
         mock_generate.return_value = mock_response
 
@@ -152,5 +153,3 @@ async def test_generate_with_audio_mocked_response(tmp_path, vllm_model):
         assert response["generation"] == "This audio contains speech"
         assert response["num_generated_tokens"] == 5
         mock_generate.assert_awaited_once()
-
-

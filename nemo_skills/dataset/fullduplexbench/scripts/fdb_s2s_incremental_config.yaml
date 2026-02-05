@@ -1,0 +1,52 @@
+# Full-Duplex-Bench evaluation configuration for S2S incremental backend
+# Use this for the backchannel subtest (incremental can produce short listener reactions).
+# Run: python run_eval.py --config fdb_s2s_incremental_config.yaml --subtests backchannel
+
+# Cluster settings (same as offline)
+cluster: s2s_eval_oci_iad
+partition: batch_block1,batch_block3,batch_block4
+cpu_partition: cpu
+
+# Model (used by eval pipeline; incremental server may also use config_path for model)
+model: /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Nemotron-VoiceChat-november/duplex-eartts-2mim_sw_et_eos_dp_eos_dup_fp32-stt-3-december_stt_edresson_model_R_digits_norm_eip_0.1_EA_model_step_9005
+
+server_type: vllm
+server_gpus: 2
+num_chunks: 10
+
+# Use serve_unified with S2S incremental backend (frame-by-frame; better for backchannel)
+server_entrypoint: "-m nemo_skills.inference.server.serve_unified"
+server_args: >-
+  --backend s2s_incremental
+  --config_path /lustre/fsw/portfolios/convai/users/ecasanova/S2S-Duplex-new-codebase/scripts/configs/inference/nanov2_demo_model_eartts_updated.yaml
+  --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/S2S-full-duplex/inference_references/Emma_S3_A1_SC7_singleturntarget_21_channel_1_audio_in.wav
+  --ignore_system_prompt
+  --num_frames_per_inference 2
+  --silence_padding_sec 0.0
+  --output_frame_alignment
+  --session_artifacts_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fullduplexbench_incremental_artifacts
+  --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
+
+server_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/nemo_duplex_november_eartts.sqsh
+scoring_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/nemo_duplex_november_eartts.sqsh
+
+server_server_type: vllm_multimodal
+
+# Paths (set to your locations)
+data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fullduplexbench_runs_incremental
+fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
+fdb_data_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench-data
+
+# Backchannel only (incremental is a better fit for this subtest)
+subtests:
+  - backchannel
+
+scoring_installation_command: "pip install numpy scipy scikit-learn silero-vad soundfile"
+
+expname: fullduplexbench_s2s_incremental
+# max_samples: 10
+
+generation_only: false
+scoring_only: false
+dry_run: false

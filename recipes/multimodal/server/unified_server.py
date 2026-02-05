@@ -803,6 +803,8 @@ def main():
         extra_config["num_frames_per_inference"] = args.num_frames_per_inference
     if args.no_decode_audio:
         extra_config["decode_audio"] = False
+    elif args.decode_audio:
+        extra_config["decode_audio"] = True
 
     app = create_app(
         backend_type=args.backend,

@@ -14,7 +14,6 @@
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import soundfile as sf
@@ -109,32 +108,32 @@ def format_entry(entry, subtest_name, config, audio_dir, entry_idx, no_audio=Fal
     if not no_audio:
         # Check if audio_path is provided (file already exists)
         if "audio_path" in entry:
-            from pathlib import Path
             import shutil
-            
+            from pathlib import Path
+
             source_audio = Path(entry["audio_path"])
             if source_audio.exists():
                 audio_id = f"{subtest_name}_{entry_idx}"
                 audio_dest = audio_dir / f"{audio_id}.wav"
-                
+
                 # Copy audio file to our data directory
                 shutil.copy(source_audio, audio_dest)
-                
+
                 audio_info = {"audio": {"path": f"fullduplexbench/data/{audio_id}.wav"}}
                 formatted["audio_path"] = f"data/{audio_id}.wav"
-        
+
         # Handle direct audio data (for compatibility)
         elif "audio" in entry and entry["audio"] is not None:
             audio_id = f"{subtest_name}_{entry_idx}"
             audio_path = audio_dir / f"{audio_id}.wav"
-            
+
             # Handle different audio data formats
             if isinstance(entry["audio"], dict) and "array" in entry["audio"]:
                 save_audio(entry["audio"]["array"], audio_path, entry["audio"].get("sampling_rate", 16000))
             else:
                 # If audio is already a numpy array or similar
                 save_audio(entry["audio"], audio_path)
-            
+
             audio_info = {"audio": {"path": f"fullduplexbench/data/{audio_id}.wav"}}
             formatted["audio_path"] = f"data/{audio_id}.wav"
 
@@ -177,7 +176,7 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
     - messages: audio only (for speech-only evaluation)
     - messages_text_audio: both text and audio
     - messages_text: text only (for text-only comparison)
-    
+
     Full-Duplex-Bench v1.0 structure:
     - candor_pause_handling/{ID}/input.wav, pause.json, transcription.json
     - candor_turn_taking/{ID}/input.wav, turn_taking.json, transcription.json
@@ -202,7 +201,7 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
         "turn_taking": ["candor_turn_taking"],
         "interruption": ["synthetic_user_interruption"],
     }
-    
+
     dataset_folders = subtest_mapping.get(subtest_name, [])
     if not dataset_folders:
         print(f"  Warning: Unknown subtest {subtest_name}")
@@ -215,33 +214,33 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
         possible_paths = [
             fdb_data_path / "v1.0" / folder_name,  # Standard: v1.0
             fdb_data_path / "v1_0" / folder_name,  # Alternative: v1_0
-            fdb_data_path / folder_name,            # Direct
+            fdb_data_path / folder_name,  # Direct
         ]
-        
+
         folder_path = None
         for path in possible_paths:
             if path.exists():
                 folder_path = path
                 break
-        
+
         if folder_path is None:
-            print(f"  Warning: Dataset folder not found. Tried:")
+            print("  Warning: Dataset folder not found. Tried:")
             for path in possible_paths:
                 print(f"    - {path}")
             continue
-        
+
         # Find all sample directories (numeric IDs)
         sample_dirs = sorted([d for d in folder_path.iterdir() if d.is_dir()])
         print(f"  Found {len(sample_dirs)} samples in {folder_name}")
-        
+
         for sample_dir in sample_dirs:
             sample_id = sample_dir.name
             input_wav = sample_dir / "input.wav"
-            
+
             if not input_wav.exists():
                 print(f"  Warning: input.wav not found in {sample_dir}")
                 continue
-            
+
             # Load transcription if available
             transcription_file = sample_dir / "transcription.json"
             transcription = ""
@@ -254,21 +253,21 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
                     elif isinstance(trans_data, list) and len(trans_data) > 0:
                         # Word-level transcription
                         transcription = " ".join([w.get("word", "") for w in trans_data])
-            
+
             # Create test case
             test_case = {
                 "id": f"{folder_name}_{sample_id}",
                 "audio_path": str(input_wav),
-                "prompt": transcription or f"Respond to the user's speech in the audio.",
+                "prompt": transcription or "Respond to the user's speech in the audio.",
                 "dataset": folder_name,
                 "sample_id": sample_id,
             }
-            
+
             test_cases.append(test_case)
-    
+
     if not test_cases:
-        print(f"  No test cases found. Make sure you downloaded the dataset from:")
-        print(f"  https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3")
+        print("  No test cases found. Make sure you downloaded the dataset from:")
+        print("  https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3")
         return 0
 
     # Process each test case
@@ -296,9 +295,23 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
     return len(entries)
 
 
+# All five v1.0 zip names on Google Drive (must all be downloaded and extracted for full dataset)
+EXPECTED_V1_ZIPS = [
+    "candor_pause_handling.zip",
+    "candor_turn_taking.zip",
+    "icc_backchannel.zip",
+    "synthetic_pause_handling.zip",
+    "synthetic_user_interruption.zip",
+]
+
+
 def download_dataset(download_dir: Path) -> bool:
-    """Download Full-Duplex-Bench v1.0 dataset from Google Drive.
-    
+    """Download only the Full-Duplex-Bench v1.0 subfolder from Google Drive (not v1.5),
+    then unzip all archives so that all five dataset folders are present.
+
+    Original dataset with v1.0 and v1.5: https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3
+    We download only the v1.0 folder into download_dir/v1.0, then extract every .zip found there.
+
     Returns:
         True if download successful, False otherwise
     """
@@ -308,65 +321,92 @@ def download_dataset(download_dir: Path) -> bool:
         print("\nError: 'gdown' package not found. Install it with:")
         print("  pip install gdown")
         return False
-    
+
+    import shutil
     import zipfile
-    
-    # Google Drive folder ID for Full-Duplex-Bench v1.0 dataset
-    # This is the v1.0 subfolder, not the root folder
-    folder_url = "https://drive.google.com/drive/folders/1hxzRk7xgtdr5ZEoctnp0sFK0COv91W3h"
-    
+
+    # v1.0 subfolder only (do not download v1.5)
+    v1_0_folder_url = "https://drive.google.com/drive/folders/1hxzRk7xgtdr5ZEoctnp0sFK0COv91W3h"
+    v1_dir = download_dir / "v1.0"
+
     print("\n" + "=" * 60)
-    print("Downloading Full-Duplex-Bench v1.0 from Google Drive")
+    print("Downloading Full-Duplex-Bench v1.0 only from Google Drive")
     print("=" * 60)
-    print(f"Source: {folder_url}")
-    print(f"Destination: {download_dir}/v1.0")
-    print("\nDownloading ~500MB (v1.0 only)...")
+    print(f"Source: {v1_0_folder_url}")
+    print(f"Destination: {v1_dir}")
+    print(
+        "All 5 zips will be downloaded and extracted (candor_pause_handling, candor_turn_taking, icc_backchannel, synthetic_pause_handling, synthetic_user_interruption)."
+    )
     print("=" * 60 + "\n")
-    
+
     try:
-        # Create download directory
-        v1_dir = download_dir / "v1.0"
         v1_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Download v1.0 folder from Google Drive
-        print("Downloading v1.0 dataset files...")
+
+        print("Downloading v1.0 dataset (all zip files in folder)...")
         gdown.download_folder(
-            url=folder_url,
+            url=v1_0_folder_url,
             output=str(v1_dir),
             quiet=False,
             use_cookies=False,
+            remaining_ok=True,
         )
-        
+
+        # gdown may create a single subfolder with the folder name; collect zips from v1_dir and one level down
+        zip_files = list(v1_dir.glob("*.zip")) or list(v1_dir.rglob("*.zip"))
+        if not zip_files and any(v1_dir.iterdir()):
+            sub = next((d for d in v1_dir.iterdir() if d.is_dir()), None)
+            if sub:
+                sub_zips = list(sub.rglob("*.zip"))
+                if sub_zips:
+                    for z in sub_zips:
+                        dest = v1_dir / z.name
+                        if not dest.exists() or dest.stat().st_size != z.stat().st_size:
+                            shutil.move(str(z), str(dest))
+                    zip_files = list(v1_dir.glob("*.zip"))
+
         print("\n" + "=" * 60)
-        print("Download completed successfully!")
+        print("Download completed.")
         print("=" * 60 + "\n")
-        
+
+        if not zip_files:
+            zip_files = list(v1_dir.glob("*.zip")) or list(v1_dir.rglob("*.zip"))
+        if not zip_files:
+            print("Warning: No .zip files found under v1.0. Check Drive permissions or download manually.")
+            return True
+
         # Extract all zip files in v1.0
-        print("Extracting ZIP files...")
-        zip_files = list(v1_dir.rglob("*.zip"))
-        if zip_files:
-            for zip_file in tqdm(zip_files, desc="Extracting"):
-                try:
-                    # Extract to the same directory as the zip file
-                    extract_dir = zip_file.parent
-                    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-                        zip_ref.extractall(extract_dir)
-                    
-                    # Remove the zip file after extraction
-                    zip_file.unlink()
-                    print(f"  Extracted: {zip_file.name}")
-                except Exception as e:
-                    print(f"  Warning: Failed to extract {zip_file.name}: {e}")
-            
-            print(f"\nExtracted {len(zip_files)} ZIP files successfully!")
-        
+        print(f"Extracting {len(zip_files)} ZIP file(s) in v1.0...")
+        for zip_file in tqdm(sorted(zip_files), desc="Extracting"):
+            try:
+                extract_dir = zip_file.parent
+                with zipfile.ZipFile(zip_file, "r") as zip_ref:
+                    zip_ref.extractall(extract_dir)
+                zip_file.unlink()
+                print(f"  Extracted: {zip_file.name}")
+            except Exception as e:
+                print(f"  Warning: Failed to extract {zip_file.name}: {e}")
+
+        print(f"\nExtracted {len(zip_files)} ZIP file(s).")
+
+        # Verify expected folders exist (names without .zip)
+        expected_folders = [p.replace(".zip", "") for p in EXPECTED_V1_ZIPS]
+        found = [d.name for d in v1_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
+        missing = [f for f in expected_folders if f not in found]
+        if missing:
+            print(f"Warning: After extraction, missing folder(s): {missing}")
+            print("  Re-run prepare (without --fdb_data_path to re-download) or add the missing zip(s) manually to:")
+            print(f"  {v1_dir}")
+        else:
+            print("All expected v1.0 dataset folders are present.")
+
         return True
-        
+
     except Exception as e:
         print(f"\nError downloading dataset: {e}")
         print("\nYou can manually download from:")
-        print(f"  {folder_url}")
-        print(f"And extract to: {download_dir}")
+        print("  https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3")
+        print("  Open the v1.0 subfolder, download all 5 zips, and extract them into:")
+        print(f"  {download_dir / 'v1.0'}")
         return False
 
 
@@ -376,26 +416,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Auto-download and prepare dataset
-  python prepare.py --download
-  
-  # Use existing downloaded dataset
-  python prepare.py --fdb_data_path /path/to/dataset
-  
-  # Download to specific location and prepare
-  python prepare.py --download --fdb_data_path /path/to/download/location
-        """
+  # Download v1.0 to default path (s2s/Full-Duplex-Bench-data) and prepare
+  python prepare.py
+
+  # Use existing dataset (no download)
+  python prepare.py --fdb_data_path /path/to/Full-Duplex-Bench-data
+
+  # Download to a specific location and prepare
+  python prepare.py --fdb_data_path /path/to/download/location
+        """,
     )
     parser.add_argument(
         "--fdb_data_path",
         type=str,
         default=None,
-        help="Path to Full-Duplex-Bench dataset directory. If --download is used, this is where data will be downloaded.",
-    )
-    parser.add_argument(
-        "--download",
-        action="store_true",
-        help="Automatically download dataset from Google Drive (requires 'gdown' package: pip install gdown)",
+        help="Path to Full-Duplex-Bench dataset. If not set, downloads v1.0 to s2s/Full-Duplex-Bench-data and prepares.",
     )
     parser.add_argument(
         "--subtests",
@@ -413,52 +448,25 @@ Examples:
     data_dir = Path(__file__).parent
     audio_dir = data_dir / "data"
     audio_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Determine dataset path
-    if args.download:
-        # Download dataset
-        if args.fdb_data_path:
-            download_path = Path(args.fdb_data_path)
-        else:
-            # Default download location
-            download_path = data_dir.parent.parent.parent / "Full-Duplex-Bench-data"
-        
-        print(f"Will download dataset to: {download_path}")
-        
-        # Check if already exists
-        if download_path.exists() and any(download_path.iterdir()):
-            response = input(f"\nDirectory {download_path} already exists. Re-download? [y/N]: ")
-            if response.lower() != 'y':
-                print("Using existing dataset...")
-            else:
-                if not download_dataset(download_path):
-                    print("\nDownload failed. Exiting.")
-                    return
-        else:
-            if not download_dataset(download_path):
-                print("\nDownload failed. Exiting.")
-                return
-        
-        fdb_data_path = download_path
-    else:
-        # Use provided path
-        if not args.fdb_data_path:
-            print("\nError: Either --download or --fdb_data_path must be provided.")
-            print("\nOptions:")
-            print("  1. Auto-download: python prepare.py --download")
-            print("  2. Use existing:  python prepare.py --fdb_data_path /path/to/dataset")
-            print("\nFor manual download, get the dataset from:")
+
+    _skills_dir = data_dir.parent.parent.parent
+    _s2s_root = _skills_dir.parent
+    _default_fdb_data = _s2s_root / "Full-Duplex-Bench-data"
+
+    if args.fdb_data_path:
+        fdb_data_path = Path(args.fdb_data_path)
+        if not fdb_data_path.exists():
+            print(f"\nError: Full-Duplex-Bench data path not found: {fdb_data_path}")
+            print("Run without --fdb_data_path to download, or use:")
             print("  https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3")
             return
-        
-        fdb_data_path = Path(args.fdb_data_path)
-
-    if not fdb_data_path.exists():
-        print(f"\nError: Full-Duplex-Bench data path not found: {fdb_data_path}")
-        print("\nOptions:")
-        print("  1. Auto-download: python prepare.py --download")
-        print("  2. Manual download from: https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3")
-        return
+    else:
+        download_path = _default_fdb_data
+        print(f"Downloading v1.0 to {download_path} (overwriting if present)...")
+        if not download_dataset(download_path):
+            print("\nDownload failed. Exiting.")
+            return
+        fdb_data_path = download_path
 
     subtests_to_process = args.subtests if args.subtests else list(SUBTESTS.keys())
 

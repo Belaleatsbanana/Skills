@@ -34,7 +34,7 @@ def test_vllm_audio_generation():
         shutil.rmtree(output_dir)
 
     # Create test input file with audio
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
         test_data = [
             {
                 "problem": "Transcribe this audio",
@@ -46,7 +46,7 @@ def test_vllm_audio_generation():
             },
         ]
         for item in test_data:
-            f.write(json.dumps(item) + '\n')
+            f.write(json.dumps(item) + "\n")
         input_file = f.name
 
     try:
@@ -68,9 +68,9 @@ def test_vllm_audio_generation():
         # Verify output exists and has audio-related generation
         with open(f"{output_dir}/output.jsonl") as fin:
             lines = fin.readlines()
-        
+
         assert len(lines) == 2, "Should have 2 output lines"
-        
+
         for line in lines:
             data = json.loads(line)
             assert "generation" in data, "Should have generation field"
@@ -81,4 +81,3 @@ def test_vllm_audio_generation():
     finally:
         # Cleanup temp file
         Path(input_file).unlink(missing_ok=True)
-

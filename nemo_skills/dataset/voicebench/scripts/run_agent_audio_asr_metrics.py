@@ -300,7 +300,9 @@ def main():
     parser.add_argument("--eval_results_dir", required=True, help="Path to eval-results/voicebench.<subtest>/")
     parser.add_argument("--subtest", required=True, help="Subtest name (for metrics key voicebench.<subtest>)")
     parser.add_argument("--input_jsonl", default="output.jsonl", help="Input jsonl filename inside eval_results_dir")
-    parser.add_argument("--output_jsonl", default="output_asr.jsonl", help="Output jsonl filename inside eval_results_dir")
+    parser.add_argument(
+        "--output_jsonl", default="output_asr.jsonl", help="Output jsonl filename inside eval_results_dir"
+    )
     parser.add_argument("--asr_model", default="nvidia/parakeet-tdt-0.6b-v2", help="NeMo ASR model name")
     parser.add_argument("--force", action="store_true", help="Overwrite outputs if they exist")
     args = parser.parse_args()
@@ -399,7 +401,7 @@ def main():
                 segments = [(0.0, float(len(audio)) / float(sr))] if sr > 0 and len(audio) > 0 else []
 
             parts: List[str] = []
-            for (s, e) in segments:
+            for s, e in segments:
                 t = asr.transcribe_segment(audio, sr, s, e)
                 if t:
                     parts.append(t)
@@ -466,4 +468,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
