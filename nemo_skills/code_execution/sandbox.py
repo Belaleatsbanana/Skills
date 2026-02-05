@@ -187,6 +187,12 @@ class Sandbox(abc.ABC):
         # avoids re-triggering side effects from failing cells while keeping the replay simple.
         if session_id is not None and new_session_created and output.get("process_status") != "timeout":
             history = list(self.session_histories.get(session_id_str, []))
+            if trace_id:
+                LOG.info(
+                    f"[TRACE:{trace_id}] layer=sandbox_restore event=start"
+                    f" history_cells={len(history)} session={session_id_str}"
+                )
+            restore_start_time = time.time()
             if request_session_id_str is not None:
                 try:
                     await self.delete_session(request_session_id_str)
@@ -200,6 +206,7 @@ class Sandbox(abc.ABC):
             if history:
                 # Restore session state by executing each history cell sequentially to preserve semantics
                 for cell_index, cell_code in enumerate(history, start=1):
+                    cell_start_time = time.time()
                     restore_request = self._prepare_request(
                         cell_code, timeout, language, std_input, max_output_characters, traceback_verbosity
                     )
@@ -208,6 +215,15 @@ class Sandbox(abc.ABC):
                         restore_output = await self._send_request(restore_request, timeout)
                     except httpx.TimeoutException:
                         restore_output = {"process_status": "timeout", "stdout": "", "stderr": "Client timed out\n"}
+
+                    cell_elapsed_ms = (time.time() - cell_start_time) * 1000
+                    if trace_id:
+                        cell_status = restore_output.get("process_status", "unknown")
+                        LOG.info(
+                            f"[TRACE:{trace_id}] layer=sandbox_restore event=cell_done"
+                            f" cell={cell_index}/{len(history)} elapsed_ms={cell_elapsed_ms:.1f}"
+                            f" status={cell_status}"
+                        )
 
                     if restore_output.get("process_status") != "completed":
                         LOG.error(
@@ -228,6 +244,14 @@ class Sandbox(abc.ABC):
                                     exc,
                                 )
 
+                        restore_elapsed_ms = (time.time() - restore_start_time) * 1000
+                        if trace_id:
+                            LOG.info(
+                                f"[TRACE:{trace_id}] layer=sandbox_restore event=failed"
+                                f" elapsed_ms={restore_elapsed_ms:.1f}"
+                                f" failed_at_cell={cell_index}/{len(history)}"
+                            )
+
                         stderr_parts = (
                             "RuntimeError: Sandbox state restoration failed after the execution worker restarted. "
                             "The interactive session history has been cleared; please re-run the last code block without relying on prior state."
@@ -240,7 +264,15 @@ class Sandbox(abc.ABC):
 
                         return failure_output, request_session_id
 
+            restore_elapsed_ms = (time.time() - restore_start_time) * 1000
+            if trace_id:
+                LOG.info(
+                    f"[TRACE:{trace_id}] layer=sandbox_restore event=done"
+                    f" elapsed_ms={restore_elapsed_ms:.1f} history_cells={len(history)}"
+                )
+
             # Execute the new code once restoration has succeeded (or there was no history to replay)
+            reexec_start_time = time.time()
             exec_request = self._prepare_request(
                 generated_code, timeout, language, std_input, max_output_characters, traceback_verbosity
             )
@@ -249,6 +281,14 @@ class Sandbox(abc.ABC):
                 output = await self._send_request(exec_request, timeout)
             except httpx.TimeoutException:
                 output = {"process_status": "timeout", "stdout": "", "stderr": "Client timed out\n"}
+            finally:
+                reexec_elapsed_ms = (time.time() - reexec_start_time) * 1000
+                if trace_id:
+                    reexec_status = output.get("process_status", "unknown") if isinstance(output, dict) else "unknown"
+                    LOG.info(
+                        f"[TRACE:{trace_id}] layer=sandbox_reexec event=done"
+                        f" elapsed_ms={reexec_elapsed_ms:.1f} status={reexec_status}"
+                    )
 
         # Append to history if successful execution (process_status == 'completed')
         if output.get("process_status") == "completed" and request_session_id_str is not None:
