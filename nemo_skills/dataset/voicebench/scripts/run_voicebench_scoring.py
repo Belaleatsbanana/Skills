@@ -34,16 +34,18 @@ def run_scoring(
     subtest: str,
     evaluator: str,
     needs_judge: bool,
+    input_jsonl: str = "output.jsonl",
     api_type: str = "openai",
     nvidia_model: str = "meta/llama-3.1-70b-instruct",
     force: bool = False,
 ):
     """Run VoiceBench scoring and save results in nemo-skills format."""
     eval_results_dir = Path(eval_results_dir)
-    output_jsonl = eval_results_dir / "output.jsonl"
+    output_jsonl = eval_results_dir / input_jsonl
     converted_jsonl = eval_results_dir / "voicebench_format.jsonl"
     summarized_dir = eval_results_dir / "summarized-results"
     metrics_file = eval_results_dir / "metrics.json"
+    agent_audio_metrics_file = eval_results_dir / "agent_audio_metrics.json"
 
     # Skip if already scored (unless force is set)
     if metrics_file.exists() and not force:
@@ -103,6 +105,18 @@ def run_scoring(
 
     # Save metrics.json in nemo-skills format
     nemo_metrics = {f"voicebench.{subtest}": {"greedy": metrics}}
+
+    # Merge agent-audio metrics (WER/CER) if present.
+    if agent_audio_metrics_file.exists():
+        try:
+            with open(agent_audio_metrics_file) as f:
+                agent_metrics = json.load(f)
+            key = f"voicebench.{subtest}"
+            agent_greedy = agent_metrics.get(key, {}).get("greedy", {})
+            if isinstance(agent_greedy, dict):
+                nemo_metrics[key]["greedy"].update(agent_greedy)
+        except Exception as e:
+            print(f"Warning: failed merging agent_audio_metrics.json: {e}", file=sys.stderr)
     with open(metrics_file, "w") as f:
         json.dump(nemo_metrics, f, indent=2)
     print(f"Metrics saved to {metrics_file}")
@@ -127,6 +141,11 @@ def main():
     parser.add_argument("--subtest", required=True, help="Subtest name")
     parser.add_argument("--evaluator", required=True, help="Evaluator type (qa, open, harm, ifeval, mcq, bbh)")
     parser.add_argument("--needs_judge", action="store_true", help="Whether to run GPT judge first")
+    parser.add_argument(
+        "--input_jsonl",
+        default="output.jsonl",
+        help="Which jsonl in eval_results_dir to score (e.g. output.jsonl or output_asr.jsonl)",
+    )
     parser.add_argument("--api_type", default="openai", choices=["openai", "nvidia"], help="API type for judge")
     parser.add_argument("--nvidia_model", default="meta/llama-3.1-70b-instruct", help="Model for NVIDIA API")
     parser.add_argument("--force", action="store_true", help="Force re-run scoring even if metrics.json exists")
@@ -139,6 +158,7 @@ def main():
         subtest=args.subtest,
         evaluator=args.evaluator,
         needs_judge=args.needs_judge,
+        input_jsonl=args.input_jsonl,
         api_type=args.api_type,
         nvidia_model=args.nvidia_model,
         force=args.force,

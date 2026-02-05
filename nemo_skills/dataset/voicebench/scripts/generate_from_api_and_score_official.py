@@ -82,6 +82,26 @@ def build_score_command(config: dict, subtest: str) -> str:
     return " ".join(cmd_args)
 
 
+def build_agent_audio_asr_command(config: dict, subtest: str) -> str:
+    """Build the agent-audio ASR + WER/CER command to run via run_cmd."""
+    eval_results_dir = f"{config['output_dir']}/eval-results/voicebench.{subtest}"
+    asr_script = "nemo_skills/dataset/voicebench/scripts/run_agent_audio_asr_metrics.py"
+    asr_model = config.get("agent_audio_asr_model", "nvidia/parakeet-tdt-0.6b-v2")
+
+    cmd_args = [
+        f"python {asr_script}",
+        f"--eval_results_dir {eval_results_dir}",
+        f"--subtest {subtest}",
+        "--input_jsonl output.jsonl",
+        "--output_jsonl output_asr.jsonl",
+        f"--asr_model {asr_model}",
+    ]
+    if config.get("agent_audio_force", False):
+        cmd_args.append("--force")
+
+    return " ".join(cmd_args)
+
+
 def run_voicebench_eval(config: dict):
     """Run VoiceBench evaluation using direct Python calls."""
 
@@ -101,6 +121,19 @@ def run_voicebench_eval(config: dict):
     generation_only = config.get("generation_only", False)
     scoring_only = config.get("scoring_only", False)
     dry_run = config.get("dry_run", False)
+    scoring_input = (config.get("voicebench_scoring_input") or "generated").strip().lower()
+    if scoring_input not in ("generated", "agent_asr"):
+        raise ValueError("voicebench_scoring_input must be one of: generated, agent_asr")
+
+    agent_audio_stage_enabled_cfg = config.get("agent_audio_stage_enabled")
+    if agent_audio_stage_enabled_cfg is None:
+        # Auto-enable if server_args requests audio generation.
+        agent_audio_stage_enabled = "--decode_audio" in (config.get("server_args") or "")
+    else:
+        agent_audio_stage_enabled = bool(agent_audio_stage_enabled_cfg)
+    # If scoring on agent ASR, we must run the ASR stage.
+    if scoring_input == "agent_asr":
+        agent_audio_stage_enabled = True
 
     print(f"Processing {len(subtests)} subtests: {', '.join(subtests)}")
     print(f"Output directory: {config['output_dir']}")
@@ -123,6 +156,7 @@ def run_voicebench_eval(config: dict):
 
         expname = f"{config.get('expname', 'voicebench')}_{subtest}"
         benchmark = f"voicebench.{subtest}"
+        eval_results_path = f"{config['output_dir']}/eval-results/voicebench.{subtest}"
 
         # Generation phase
         if not scoring_only:
@@ -151,17 +185,42 @@ def run_voicebench_eval(config: dict):
                 dry_run=dry_run,
             )
 
+        # Agent-audio ASR + WER/CER phase (optional)
+        agent_audio_expname = f"{expname}_agent_audio_asr"
+        if not generation_only and agent_audio_stage_enabled:
+            print("\n--- Running agent-audio ASR + WER/CER ---")
+            asr_command = build_agent_audio_asr_command(config, subtest)
+            run_cmd(
+                ctx=wrap_arguments(""),
+                cluster=config["cluster"],
+                command=asr_command,
+                container=config.get("server_container") or "nemo-skills",
+                partition=config.get("partition"),
+                num_gpus=1,
+                run_after=[expname] if not scoring_only else None,
+                expname=agent_audio_expname,
+                installation_command=config.get("agent_audio_installation_command"),
+                log_dir=f"{eval_results_path}/summarized-results",
+                dry_run=dry_run,
+            )
+
         # Scoring phase
         if not generation_only:
             print("\n--- Running scoring ---")
             score_command = build_score_command(config, subtest)
-            eval_results_path = f"{config['output_dir']}/eval-results/voicebench.{subtest}"
+            # Choose which jsonl to score: generated text or agent ASR transcript.
+            input_jsonl = "output.jsonl" if scoring_input == "generated" else "output_asr.jsonl"
+            score_command = f"{score_command} --input_jsonl {input_jsonl}"
             run_cmd(
                 ctx=wrap_arguments(""),
                 cluster=config["cluster"],
                 command=score_command,
                 partition=config.get("cpu_partition") or config.get("partition"),
-                run_after=[expname] if not scoring_only else None,
+                run_after=(
+                    [agent_audio_expname]
+                    if (not scoring_only and agent_audio_stage_enabled)
+                    else ([expname] if not scoring_only else None)
+                ),
                 expname=f"{expname}_score",
                 installation_command=config.get("scoring_installation_command"),
                 log_dir=f"{eval_results_path}/summarized-results",
