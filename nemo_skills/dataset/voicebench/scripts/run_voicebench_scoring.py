@@ -35,6 +35,7 @@ def run_scoring(
     evaluator: str,
     needs_judge: bool,
     input_jsonl: str = "output.jsonl",
+    metrics_variant: str = "generated",
     api_type: str = "openai",
     nvidia_model: str = "meta/llama-3.1-70b-instruct",
     force: bool = False,
@@ -47,14 +48,25 @@ def run_scoring(
     metrics_file = eval_results_dir / "metrics.json"
     agent_audio_metrics_file = eval_results_dir / "agent_audio_metrics.json"
 
-    # Skip if already scored (unless force is set)
+    if metrics_variant not in ("generated", "asr"):
+        raise ValueError("metrics_variant must be one of: generated, asr")
+    metrics_key = "greedy" if metrics_variant == "generated" else "greedy_asr"
+
+    # Skip if this variant already exists (unless force is set)
     if metrics_file.exists() and not force:
-        print(f"Scoring already done for voicebench.{subtest} (metrics.json exists). Skipping.")
-        print("Use --force to re-run scoring.")
-        with open(metrics_file) as f:
-            existing_metrics = json.load(f)
-        print(f"Existing metrics: {json.dumps(existing_metrics, indent=2)}")
-        return 0
+        try:
+            with open(metrics_file) as f:
+                existing_metrics = json.load(f)
+            existing = existing_metrics.get(f"voicebench.{subtest}", {})
+            if metrics_key in existing:
+                print(
+                    f"Scoring already done for voicebench.{subtest} ({metrics_key} exists in metrics.json). Skipping."
+                )
+                print("Use --force to re-run scoring.")
+                return 0
+        except Exception:
+            # If metrics.json is malformed, fall back to recomputing.
+            pass
 
     # Create summarized-results directory
     summarized_dir.mkdir(parents=True, exist_ok=True)
@@ -103,8 +115,8 @@ def run_scoring(
             except Exception:
                 print(f"Warning: Could not parse metrics from line: {line}", file=sys.stderr)
 
-    # Save metrics.json in nemo-skills format
-    nemo_metrics = {f"voicebench.{subtest}": {"greedy": metrics}}
+    # Save metrics.json in nemo-skills format (supports multiple scoring variants).
+    nemo_metrics: dict = {f"voicebench.{subtest}": {metrics_key: metrics}}
 
     # Merge agent-audio metrics (WER/CER) if present.
     if agent_audio_metrics_file.exists():
@@ -114,9 +126,23 @@ def run_scoring(
             key = f"voicebench.{subtest}"
             agent_greedy = agent_metrics.get(key, {}).get("greedy", {})
             if isinstance(agent_greedy, dict):
-                nemo_metrics[key]["greedy"].update(agent_greedy)
+                nemo_metrics[key][metrics_key].update(agent_greedy)
         except Exception as e:
             print(f"Warning: failed merging agent_audio_metrics.json: {e}", file=sys.stderr)
+
+    # Merge with existing metrics.json if present (so we can keep both generated + ASR results).
+    if metrics_file.exists():
+        try:
+            with open(metrics_file) as f:
+                existing_metrics = json.load(f)
+            if isinstance(existing_metrics, dict):
+                existing_sub = existing_metrics.get(f"voicebench.{subtest}", {})
+                if isinstance(existing_sub, dict):
+                    existing_sub.update(nemo_metrics[f"voicebench.{subtest}"])
+                    existing_metrics[f"voicebench.{subtest}"] = existing_sub
+                    nemo_metrics = existing_metrics
+        except Exception:
+            pass
     with open(metrics_file, "w") as f:
         json.dump(nemo_metrics, f, indent=2)
     print(f"Metrics saved to {metrics_file}")
@@ -146,6 +172,12 @@ def main():
         default="output.jsonl",
         help="Which jsonl in eval_results_dir to score (e.g. output.jsonl or output_asr.jsonl)",
     )
+    parser.add_argument(
+        "--metrics_variant",
+        default="generated",
+        choices=["generated", "asr"],
+        help="Which scoring variant to write into metrics.json (generated->greedy, asr->greedy_asr)",
+    )
     parser.add_argument("--api_type", default="openai", choices=["openai", "nvidia"], help="API type for judge")
     parser.add_argument("--nvidia_model", default="meta/llama-3.1-70b-instruct", help="Model for NVIDIA API")
     parser.add_argument("--force", action="store_true", help="Force re-run scoring even if metrics.json exists")
@@ -159,6 +191,7 @@ def main():
         evaluator=args.evaluator,
         needs_judge=args.needs_judge,
         input_jsonl=args.input_jsonl,
+        metrics_variant=args.metrics_variant,
         api_type=args.api_type,
         nvidia_model=args.nvidia_model,
         force=args.force,

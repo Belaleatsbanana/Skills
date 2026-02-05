@@ -121,9 +121,6 @@ def run_voicebench_eval(config: dict):
     generation_only = config.get("generation_only", False)
     scoring_only = config.get("scoring_only", False)
     dry_run = config.get("dry_run", False)
-    scoring_input = (config.get("voicebench_scoring_input") or "generated").strip().lower()
-    if scoring_input not in ("generated", "agent_asr"):
-        raise ValueError("voicebench_scoring_input must be one of: generated, agent_asr")
 
     agent_audio_stage_enabled_cfg = config.get("agent_audio_stage_enabled")
     if agent_audio_stage_enabled_cfg is None:
@@ -131,9 +128,8 @@ def run_voicebench_eval(config: dict):
         agent_audio_stage_enabled = "--decode_audio" in (config.get("server_args") or "")
     else:
         agent_audio_stage_enabled = bool(agent_audio_stage_enabled_cfg)
-    # If scoring on agent ASR, we must run the ASR stage.
-    if scoring_input == "agent_asr":
-        agent_audio_stage_enabled = True
+    # With 4-stage scoring (generated + ASR), ASR stage must run.
+    agent_audio_stage_enabled = True
 
     print(f"Processing {len(subtests)} subtests: {', '.join(subtests)}")
     print(f"Output directory: {config['output_dir']}")
@@ -221,24 +217,34 @@ def run_voicebench_eval(config: dict):
                 dry_run=dry_run,
             )
 
-        # Scoring phase
+        # Scoring phase (Stage 3: generated text, Stage 4: agent ASR transcript)
         if not generation_only:
-            print("\n--- Running scoring ---")
-            score_command = build_score_command(config, subtest)
-            # Choose which jsonl to score: generated text or agent ASR transcript.
-            input_jsonl = "output.jsonl" if scoring_input == "generated" else "output_asr.jsonl"
-            score_command = f"{score_command} --input_jsonl {input_jsonl}"
+            # Stage 3: VoiceBench scoring on generated text (output.jsonl)
+            print("\n--- Running scoring (generated text) ---")
+            score_command_generated = f"{build_score_command(config, subtest)} --input_jsonl output.jsonl --metrics_variant generated"
+            score_generated_expname = f"{expname}_score_generated"
             run_cmd(
                 ctx=wrap_arguments(""),
                 cluster=config["cluster"],
-                command=score_command,
+                command=score_command_generated,
                 partition=config.get("cpu_partition") or config.get("partition"),
-                run_after=(
-                    [agent_audio_expname]
-                    if agent_audio_stage_enabled
-                    else ([expname] if generation_submitted else None)
-                ),
-                expname=f"{expname}_score",
+                run_after=[expname] if generation_submitted else None,
+                expname=score_generated_expname,
+                installation_command=config.get("scoring_installation_command"),
+                log_dir=f"{eval_results_path}/summarized-results",
+                dry_run=dry_run,
+            )
+
+            # Stage 4: VoiceBench scoring on agent ASR transcript (output_asr.jsonl)
+            print("\n--- Running scoring (agent ASR) ---")
+            score_command_asr = f"{build_score_command(config, subtest)} --input_jsonl output_asr.jsonl --metrics_variant asr"
+            run_cmd(
+                ctx=wrap_arguments(""),
+                cluster=config["cluster"],
+                command=score_command_asr,
+                partition=config.get("cpu_partition") or config.get("partition"),
+                run_after=[agent_audio_expname, score_generated_expname],
+                expname=f"{expname}_score_asr",
                 installation_command=config.get("scoring_installation_command"),
                 log_dir=f"{eval_results_path}/summarized-results",
                 dry_run=dry_run,
