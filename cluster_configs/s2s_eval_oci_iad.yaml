@@ -36,6 +36,7 @@ required_env_vars:
 env_vars:
   # ------------------------------- Fill this up! -------------------------------
   - HF_HOME=/lustre/fsw/portfolios/llmservice/users/mmkrtchyan/.cache/huggingface
+  - TMPDIR=/lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/tmp
   # -----------------------------------------------------------------------------
 
 timeouts:
