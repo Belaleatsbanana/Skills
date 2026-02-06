@@ -29,6 +29,8 @@ def run_scoring(
     asr_model_name: str = "nvidia/parakeet-tdt-1.1b",
     language: str = "en",
     with_utmosv2: bool = False,
+    with_fcd: bool = False,
+    codec_model_path: str = None,
     benchmark: str = None,
 ) -> None:
     """Run NeMo scoring on benchmarks in results_dir.
@@ -45,6 +47,8 @@ def run_scoring(
         "asr_model_name": asr_model_name,
         "language": language,
         "with_utmosv2": with_utmosv2,
+        "with_fcd": with_fcd,
+        "codec_model_path": codec_model_path,
     }
 
     # Determine which benchmarks to score
@@ -129,6 +133,8 @@ def score_benchmark(output_jsonl: str, scoring_cfg: dict) -> dict:
             sv_model_type=scoring_cfg.get("sv_model", "titanet"),
             asr_model_name=scoring_cfg.get("asr_model_name", "nvidia/parakeet-tdt-1.1b"),
             with_utmosv2=scoring_cfg.get("with_utmosv2", False),
+            with_fcd=scoring_cfg.get("with_fcd", False),
+            codec_model_path=scoring_cfg.get("codec_model_path"),
         )
 
         # Save output_with_metrics.jsonl
@@ -169,6 +175,8 @@ if __name__ == "__main__":
     parser.add_argument("--asr_model_name", default="nvidia/parakeet-tdt-1.1b")
     parser.add_argument("--language", default="en")
     parser.add_argument("--with_utmosv2", action="store_true")
+    parser.add_argument("--with_fcd", action="store_true")
+    parser.add_argument("--codec_model_path", default=None, help="Path to codec model for FCD scoring")
     parser.add_argument("--aggregation_only", action="store_true")
     parser.add_argument("--benchmark", default=None, help="Score only this benchmark (e.g. nv_tts.libritts_seen)")
     args = parser.parse_args()
@@ -182,5 +190,7 @@ if __name__ == "__main__":
             asr_model_name=args.asr_model_name,
             language=args.language,
             with_utmosv2=args.with_utmosv2,
+            with_fcd=args.with_fcd,
+            codec_model_path=args.codec_model_path,
             benchmark=args.benchmark,
         )

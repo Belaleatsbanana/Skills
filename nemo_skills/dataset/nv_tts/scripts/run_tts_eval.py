@@ -141,6 +141,10 @@ def main():
             )
             if scoring.get("with_utmosv2"):
                 scoring_cmd += " --with_utmosv2"
+            if scoring.get("with_fcd"):
+                scoring_cmd += " --with_fcd"
+                if scoring.get("codec_model_path"):
+                    scoring_cmd += f" --codec_model_path {scoring['codec_model_path']}"
 
             # Short name for job (e.g. libritts_seen from nv_tts.libritts_seen)
             short_name = benchmark.split(".")[-1]
