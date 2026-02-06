@@ -91,6 +91,7 @@ class MagpieTTSBackend(InferenceBackend):
                 }
             )
         )
+        print(f"[MagpieTTSBackend] Initialized with save_codes={self.tts_config.save_codes}")
         super().__init__(self.tts_config)
         self._model = self._runner = self._temp_dir = self._checkpoint_name = None
 
@@ -284,6 +285,7 @@ class MagpieTTSBackend(InferenceBackend):
             from nemo.collections.tts.modules.magpietts_inference.evaluate_generated_audio import load_evalset_config
 
             dataset = self._runner.create_dataset(load_evalset_config(config_path))
+            print(f"[MagpieTTSBackend] save_codes={self.tts_config.save_codes}, output_dir={output_dir}")
             rtf_list, *_ = self._runner.run_inference_on_dataset(
                 dataset, output_dir, save_cross_attention_maps=False, save_context_audio=False,
                 save_predicted_codes=self.tts_config.save_codes
