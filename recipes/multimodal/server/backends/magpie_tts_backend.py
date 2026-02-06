@@ -166,18 +166,23 @@ class MagpieTTSBackend(InferenceBackend):
             )
         self._model, self._checkpoint_name = load_magpie_model(cfg, device=self.config.device)
 
-        self._runner = MagpieInferenceRunner(
-            self._model,
-            InferenceConfig(
-                temperature=self.tts_config.temperature,
-                topk=self.tts_config.top_k,
-                max_decoder_steps=self.tts_config.max_decoder_steps,
-                use_cfg=self.tts_config.use_cfg,
-                cfg_scale=self.tts_config.cfg_scale,
-                use_local_transformer=self.tts_config.use_local_transformer,
-                batch_size=16,
-            ),
+        # Build InferenceConfig with nested ModelInferenceParameters
+        from nemo.collections.tts.models.magpietts import ModelInferenceParameters
+
+        model_params = ModelInferenceParameters(
+            temperature=self.tts_config.temperature,
+            topk=self.tts_config.top_k,
+            cfg_scale=self.tts_config.cfg_scale,
+            max_decoder_steps=self.tts_config.max_decoder_steps,
         )
+        inference_config = InferenceConfig(
+            batch_size=16,
+            use_cfg=self.tts_config.use_cfg,
+            use_local_transformer=self.tts_config.use_local_transformer,
+            model_inference_parameters=model_params,
+        )
+
+        self._runner = MagpieInferenceRunner(self._model, inference_config)
 
         self._temp_dir = tempfile.mkdtemp(prefix="magpie_tts_")
         self.tts_config.output_sample_rate = self._model.sample_rate
