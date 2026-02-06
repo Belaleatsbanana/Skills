@@ -8,7 +8,7 @@ expname: imo-proof-${model_name}
 suffix: single-model
 
 # Full dataset
-input_file: ${base_output_dir}/raw_aops_data_sample_5000.jsonl
+input_file: ${base_output_dir}/raw_aops_data.jsonl
 
 
 # Model configuration
@@ -17,7 +17,7 @@ generate_kwargs:
   server_type: sglang
   server_gpus: 8
   server_nodes: 2
-  num_chunks: 5  # Increase for large dataset
+  num_chunks: 30  # Increase for large dataset
 
 # Pipeline stages
 pipeline_stages:
