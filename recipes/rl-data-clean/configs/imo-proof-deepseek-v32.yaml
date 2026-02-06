@@ -17,7 +17,7 @@ generate_kwargs:
   server_type: sglang
   server_gpus: 8
   server_nodes: 2
-  num_chunks: 20  # Increase for large dataset
+  num_chunks: 10  # Increase for large dataset
 
 # Pipeline stages
 pipeline_stages:
