@@ -74,6 +74,12 @@ def main():
     # Sandbox configuration - CLI args take precedence over config file
     parser.add_argument("--sandbox-host", default=None, help="Sandbox server host (overrides config)")
     parser.add_argument("--sandbox-port", default=None, help="Sandbox server port (overrides config)")
+    parser.add_argument(
+        "--disable-session-restore",
+        action="store_true",
+        default=False,
+        help="Skip replaying session history after sandbox worker restarts (overrides config)",
+    )
     # Sandbox configuration via OmegaConf/Hydra (optional)
     add_config_args(parser)
     args = parser.parse_args()
@@ -96,6 +102,8 @@ def main():
         sandbox_cfg["host"] = args.sandbox_host
     if args.sandbox_port:
         sandbox_cfg["port"] = args.sandbox_port
+    if args.disable_session_restore:
+        sandbox_cfg["disable_session_restore"] = True
 
     sandbox = get_sandbox(**sandbox_cfg)
 
