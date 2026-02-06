@@ -282,7 +282,7 @@ class MagpieTTSBackend(InferenceBackend):
             from nemo.collections.tts.modules.magpietts_inference.evaluate_generated_audio import load_evalset_config
 
             dataset = self._runner.create_dataset(load_evalset_config(config_path))
-            rtf_list, _ = self._runner.run_inference_on_dataset(
+            rtf_list, *_ = self._runner.run_inference_on_dataset(
                 dataset, output_dir, save_cross_attention_maps=False, save_context_audio=False
             )
 
