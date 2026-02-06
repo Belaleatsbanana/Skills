@@ -308,6 +308,31 @@ class MagpieTTSBackend(InferenceBackend):
                     sf.write(buf, audio, sr, format="WAV")
                     buf.seek(0)
                     dur = len(audio) / sr
+
+                    debug_info = {
+                        "checkpoint": self._checkpoint_name,
+                        "audio_duration_sec": dur,
+                        "rtf": gen_time / len(requests) / dur if dur else 0,
+                        "config": {
+                            "temp": self.tts_config.temperature,
+                            "top_k": self.tts_config.top_k,
+                            "cfg": self.tts_config.use_cfg,
+                            "cfg_scale": self.tts_config.cfg_scale,
+                        },
+                        "batch_metrics": batch_metrics,
+                    }
+
+                    # Include codec data if save_codes is enabled
+                    if self.tts_config.save_codes:
+                        codes_path = os.path.join(output_dir, f"predicted_codes_{i}.pt")
+                        if os.path.exists(codes_path):
+                            import base64
+                            import torch
+                            codes_buf = io.BytesIO()
+                            torch.save(torch.load(codes_path), codes_buf)
+                            codes_buf.seek(0)
+                            debug_info["codec_data"] = base64.b64encode(codes_buf.read()).decode("utf-8")
+
                     results.append(
                         GenerationResult(
                             text=parsed[i].get("text", ""),
@@ -316,18 +341,7 @@ class MagpieTTSBackend(InferenceBackend):
                             audio_format="wav",
                             request_id=req.request_id,
                             generation_time_ms=gen_time * 1000 / len(requests),
-                            debug_info={
-                                "checkpoint": self._checkpoint_name,
-                                "audio_duration_sec": dur,
-                                "rtf": gen_time / len(requests) / dur if dur else 0,
-                                "config": {
-                                    "temp": self.tts_config.temperature,
-                                    "top_k": self.tts_config.top_k,
-                                    "cfg": self.tts_config.use_cfg,
-                                    "cfg_scale": self.tts_config.cfg_scale,
-                                },
-                                "batch_metrics": batch_metrics,
-                            },
+                            debug_info=debug_info,
                         )
                     )
                 else:
