@@ -61,6 +61,7 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -169,6 +170,7 @@ def assess_problem_quality(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -210,6 +212,7 @@ def extract_answers(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -251,6 +254,7 @@ def extract_solution(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -294,6 +298,7 @@ def assess_problem_answer_quality(cluster, expname, run_after, stage_config, **k
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -337,6 +342,7 @@ def assess_complete_solution_quality(cluster, expname, run_after, stage_config, 
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,

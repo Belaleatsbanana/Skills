@@ -61,6 +61,7 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -104,6 +105,7 @@ def classify_if_proof(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -145,6 +147,7 @@ def extract_proof(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -188,6 +191,7 @@ def assess_problem_quality(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -231,6 +235,7 @@ def assess_discussion_quality(cluster, expname, run_after, stage_config, **kwarg
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -274,6 +279,7 @@ def assess_proof_quality(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -334,6 +340,7 @@ def decontaminate(cluster, expname, run_after, stage_config, **kwargs):
             f"++max_concurrent_requests=1024 "
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
+            f"++server.enable_soft_fail=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         generation_type="check_contamination",
