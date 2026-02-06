@@ -29,7 +29,7 @@ class MagpieTTSConfig(BackendConfig):
     max_decoder_steps: int = 440
     use_local_transformer: bool = False
     output_sample_rate: int = 22050
-    save_codes: bool = False  # Save codec embeddings for FCD scoring
+    save_codes: bool = False  # Save codec codes for FCD scoring
     # Checkpoint loading options (alternative to model_path .nemo file)
     hparams_file: Optional[str] = None
     checkpoint_file: Optional[str] = None
