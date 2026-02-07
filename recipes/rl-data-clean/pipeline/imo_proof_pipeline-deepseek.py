@@ -62,6 +62,7 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -70,6 +71,7 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -106,6 +108,7 @@ def classify_if_proof(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -114,6 +117,7 @@ def classify_if_proof(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -148,6 +152,7 @@ def extract_proof(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -156,6 +161,7 @@ def extract_proof(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -192,6 +198,7 @@ def assess_problem_quality(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -200,6 +207,7 @@ def assess_problem_quality(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -236,6 +244,7 @@ def assess_discussion_quality(cluster, expname, run_after, stage_config, **kwarg
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -244,6 +253,7 @@ def assess_discussion_quality(cluster, expname, run_after, stage_config, **kwarg
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -280,6 +290,7 @@ def assess_proof_quality(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -288,6 +299,7 @@ def assess_proof_quality(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -341,6 +353,7 @@ def decontaminate(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         generation_type="check_contamination",
@@ -349,6 +362,7 @@ def decontaminate(cluster, expname, run_after, stage_config, **kwargs):
         output_dir=output_dir,
         expname=check_contamination_expname,
         run_after=retrieval_expname,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 

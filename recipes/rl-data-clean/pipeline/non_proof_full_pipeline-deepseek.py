@@ -62,6 +62,7 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -70,6 +71,7 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -120,6 +122,8 @@ def classify_problems(cluster, expname, run_after, stage_config, **kwargs):
                 f"++max_concurrent_requests=1024 "
                 f"++inference.endpoint_type=chat "
                 f"++chat_template_kwargs.thinking=true "
+                f"++server.enable_soft_fail=True "
+                f"++skip_filled=True "
                 f"{stage_config.get('inline_args', '')} "
             ),
             cluster=cluster,
@@ -128,6 +132,7 @@ def classify_problems(cluster, expname, run_after, stage_config, **kwargs):
             postprocess_cmd=postprocess_cmd,
             expname=mode_expname,
             run_after=current_run_after,
+            dependent_jobs=2,
             **stage_kwargs,
         )
         # Update for next iteration: run_after becomes a single expname (not list)
@@ -171,6 +176,7 @@ def assess_problem_quality(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -179,6 +185,7 @@ def assess_problem_quality(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -213,6 +220,7 @@ def extract_answers(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -221,6 +229,7 @@ def extract_answers(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -255,6 +264,7 @@ def extract_solution(cluster, expname, run_after, stage_config, **kwargs):
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -263,6 +273,7 @@ def extract_solution(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -299,6 +310,7 @@ def assess_problem_answer_quality(cluster, expname, run_after, stage_config, **k
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -307,6 +319,7 @@ def assess_problem_answer_quality(cluster, expname, run_after, stage_config, **k
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
@@ -343,6 +356,7 @@ def assess_complete_solution_quality(cluster, expname, run_after, stage_config, 
             f"++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true "
             f"++server.enable_soft_fail=True "
+            f"++skip_filled=True "
             f"{stage_config.get('inline_args', '')} "
         ),
         cluster=cluster,
@@ -351,6 +365,7 @@ def assess_complete_solution_quality(cluster, expname, run_after, stage_config, 
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
+        dependent_jobs=2,
         **stage_kwargs,
     )
 
