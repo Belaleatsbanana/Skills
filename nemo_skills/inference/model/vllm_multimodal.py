@@ -127,7 +127,7 @@ class VLLMMultimodalModel(VLLMModel):
             import torch
             codec_bytes = base64.b64decode(codec_base64)
             buf = io.BytesIO(codec_bytes)
-            codes = torch.load(buf)
+            codes = torch.load(buf, map_location="cpu")
 
             filename = f"{response_id}.pt"
             filepath = os.path.join(self.output_audio_dir, filename)

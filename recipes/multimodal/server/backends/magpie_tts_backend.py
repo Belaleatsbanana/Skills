@@ -91,7 +91,6 @@ class MagpieTTSBackend(InferenceBackend):
                 }
             )
         )
-        print(f"[MagpieTTSBackend] Initialized with save_codes={self.tts_config.save_codes}")
         super().__init__(self.tts_config)
         self._model = self._runner = self._temp_dir = self._checkpoint_name = None
 
@@ -329,7 +328,7 @@ class MagpieTTSBackend(InferenceBackend):
                             import base64
                             import torch
                             codes_buf = io.BytesIO()
-                            torch.save(torch.load(codes_path), codes_buf)
+                            torch.save(torch.load(codes_path, map_location="cpu"), codes_buf)
                             codes_buf.seek(0)
                             debug_info["codec_data"] = base64.b64encode(codes_buf.read()).decode("utf-8")
 
