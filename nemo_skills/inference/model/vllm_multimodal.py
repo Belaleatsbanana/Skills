@@ -62,9 +62,9 @@ class VLLMMultimodalModel(VLLMModel):
 
         # Save codec data if present in debug_info
         if "debug_info" in result and result["debug_info"].get("codec_data"):
-            codec_path = self._save_codec_data(result["debug_info"]["codec_data"], response.id)
-            if codec_path:
-                result["debug_info"]["codec_path"] = codec_path
+            codec_codes_path = self._save_codec_data(result["debug_info"]["codec_data"], response.id)
+            if codec_codes_path:
+                result["debug_info"]["codec_codes_path"] = codec_codes_path
             # Remove base64 data to avoid duplication in output
             del result["debug_info"]["codec_data"]
 

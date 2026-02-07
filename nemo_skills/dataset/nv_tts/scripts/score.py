@@ -106,8 +106,9 @@ def score_benchmark(output_jsonl: str, scoring_cfg: dict) -> dict:
                     break
 
             audio_path = record.get("audio", {}).get("path")
+            codec_codes_path = record.get("debug_info", {}).get("codec_codes_path")
             if audio_path and manifest_entry:
-                entries.append((manifest_entry, audio_path))
+                entries.append((manifest_entry, audio_path, codec_codes_path))
 
     if not entries:
         return {}
@@ -119,11 +120,16 @@ def score_benchmark(output_jsonl: str, scoring_cfg: dict) -> dict:
         os.makedirs(gen_audio_dir)
 
         with open(manifest_path, "w") as f:
-            for i, (manifest_entry, audio_path) in enumerate(entries):
+            for i, (manifest_entry, audio_path, codec_codes_path) in enumerate(entries):
                 f.write(json.dumps(manifest_entry) + "\n")
-                dst = os.path.join(gen_audio_dir, f"predicted_audio_{i}.wav")
+                # Symlink audio file
+                audio_dst = os.path.join(gen_audio_dir, f"predicted_audio_{i}.wav")
                 if os.path.exists(audio_path):
-                    os.symlink(audio_path, dst)
+                    os.symlink(audio_path, audio_dst)
+                # Symlink codec codes file if available (for FCD scoring)
+                if codec_codes_path and os.path.exists(codec_codes_path):
+                    codec_codes_dst = os.path.join(gen_audio_dir, f"predicted_codes_{i}.pt")
+                    os.symlink(codec_codes_path, codec_codes_dst)
 
         avg_metrics, filewise_metrics = evaluate(
             manifest_path=manifest_path,
