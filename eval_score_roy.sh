@@ -1,0 +1,8 @@
+#!/bin/bash
+ NEMO_SKILLS_DISABLE_UNCOMMITTED_CHANGES_CHECK=1 \
+python -m nemo_skills.dataset.nv_tts.scripts.run_tts_eval \
+  --config nemo_skills/dataset/nv_tts/scripts/config/tts-roy.yaml \
+  --stage scoring \
+  --expname default_eval
+
+# --stage all

@@ -62,11 +62,15 @@ class VLLMMultimodalModel(VLLMModel):
 
         # Save codec data if present in debug_info
         if "debug_info" in result and result["debug_info"].get("codec_data"):
+            LOG.info(f"Found codec_data in debug_info, size={len(result['debug_info']['codec_data'])} chars")
             codec_codes_path = self._save_codec_data(result["debug_info"]["codec_data"], response.id)
             if codec_codes_path:
                 result["debug_info"]["codec_codes_path"] = codec_codes_path
+                LOG.info(f"Saved codec codes to: {codec_codes_path}")
             # Remove base64 data to avoid duplication in output
             del result["debug_info"]["codec_data"]
+        else:
+            LOG.debug(f"No codec_data in debug_info. Keys: {list(result.get('debug_info', {}).keys()) if result.get('debug_info') else 'no debug_info'}")
 
         choice = response.choices[0]
         if hasattr(choice.message, "audio") and choice.message.audio:

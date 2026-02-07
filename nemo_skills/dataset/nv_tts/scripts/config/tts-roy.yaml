@@ -1,0 +1,37 @@
+# TTS Pipeline Configuration
+
+# Cluster and execution settings (shared across all stages)
+cluster: eos-roy
+container: /lustre/fsw/convai_convaird_nemo-speech/data/containers/nemo_25.11-260122.sqsh
+partition: batch
+mount_paths: /lustre:/lustre
+output_dir: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/skills/eval_results
+
+# NeMo code path for generation server (adds to PYTHONPATH)
+generation_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/gitrepos/NeMo_rfejgin/NeMo
+
+# NeMo code path for scoring (adds to PYTHONPATH)
+scoring_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/gitrepos/NeMo_rfejgin/NeMo
+
+# Generation settings (ns eval arguments)
+generation:
+  benchmarks: nv_tts.libritts_seen #,nv_tts.libritts_test_clean #,nv_tts.riva_hard_digits,nv_tts.riva_hard_letters,nv_tts.riva_hard_money,nv_tts.riva_hard_short,nv_tts.vctk
+  model: nvidia/magpie_tts_multilingual_357m
+  server_type: generic
+  server_gpus: 1
+  server_entrypoint: python -m nemo_skills.inference.server.serve_unified
+  server_args: --backend magpie_tts --codec_model nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps --batch_size 32 --batch_timeout 0.1 --use_cfg --cfg_scale 2.5 --save_codes
+  data_dir: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/skills/data_dir
+  num_chunks: 8
+  gpus_per_node: 8  # set to 1 for single-GPU mode, or 8 for multi-instance mode (num_chunks must be multiple of gpus_per_node)
+  extra_args: ++server.server_type=vllm_multimodal
+
+# Scoring settings
+scoring:
+  sv_model: titanet
+  asr_model_name: nvidia/parakeet-tdt-1.1b
+  language: en
+  with_utmosv2: true
+  with_fcd: true
+  codec_model_path: nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps
+  gpus: 1
