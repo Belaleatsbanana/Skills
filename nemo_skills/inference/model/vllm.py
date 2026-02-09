@@ -120,7 +120,7 @@ class VLLMModel(BaseModel):
             audio_path = os.path.join(self.data_dir, audio["path"])
             base64_audio = audio_file_to_base64(audio_path)
             # Detect format from file extension
-            audio_format = os.path.splitext(audio_path)[1].lstrip(".").lower() or "wav"
+            audio_format = os.path.splitext(audio_path)[1].lstrip('.').lower() or "wav"
             # OpenAI input_audio format
             audio_message = {"type": "input_audio", "input_audio": {"data": base64_audio, "format": audio_format}}
             message["content"].append(audio_message)
@@ -129,7 +129,7 @@ class VLLMModel(BaseModel):
             for audio in audios:
                 audio_path = os.path.join(self.data_dir, audio["path"])
                 base64_audio = audio_file_to_base64(audio_path)
-                audio_format = os.path.splitext(audio_path)[1].lstrip(".").lower() or "wav"
+                audio_format = os.path.splitext(audio_path)[1].lstrip('.').lower() or "wav"
                 audio_message = {"type": "input_audio", "input_audio": {"data": base64_audio, "format": audio_format}}
                 message["content"].append(audio_message)
         return message

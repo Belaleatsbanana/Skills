@@ -454,9 +454,7 @@ def main():
         if args.speaker_reference:
             print(f"  Speaker Reference: {args.speaker_reference}")
         print(f"  Extra Decoding Seconds: {args.extra_decoding_seconds}")
-        print(
-            f"  Inference Boosts: pad={args.inference_pad_boost}, bos={args.inference_bos_boost}, eos={args.inference_eos_boost}"
-        )
+        print(f"  Inference Boosts: pad={args.inference_pad_boost}, bos={args.inference_bos_boost}, eos={args.inference_eos_boost}")
     if args.backend in ("s2s_incremental", "s2s_session"):
         if args.config_path:
             print(f"  Config Path: {args.config_path}")

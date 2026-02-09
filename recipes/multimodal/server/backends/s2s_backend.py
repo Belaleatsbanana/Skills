@@ -243,9 +243,9 @@ class S2SBackend(InferenceBackend):
         if self.s2s_config.stt_ckpt_path:
             cfg["model"]["stt"]["model"]["pretrained_s2s_model"] = self.s2s_config.stt_ckpt_path
         elif self.config.model_path:
-            cfg.setdefault("model", {}).setdefault("stt", {}).setdefault("model", {})["pretrained_s2s_model"] = (
-                self.config.model_path
-            )
+            cfg.setdefault("model", {}).setdefault("stt", {}).setdefault("model", {})[
+                "pretrained_s2s_model"
+            ] = self.config.model_path
 
         if self.s2s_config.tts_ckpt_path:
             cfg["model"]["speech_generation"]["model"]["pretrained_model"] = self.s2s_config.tts_ckpt_path
@@ -308,10 +308,8 @@ class S2SBackend(InferenceBackend):
             print(f"  Frame length: {self.s2s_config.frame_length}s")
             print(f"  Source sample rate: {self.s2s_config.source_sample_rate}")
             print(f"  Extra decoding seconds: {self.s2s_config.extra_decoding_seconds}")
-            print(
-                f"  Inference boosts: pad={self.s2s_config.inference_pad_boost}, "
-                f"bos={self.s2s_config.inference_bos_boost}, eos={self.s2s_config.inference_eos_boost}"
-            )
+            print(f"  Inference boosts: pad={self.s2s_config.inference_pad_boost}, "
+                  f"bos={self.s2s_config.inference_bos_boost}, eos={self.s2s_config.inference_eos_boost}")
 
         except ImportError as e:
             raise RuntimeError(
@@ -478,11 +476,11 @@ class S2SBackend(InferenceBackend):
         if not text:
             return text
         # Remove <$X.XX$> patterns (energy/confidence)
-        text = re.sub(r"<\$[\d.]+\$>", "", text)
+        text = re.sub(r'<\$[\d.]+\$>', '', text)
         # Remove <|X.XX|> patterns (timing)
-        text = re.sub(r"<\|[\d.]+\|>", "", text)
+        text = re.sub(r'<\|[\d.]+\|>', '', text)
         # Clean up extra whitespace
-        text = re.sub(r"\s+", " ", text).strip()
+        text = re.sub(r'\s+', ' ', text).strip()
         return text
 
     def _parse_batch_output(

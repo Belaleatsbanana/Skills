@@ -221,9 +221,7 @@ def run_voicebench_eval(config: dict):
         if not generation_only:
             # Stage 3: VoiceBench scoring on generated text (output.jsonl)
             print("\n--- Running scoring (generated text) ---")
-            score_command_generated = (
-                f"{build_score_command(config, subtest)} --input_jsonl output.jsonl --metrics_variant generated"
-            )
+            score_command_generated = f"{build_score_command(config, subtest)} --input_jsonl output.jsonl --metrics_variant generated"
             score_generated_expname = f"{expname}_score_generated"
             run_cmd(
                 ctx=wrap_arguments(""),
@@ -239,9 +237,7 @@ def run_voicebench_eval(config: dict):
 
             # Stage 4: VoiceBench scoring on agent ASR transcript (output_asr.jsonl)
             print("\n--- Running scoring (agent ASR) ---")
-            score_command_asr = (
-                f"{build_score_command(config, subtest)} --input_jsonl output_asr.jsonl --metrics_variant asr"
-            )
+            score_command_asr = f"{build_score_command(config, subtest)} --input_jsonl output_asr.jsonl --metrics_variant asr"
             run_cmd(
                 ctx=wrap_arguments(""),
                 cluster=config["cluster"],

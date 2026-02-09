@@ -162,14 +162,10 @@ class S2SVoiceChatInferBackend(InferenceBackend):
                 OmegaConf.update(cfg, "model.speech_generation.model.pretrained_tts_model", None, force_add=True)
 
         if self.vc_config.speaker_reference:
-            OmegaConf.update(
-                cfg, "model.inference_speaker_reference", self.vc_config.speaker_reference, force_add=True
-            )
+            OmegaConf.update(cfg, "model.inference_speaker_reference", self.vc_config.speaker_reference, force_add=True)
 
         if self.vc_config.extra_decoding_seconds:
-            OmegaConf.update(
-                cfg, "model.extra_decoding_seconds", float(self.vc_config.extra_decoding_seconds), force_add=True
-            )
+            OmegaConf.update(cfg, "model.extra_decoding_seconds", float(self.vc_config.extra_decoding_seconds), force_add=True)
 
         # Script defaults / common inference overrides
         OmegaConf.update(cfg, "model.use_asr_timestamps", True, force_add=True)
@@ -177,17 +173,11 @@ class S2SVoiceChatInferBackend(InferenceBackend):
 
         # Boosts
         if self.vc_config.inference_pad_boost:
-            OmegaConf.update(
-                cfg, "model.stt.model.inference_pad_boost", float(self.vc_config.inference_pad_boost), force_add=True
-            )
+            OmegaConf.update(cfg, "model.stt.model.inference_pad_boost", float(self.vc_config.inference_pad_boost), force_add=True)
         if self.vc_config.inference_bos_boost:
-            OmegaConf.update(
-                cfg, "model.stt.model.inference_bos_boost", float(self.vc_config.inference_bos_boost), force_add=True
-            )
+            OmegaConf.update(cfg, "model.stt.model.inference_bos_boost", float(self.vc_config.inference_bos_boost), force_add=True)
         if self.vc_config.inference_eos_boost:
-            OmegaConf.update(
-                cfg, "model.stt.model.inference_eos_boost", float(self.vc_config.inference_eos_boost), force_add=True
-            )
+            OmegaConf.update(cfg, "model.stt.model.inference_eos_boost", float(self.vc_config.inference_eos_boost), force_add=True)
 
         # Pull sample rates for preprocessing (data.* is what nemotron_voicechat_infer.py uses)
         try:
@@ -232,9 +222,7 @@ class S2SVoiceChatInferBackend(InferenceBackend):
             print("[S2SVoiceChat] Model loaded successfully")
             print(f"  device={self.config.device} dtype={self.config.dtype}")
             print(f"  source_sr={self.vc_config.source_sample_rate} target_sr={self.vc_config.target_sample_rate}")
-            print(
-                f"  decode_audio={self.vc_config.decode_audio} extra_decoding_seconds={self.vc_config.extra_decoding_seconds}"
-            )
+            print(f"  decode_audio={self.vc_config.decode_audio} extra_decoding_seconds={self.vc_config.extra_decoding_seconds}")
         except Exception as e:
             import traceback
 
@@ -544,3 +532,4 @@ class S2SVoiceChatInferBackend(InferenceBackend):
         if not request.audio_bytes and not request.audio_path:
             return "Audio input is required for s2s_voicechat backend"
         return None
+

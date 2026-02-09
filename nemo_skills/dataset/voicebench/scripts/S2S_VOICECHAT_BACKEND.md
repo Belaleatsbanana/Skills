@@ -122,3 +122,4 @@ Full run (all VoiceBench subsets, 48 chunks, audio enabled, batch size 4):
 ```bash
 cd /home/vmendelev/workspace/expressiveness/src/nemo-skills-s2s-eval && bash -lc 'set -euo pipefail; source .venv/bin/activate; export HOME="/home/vmendelev/workspace/expressiveness/src/nemo-skills-s2s-eval/.tmp_home"; mkdir -p "$HOME"; NEMO_SKILLS_DISABLE_UNCOMMITTED_CHANGES_CHECK=1 python nemo_skills/dataset/voicebench/scripts/generate_from_api_and_score_official.py --config nemo_skills/dataset/voicebench/scripts/voicebench_s2s_voicechat_offline_sound_config.yaml --output_dir /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/voicebench_s2s_voicechat_offline/runs/voicebench_sound_bs4_20260205_140917'
 ```
+

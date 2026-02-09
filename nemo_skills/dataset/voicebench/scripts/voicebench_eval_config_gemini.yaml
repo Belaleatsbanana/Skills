@@ -28,7 +28,7 @@ voicebench_repo_path: /lustre/fsw/portfolios/llmservice/users/vmendelev/code/Voi
 subtests:
   - sd_qa          # QA with PEDANT + GPT judge
 
-
+  
 
 # Scoring settings
 api_type: nvidia
@@ -46,3 +46,4 @@ max_samples: 10  # Set to integer for testing (e.g., 10)
 generation_only: false
 scoring_only: false
 dry_run: false
+
