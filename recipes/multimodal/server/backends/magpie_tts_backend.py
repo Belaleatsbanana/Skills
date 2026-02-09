@@ -30,6 +30,7 @@ class MagpieTTSConfig(BackendConfig):
     use_local_transformer: bool = False
     output_sample_rate: int = 22050
     save_codes: bool = False  # Save codec codes for FCD scoring
+    longform_mode: str = "auto"  # "auto" | "always" | "never" - longform inference mode (NeMo InferenceConfig)
     # Checkpoint loading options (alternative to model_path .nemo file)
     hparams_file: Optional[str] = None
     checkpoint_file: Optional[str] = None
@@ -54,6 +55,7 @@ class MagpieTTSConfig(BackendConfig):
             "use_local_transformer",
             "output_sample_rate",
             "save_codes",
+            "longform_mode",
             "hparams_file",
             "checkpoint_file",
             "legacy_codebooks",
@@ -182,6 +184,7 @@ class MagpieTTSBackend(InferenceBackend):
             use_cfg=self.tts_config.use_cfg,
             use_local_transformer=self.tts_config.use_local_transformer,
             model_inference_parameters=model_params,
+            longform_mode=self.tts_config.longform_mode,
         )
 
         self._runner = MagpieInferenceRunner(self._model, inference_config)
@@ -189,9 +192,6 @@ class MagpieTTSBackend(InferenceBackend):
         self._temp_dir = tempfile.mkdtemp(prefix="magpie_tts_")
         self.tts_config.output_sample_rate = self._model.sample_rate
         self._is_loaded = True
-        print(
-            f"[MagpieTTSBackend] Loaded: {self._checkpoint_name}, sr={self._model.sample_rate}, cfg={self.tts_config.use_cfg}"
-        )
 
     def _extract_json(self, text: str) -> dict:
         """Extract JSON object from text, skipping non-JSON parts."""

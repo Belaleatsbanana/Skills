@@ -174,6 +174,13 @@ def main():
     parser.add_argument("--use_cfg", action="store_true", help="Enable classifier-free guidance (TTS backend)")
     parser.add_argument("--cfg_scale", type=float, default=2.5, help="CFG scale factor (TTS backend)")
     parser.add_argument("--save_codes", action="store_true", help="Save predicted codec codes for FCD scoring (TTS backend)")
+    parser.add_argument(
+        "--longform_mode",
+        type=str,
+        default="auto",
+        choices=("auto", "always", "never"),
+        help="Longform inference mode: auto (detect by length), always, or never (magpie_tts backend)",
+    )
 
     # Checkpoint loading options (for magpie_tts backend - alternative to --model .nemo)
     parser.add_argument("--hparams_file", default=None, help="Path to hparams.yaml (use with --checkpoint_file)")
@@ -313,6 +320,7 @@ def main():
         extra_config["use_cfg"] = args.use_cfg
         extra_config["cfg_scale"] = args.cfg_scale
         extra_config["save_codes"] = args.save_codes
+        extra_config["longform_mode"] = args.longform_mode
         # Checkpoint loading options
         if args.hparams_file:
             extra_config["hparams_file"] = args.hparams_file
