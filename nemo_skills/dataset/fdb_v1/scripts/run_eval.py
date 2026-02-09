@@ -35,11 +35,25 @@ ALL_SUBTESTS = [
     "turn_taking",
     "interruption",
 ]
+# v1.5 has different subtasks (overlap-focused)
+ALL_SUBTESTS_V1_5 = [
+    "background_speech",
+    "talking_to_other",
+    "backchannel",
+    "interruption",
+]
 
 
 def load_config(config_path: str) -> dict:
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
+
+
+def _benchmark_name(subtest: str, fdb_version: str) -> str:
+    """Return benchmark name for eval-results path and nemo-skills (e.g. fdb_v1.pause or fdb_v1_5.pause)."""
+    if fdb_version == "v1.5":
+        return f"fdb_v1_5.{subtest}"
+    return f"fdb_v1.{subtest}"
 
 
 def build_score_command(config: dict, subtest: str, force: bool = False) -> str:
@@ -49,15 +63,18 @@ def build_score_command(config: dict, subtest: str, force: bool = False) -> str:
     - summarized-results/ directory with logs
     - metrics.json with evaluation results
     """
-    eval_results_dir = f"{config['output_dir']}/eval-results/fullduplexbench.{subtest}"
+    fdb_version = config.get("fdb_version", "v1.0")
+    benchmark = _benchmark_name(subtest, fdb_version)
+    eval_results_dir = f"{config['output_dir']}/eval-results/{benchmark}"
     fdb_repo = config["fdb_repo_path"]
-    scoring_script = "nemo_skills/dataset/fullduplexbench/scripts/run_fdb_scoring.py"
+    scoring_script = "nemo_skills/dataset/fdb_v1/scripts/run_fdb_scoring.py"
 
     cmd_args = [
         f"python {scoring_script}",
         f"--eval_results_dir {eval_results_dir}",
         f"--fdb_repo {fdb_repo}",
         f"--subtest {subtest}",
+        f"--fdb_version {fdb_version}",
     ]
     if force:
         cmd_args.append("--force")
@@ -72,15 +89,17 @@ def run_fdb_eval(config: dict):
     """Run Full-Duplex-Bench evaluation using direct Python calls."""
 
     # Parse subtests
+    fdb_version = config.get("fdb_version", "v1.0")
+    valid_subtests = ALL_SUBTESTS_V1_5 if fdb_version == "v1.5" else ALL_SUBTESTS
     subtests_cfg = config.get("subtests", "all")
     if subtests_cfg == "all":
-        subtests = ALL_SUBTESTS
+        subtests = list(valid_subtests)
     elif isinstance(subtests_cfg, str):
         subtests = [s.strip() for s in subtests_cfg.split(",")]
     else:
         subtests = subtests_cfg
 
-    subtests = [s for s in subtests if s in ALL_SUBTESTS]
+    subtests = [s for s in subtests if s in valid_subtests]
     if not subtests:
         raise ValueError("No valid subtests specified")
 
@@ -104,11 +123,11 @@ def run_fdb_eval(config: dict):
     for subtest in subtests:
         extra_args_str = " ".join(base_extra_args)
         print(f"\n{'=' * 60}")
-        print(f"Processing subtest: {subtest}")
+        print(f"Processing subtest: {subtest} (FDB {fdb_version})")
         print(f"{'=' * 60}")
 
-        expname = f"{config.get('expname', 'fullduplexbench')}_{subtest}"
-        benchmark = f"fullduplexbench.{subtest}"
+        benchmark = _benchmark_name(subtest, fdb_version)
+        expname = f"{config.get('expname', 'fdb_v1')}_{subtest}"
 
         # Generation phase
         if not scoring_only:
@@ -141,7 +160,7 @@ def run_fdb_eval(config: dict):
         if not generation_only:
             print("\n--- Running scoring ---")
             score_command = build_score_command(config, subtest, force=config.get("scoring_force", False))
-            eval_results_path = f"{config['output_dir']}/eval-results/fullduplexbench.{subtest}"
+            eval_results_path = f"{config['output_dir']}/eval-results/{benchmark}"
             # FDB scoring runs get_transcript/asr.py which requires NeMo + CUDA; use GPU partition and 1 GPU
             scoring_container = config.get("scoring_container") or config.get("server_container") or "nemo-skills"
             scoring_gpus = config.get("scoring_gpus", 1)  # ASR needs GPU; default 1
@@ -165,7 +184,7 @@ def run_fdb_eval(config: dict):
     if not generation_only and len(subtests) > 1:
         eval_results_parent = Path(config["output_dir"]) / "eval-results"
         print(f"\nTo see aggregated metrics across all subtests, run:")
-        print(f"  python nemo_skills/dataset/fullduplexbench/scripts/aggregate_results.py \\")
+        print(f"  python nemo_skills/dataset/fdb_v1/scripts/aggregate_results.py \\")
         print(f"    --eval_results_dir {eval_results_parent} \\")
         print(f"    --json {eval_results_parent}/summary.json")
     print(f"{'=' * 60}")

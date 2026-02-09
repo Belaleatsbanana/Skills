@@ -19,13 +19,28 @@ Used by run_eval.py.
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-ASR_TASK_MAP = {"pause": "full", "backchannel": "full", "turn_taking": "full", "interruption": "user_interruption"}
-FDB_TASK_MAP = {"pause": "pause_handling", "backchannel": "backchannel", "turn_taking": "smooth_turn_taking", "interruption": "user_interruption"}
+ASR_TASK_MAP = {
+    "pause": "full",
+    "backchannel": "full",
+    "turn_taking": "full",
+    "interruption": "user_interruption",
+    "background_speech": "full",
+    "talking_to_other": "full",
+}
+FDB_TASK_MAP = {
+    "pause": "pause_handling",
+    "backchannel": "backchannel",
+    "turn_taking": "smooth_turn_taking",
+    "interruption": "user_interruption",
+    "background_speech": "background_speech",
+    "talking_to_other": "talking_to_other",
+}
 
 
 def main():
@@ -34,6 +49,7 @@ def main():
     parser.add_argument("--fdb_repo", type=Path, required=True)
     parser.add_argument("--subtest", required=True, choices=list(ASR_TASK_MAP))
     parser.add_argument("--fdb_data_path", type=Path, default=None, help="FDB dataset root; required for turn_taking (turn_taking.json) and interruption (interrupt.json)")
+    parser.add_argument("--fdb_version", default="v1.0", choices=["v1.0", "v1.5"], help="FDB dataset version (metadata paths and metrics key)")
     args = parser.parse_args()
 
     eval_results_dir = args.eval_results_dir.resolve()
@@ -64,6 +80,7 @@ def main():
         "--fdb_repo", str(fdb_repo),
         "--run_asr", "--asr_task", asr_task,
         "--subtest", args.subtest,
+        "--fdb_version", args.fdb_version,
     ]
     if args.fdb_data_path is not None:
         prep_cmd.extend(["--fdb_data_path", str(args.fdb_data_path)])
@@ -74,10 +91,11 @@ def main():
     if not evaluate_script.exists():
         print(f"Error: {evaluate_script} not found")
         sys.exit(1)
-    # Run from evaluation/ so FDB scripts find ./icc_gt_distribution.json (backchannel) and other relative paths
+    # Run from evaluation/ so FDB scripts find ./icc_gt_distribution.json (backchannel) and other relative paths.
+    # Pass through env so NVIDIA_API_KEY is available for interruption/behavior tasks (NVIDIA NIM API).
     result = subprocess.run(
         [sys.executable, str(evaluate_script), "--task", fdb_task, "--root_dir", str(fdb_prepared)],
-        cwd=str(fdb_repo / "evaluation"), capture_output=True, text=True,
+        cwd=str(fdb_repo / "evaluation"), capture_output=True, text=True, env=os.environ.copy(),
     )
     stdout, stderr = result.stdout, result.stderr
     print(stdout)
@@ -104,9 +122,10 @@ def main():
     if not metrics:
         metrics["status"] = "no_metrics_found"
 
+    benchmark_key = f"fdb_v1_5.{args.subtest}" if args.fdb_version == "v1.5" else f"fdb_v1.{args.subtest}"
     metrics_file.parent.mkdir(parents=True, exist_ok=True)
     with open(metrics_file, "w") as f:
-        json.dump({f"fullduplexbench.{args.subtest}": {"greedy": metrics}}, f, indent=2)
+        json.dump({benchmark_key: {"greedy": metrics}}, f, indent=2)
     print(f"Metrics written to {metrics_file}")
 
 

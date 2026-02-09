@@ -24,7 +24,7 @@ server_args: >-
   --num_frames_per_inference 2
   --silence_padding_sec 0.0
   --output_frame_alignment
-  --session_artifacts_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fullduplexbench_incremental_artifacts
+  --session_artifacts_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_incremental_artifacts
   --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
 
 server_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/nemo_duplex_november_eartts.sqsh
@@ -34,7 +34,7 @@ server_server_type: vllm_multimodal
 
 # Paths (set to your locations)
 data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset
-output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fullduplexbench_runs_incremental
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_runs_incremental
 fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
 fdb_data_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench-data
 
@@ -44,7 +44,7 @@ subtests:
 
 scoring_installation_command: "pip install numpy scipy scikit-learn silero-vad soundfile"
 
-expname: fullduplexbench_s2s_incremental
+expname: fdb_v1_s2s_incremental
 # max_samples: 10
 
 generation_only: false

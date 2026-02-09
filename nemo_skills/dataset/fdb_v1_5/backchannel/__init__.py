@@ -12,17 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Full-Duplex-Bench - A benchmark for evaluating full-duplex spoken dialogue models
-# Source: https://github.com/DanielLin94144/Full-Duplex-Bench
-
-DATASET_GROUP = "speechlm"
-IS_BENCHMARK_GROUP = True
-
-# All Full-Duplex-Bench subtests that can be run individually
-# Based on the four main evaluation dimensions: pause, backchannel, turn-taking, interruption
-BENCHMARKS = {
-    "fullduplexbench.pause": {},
-    "fullduplexbench.backchannel": {},
-    "fullduplexbench.turn_taking": {},
-    "fullduplexbench.interruption": {},
-}
+METRICS_TYPE = "exact_match"
+GENERATION_ARGS = "++prompt_format=openai"
+EVAL_ARGS = "++eval_type=exact_match"

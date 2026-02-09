@@ -46,6 +46,19 @@ SUBTESTS = {
         "eval_args": "++eval_type=exact_match",
         "description": "Evaluate model's handling of interruptions",
     },
+    # v1.5-only subtasks (overlap-focused)
+    "background_speech": {
+        "has_reference": True,
+        "metrics_type": "exact_match",
+        "eval_args": "++eval_type=exact_match",
+        "description": "Evaluate model's response with background speech",
+    },
+    "talking_to_other": {
+        "has_reference": True,
+        "metrics_type": "exact_match",
+        "eval_args": "++eval_type=exact_match",
+        "description": "Evaluate model's response when user talks to others",
+    },
 }
 
 # Template for subtest __init__.py files
@@ -75,7 +88,7 @@ def save_audio(audio_data, audio_path, sampling_rate=16000):
     sf.write(str(audio_path), audio_data, sampling_rate)
 
 
-def format_entry(entry, subtest_name, config, audio_dir, entry_idx, no_audio=False):
+def format_entry(entry, subtest_name, config, audio_dir, entry_idx, no_audio=False, dataset_name="fdb_v1"):
     """Format a single entry for nemo-skills with OpenAI messages format.
 
     Creates three message variants in a single entry:
@@ -119,7 +132,7 @@ def format_entry(entry, subtest_name, config, audio_dir, entry_idx, no_audio=Fal
                 # Copy audio file to our data directory
                 shutil.copy(source_audio, audio_dest)
 
-                audio_info = {"audio": {"path": f"fullduplexbench/data/{audio_id}.wav"}}
+                audio_info = {"audio": {"path": f"{dataset_name}/data/{audio_id}.wav"}}
                 formatted["audio_path"] = f"data/{audio_id}.wav"
 
         # Handle direct audio data (for compatibility)
@@ -134,7 +147,7 @@ def format_entry(entry, subtest_name, config, audio_dir, entry_idx, no_audio=Fal
                 # If audio is already a numpy array or similar
                 save_audio(entry["audio"], audio_path)
 
-            audio_info = {"audio": {"path": f"fullduplexbench/data/{audio_id}.wav"}}
+            audio_info = {"audio": {"path": f"{dataset_name}/data/{audio_id}.wav"}}
             formatted["audio_path"] = f"data/{audio_id}.wav"
 
     # Create three message variants:
@@ -169,7 +182,7 @@ def create_subtest_init(subtest_dir, config):
         f.write(content)
 
 
-def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no_audio=False):
+def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no_audio=False, version="v1.0", dataset_name="fdb_v1"):
     """Process a single subtest and save to JSONL.
 
     Each entry contains three message variants:
@@ -177,7 +190,7 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
     - messages_text_audio: both text and audio
     - messages_text: text only (for text-only comparison)
 
-    Full-Duplex-Bench v1.0 structure:
+    Full-Duplex-Bench structure (v1.0 or v1.5):
     - candor_pause_handling/{ID}/input.wav, pause.json, transcription.json
     - candor_turn_taking/{ID}/input.wav, turn_taking.json, transcription.json
     - icc_backchannel/{ID}/input.wav, transcription.json
@@ -194,26 +207,35 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
     print(f"Processing {subtest_name}...")
     print(f"  Description: {config['description']}")
 
-    # Map subtests to Full-Duplex-Bench dataset folders
-    subtest_mapping = {
+    # Map subtests to Full-Duplex-Bench dataset folders (v1.0 vs v1.5 have different folders)
+    subtest_mapping_v1_0 = {
         "pause": ["candor_pause_handling", "synthetic_pause_handling"],
         "backchannel": ["icc_backchannel"],
         "turn_taking": ["candor_turn_taking"],
         "interruption": ["synthetic_user_interruption"],
     }
-
+    # v1.5 Drive folder names: background_speech, talking_to_other, user_interruption, user_backchannel
+    subtest_mapping_v1_5 = {
+        "background_speech": ["background_speech"],
+        "talking_to_other": ["talking_to_other"],
+        "backchannel": ["user_backchannel"],
+        "interruption": ["user_interruption"],
+    }
+    subtest_mapping = subtest_mapping_v1_5 if version == "v1.5" else subtest_mapping_v1_0
     dataset_folders = subtest_mapping.get(subtest_name, [])
     if not dataset_folders:
         print(f"  Warning: Unknown subtest {subtest_name}")
         return 0
 
+    # Version folder names (v1.0 / v1_0 and v1.5 / v1_5)
+    version_folders = ("v1.0", "v1_0") if version == "v1.0" else ("v1.5", "v1_5")
     # Load test cases from each dataset folder
     test_cases = []
     for folder_name in dataset_folders:
         # Try different possible paths
         possible_paths = [
-            fdb_data_path / "v1.0" / folder_name,  # Standard: v1.0
-            fdb_data_path / "v1_0" / folder_name,  # Alternative: v1_0
+            fdb_data_path / version_folders[0] / folder_name,
+            fdb_data_path / version_folders[1] / folder_name,
             fdb_data_path / folder_name,  # Direct
         ]
 
@@ -279,6 +301,7 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
             audio_dir,
             entry_idx,
             no_audio=no_audio,
+            dataset_name=dataset_name,
         )
         entries.append(formatted)
         entry_idx += 1
@@ -295,7 +318,7 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
     return len(entries)
 
 
-# All five v1.0 zip names on Google Drive (must all be downloaded and extracted for full dataset)
+# All five zip names per version on Google Drive (must all be downloaded and extracted for full dataset)
 EXPECTED_V1_ZIPS = [
     "candor_pause_handling.zip",
     "candor_turn_taking.zip",
@@ -304,13 +327,27 @@ EXPECTED_V1_ZIPS = [
     "synthetic_user_interruption.zip",
 ]
 
+# v1.5 Drive folder names (after download/extract)
+EXPECTED_V1_5_ZIPS = [
+    "background_speech",
+    "talking_to_other",
+    "user_interruption",
+    "user_backchannel",
+]
 
-def download_dataset(download_dir: Path) -> bool:
-    """Download only the Full-Duplex-Bench v1.0 subfolder from Google Drive (not v1.5),
-    then unzip all archives so that all five dataset folders are present.
+# Google Drive: root has v1.0 and v1.5 subfolders
+# https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3
+FDB_ROOT_FOLDER_ID = "1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3"
+FDB_V1_0_FOLDER_ID = "1hxzRk7xgtdr5ZEoctnp0sFK0COv91W3h"  # v1.0 subfolder (direct)
 
-    Original dataset with v1.0 and v1.5: https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3
-    We download only the v1.0 folder into download_dir/v1.0, then extract every .zip found there.
+
+def download_dataset(download_dir: Path, version: str = "v1.0") -> bool:
+    """Download the Full-Duplex-Bench v1.0 or v1.5 from Google Drive, then unzip.
+
+    Root folder (v1.0 + v1.5): https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3
+    - v1.0: we download the v1.0 subfolder directly into download_dir/v1.0.
+    - v1.5: we download the ROOT folder so that download_dir/v1.5 is populated (enter v1.5 in Drive);
+      then we extract only the zips under download_dir/v1.5.
 
     Returns:
         True if download successful, False otherwise
@@ -325,57 +362,87 @@ def download_dataset(download_dir: Path) -> bool:
     import shutil
     import zipfile
 
-    # v1.0 subfolder only (do not download v1.5)
-    v1_0_folder_url = "https://drive.google.com/drive/folders/1hxzRk7xgtdr5ZEoctnp0sFK0COv91W3h"
-    v1_dir = download_dir / "v1.0"
+    if version == "v1.0":
+        folder_id = FDB_V1_0_FOLDER_ID
+        version_dir_name = "v1.0"
+        output_for_download = download_dir / version_dir_name
+        version_dir = output_for_download
+        zip_description = "candor_pause_handling, candor_turn_taking, icc_backchannel, synthetic_pause_handling, synthetic_user_interruption"
+    else:
+        # v1.5: download ROOT folder so we get both v1.0 and v1.5; we only use v1.5
+        folder_id = FDB_ROOT_FOLDER_ID
+        version_dir_name = "v1.5"
+        output_for_download = download_dir  # root download -> download_dir/v1.0 and download_dir/v1.5
+        version_dir = download_dir / "v1.5"
+        zip_description = "background_speech, talking_to_other, user_interruption, user_backchannel"
+
+    folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
 
     print("\n" + "=" * 60)
-    print("Downloading Full-Duplex-Bench v1.0 only from Google Drive")
+    print(f"Downloading Full-Duplex-Bench {version} from Google Drive")
     print("=" * 60)
-    print(f"Source: {v1_0_folder_url}")
-    print(f"Destination: {v1_dir}")
-    print(
-        "All 5 zips will be downloaded and extracted (candor_pause_handling, candor_turn_taking, icc_backchannel, synthetic_pause_handling, synthetic_user_interruption)."
-    )
+    print(f"Source: {folder_url}")
+    if version == "v1.5":
+        print("(Downloading root folder; v1.5 zips will be taken from download_dir/v1.5)")
+    print(f"Destination: {version_dir}")
+    print(f"Zips expected: {zip_description}")
     print("=" * 60 + "\n")
 
     try:
-        v1_dir.mkdir(parents=True, exist_ok=True)
+        output_for_download.mkdir(parents=True, exist_ok=True)
 
-        print("Downloading v1.0 dataset (all zip files in folder)...")
+        print(f"Downloading {'root (v1.0 + v1.5)' if version == 'v1.5' else version} dataset...")
         gdown.download_folder(
-            url=v1_0_folder_url,
-            output=str(v1_dir),
+            url=folder_url,
+            output=str(output_for_download),
             quiet=False,
             use_cookies=False,
             remaining_ok=True,
         )
 
-        # gdown may create a single subfolder with the folder name; collect zips from v1_dir and one level down
-        zip_files = list(v1_dir.glob("*.zip")) or list(v1_dir.rglob("*.zip"))
-        if not zip_files and any(v1_dir.iterdir()):
-            sub = next((d for d in v1_dir.iterdir() if d.is_dir()), None)
+        # For v1.5 we downloaded root -> find v1.5 or v1_5 under download_dir (maybe one level down)
+        if version == "v1.5":
+            if not version_dir.exists():
+                version_dir = download_dir / "v1_5"
+            if not version_dir.exists():
+                for sub in download_dir.iterdir():
+                    if sub.is_dir():
+                        for name in ("v1.5", "v1_5"):
+                            candidate = sub / name
+                            if candidate.exists():
+                                version_dir = candidate
+                                break
+                        if version_dir.exists():
+                            break
+            if not version_dir.exists():
+                print(f"After download, v1.5 folder not found under {download_dir}. Check Drive structure.")
+                return False
+
+        # gdown may create a single subfolder with the folder name; collect zips from version_dir and one level down
+        zip_files = list(version_dir.glob("*.zip")) or list(version_dir.rglob("*.zip"))
+        if not zip_files and any(version_dir.iterdir()):
+            sub = next((d for d in version_dir.iterdir() if d.is_dir()), None)
             if sub:
                 sub_zips = list(sub.rglob("*.zip"))
                 if sub_zips:
                     for z in sub_zips:
-                        dest = v1_dir / z.name
+                        dest = version_dir / z.name
                         if not dest.exists() or dest.stat().st_size != z.stat().st_size:
                             shutil.move(str(z), str(dest))
-                    zip_files = list(v1_dir.glob("*.zip"))
+                    zip_files = list(version_dir.glob("*.zip"))
 
         print("\n" + "=" * 60)
         print("Download completed.")
         print("=" * 60 + "\n")
 
         if not zip_files:
-            zip_files = list(v1_dir.glob("*.zip")) or list(v1_dir.rglob("*.zip"))
+            zip_files = list(version_dir.glob("*.zip")) or list(version_dir.rglob("*.zip"))
         if not zip_files:
-            print("Warning: No .zip files found under v1.0. Check Drive permissions or download manually.")
+            print(f"Warning: No .zip files found under {version_dir_name}. Check Drive permissions or download manually.")
             return True
 
-        # Extract all zip files in v1.0
-        print(f"Extracting {len(zip_files)} ZIP file(s) in v1.0...")
+        # Extract all zip files
+        print(f"Extracting {len(zip_files)} ZIP file(s) in {version_dir_name}...")
         for zip_file in tqdm(sorted(zip_files), desc="Extracting"):
             try:
                 extract_dir = zip_file.parent
@@ -388,16 +455,19 @@ def download_dataset(download_dir: Path) -> bool:
 
         print(f"\nExtracted {len(zip_files)} ZIP file(s).")
 
-        # Verify expected folders exist (names without .zip)
-        expected_folders = [p.replace(".zip", "") for p in EXPECTED_V1_ZIPS]
-        found = [d.name for d in v1_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
+        # Verify expected folders exist (names without .zip for v1.0; explicit list for v1.5)
+        if version == "v1.5":
+            expected_folders = EXPECTED_V1_5_ZIPS
+        else:
+            expected_folders = [p.replace(".zip", "") for p in EXPECTED_V1_ZIPS]
+        found = [d.name for d in version_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
         missing = [f for f in expected_folders if f not in found]
         if missing:
             print(f"Warning: After extraction, missing folder(s): {missing}")
             print("  Re-run prepare (without --fdb_data_path to re-download) or add the missing zip(s) manually to:")
-            print(f"  {v1_dir}")
+            print(f"  {version_dir}")
         else:
-            print("All expected v1.0 dataset folders are present.")
+            print(f"All expected {version} dataset folders are present.")
 
         return True
 
@@ -405,8 +475,8 @@ def download_dataset(download_dir: Path) -> bool:
         print(f"\nError downloading dataset: {e}")
         print("\nYou can manually download from:")
         print("  https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3")
-        print("  Open the v1.0 subfolder, download all 5 zips, and extract them into:")
-        print(f"  {download_dir / 'v1.0'}")
+        print(f"  Open the {version_dir_name} subfolder, download all 5 zips, and extract them into:")
+        print(f"  {version_dir}")
         return False
 
 
@@ -419,6 +489,9 @@ Examples:
   # Download v1.0 to default path (s2s/Full-Duplex-Bench-data) and prepare
   python prepare.py
 
+  # Prepare v1.5 (use existing fdb_data_path that contains v1.5 or v1_5 folder)
+  python prepare.py --version v1.5 --fdb_data_path /path/to/Full-Duplex-Bench-data
+
   # Use existing dataset (no download)
   python prepare.py --fdb_data_path /path/to/Full-Duplex-Bench-data
 
@@ -427,10 +500,17 @@ Examples:
         """,
     )
     parser.add_argument(
+        "--version",
+        type=str,
+        choices=["v1.0", "v1.5"],
+        default="v1.0",
+        help="Dataset version. v1.0 writes to fdb_v1/; v1.5 writes to fdb_v1_5/ (run separately).",
+    )
+    parser.add_argument(
         "--fdb_data_path",
         type=str,
         default=None,
-        help="Path to Full-Duplex-Bench dataset. If not set, downloads v1.0 to s2s/Full-Duplex-Bench-data and prepares.",
+        help="Path to Full-Duplex-Bench dataset root. If not set, downloads selected version to s2s/Full-Duplex-Bench-data and prepares.",
     )
     parser.add_argument(
         "--subtests",
@@ -445,11 +525,20 @@ Examples:
     )
     args = parser.parse_args()
 
-    data_dir = Path(__file__).parent
+    version = args.version
+    base_dir = Path(__file__).parent  # fdb_v1 package dir
+    dataset_parent = base_dir.parent  # nemo_skills/dataset
+    if version == "v1.0":
+        data_dir = base_dir
+        dataset_name = "fdb_v1"
+    else:
+        data_dir = dataset_parent / "fdb_v1_5"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        dataset_name = "fdb_v1_5"
     audio_dir = data_dir / "data"
     audio_dir.mkdir(parents=True, exist_ok=True)
 
-    _skills_dir = data_dir.parent.parent.parent
+    _skills_dir = base_dir.parent.parent.parent
     _s2s_root = _skills_dir.parent
     _default_fdb_data = _s2s_root / "Full-Duplex-Bench-data"
 
@@ -460,17 +549,48 @@ Examples:
             print("Run without --fdb_data_path to download, or use:")
             print("  https://drive.google.com/drive/folders/1DtoxMVO9_Y_nDs2peZtx3pw-U2qYgpd3")
             return
+        # If requested version data not present, download and extract first
+        if version == "v1.5":
+            v1_5_dir = fdb_data_path / "v1.5"
+            v1_5_alt = fdb_data_path / "v1_5"
+            has_data = any(
+                (v1_5_dir / folder).exists() or (v1_5_alt / folder).exists()
+                for folder in EXPECTED_V1_5_ZIPS
+            )
+            if not has_data:
+                print(f"v1.5 data not found under {fdb_data_path}. Downloading and extracting v1.5...")
+                if not download_dataset(fdb_data_path, version="v1.5"):
+                    print("\nDownload failed. Exiting.")
+                    return
+        elif version == "v1.0":
+            v1_0_dir = fdb_data_path / "v1.0"
+            v1_0_alt = fdb_data_path / "v1_0"
+            expected_v1_0 = [p.replace(".zip", "") for p in EXPECTED_V1_ZIPS]
+            has_data = any(
+                (v1_0_dir / folder).exists() or (v1_0_alt / folder).exists()
+                for folder in expected_v1_0
+            )
+            if not has_data:
+                print(f"v1.0 data not found under {fdb_data_path}. Downloading and extracting v1.0...")
+                if not download_dataset(fdb_data_path, version="v1.0"):
+                    print("\nDownload failed. Exiting.")
+                    return
     else:
         download_path = _default_fdb_data
-        print(f"Downloading v1.0 to {download_path} (overwriting if present)...")
-        if not download_dataset(download_path):
+        print(f"Downloading {version} to {download_path} (overwriting if present)...")
+        if not download_dataset(download_path, version=version):
             print("\nDownload failed. Exiting.")
             return
         fdb_data_path = download_path
 
-    subtests_to_process = args.subtests if args.subtests else list(SUBTESTS.keys())
+    if args.subtests:
+        subtests_to_process = args.subtests
+    elif version == "v1.5":
+        subtests_to_process = ["background_speech", "talking_to_other", "backchannel", "interruption"]
+    else:
+        subtests_to_process = ["pause", "backchannel", "turn_taking", "interruption"]
 
-    print(f"Processing {len(subtests_to_process)} subtests...")
+    print(f"Processing {len(subtests_to_process)} subtests for {version} (dataset_name={dataset_name})...")
     if args.no_audio:
         print("Skipping audio download (--no-audio)")
 
@@ -481,7 +601,10 @@ Examples:
             continue
 
         config = SUBTESTS[subtest_name]
-        count = process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no_audio=args.no_audio)
+        count = process_subtest(
+            subtest_name, config, data_dir, audio_dir, fdb_data_path,
+            no_audio=args.no_audio, version=version, dataset_name=dataset_name,
+        )
         total_entries += count
 
     print(f"\nDone! Processed {total_entries} total entries across {len(subtests_to_process)} subtests.")

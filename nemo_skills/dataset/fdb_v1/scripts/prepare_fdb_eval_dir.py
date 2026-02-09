@@ -32,6 +32,13 @@ except ImportError:
     sf = None
 
 
+def _version_folders(fdb_version: str):
+    """Return (primary, alternate) folder names for the given FDB version (e.g. v1.0 -> ('v1.0', 'v1_0'))."""
+    if fdb_version == "v1.5":
+        return ("v1.5", "v1_5")
+    return ("v1.0", "v1_0")
+
+
 def prepare_fdb_dir(
     eval_results_dir: Path,
     output_jsonl: Path,
@@ -41,6 +48,7 @@ def prepare_fdb_dir(
     run_asr: bool = False,
     fdb_data_path: Optional[Path] = None,
     subtest: Optional[str] = None,
+    fdb_version: str = "v1.0",
 ) -> Path:
     """Build FDB-format dir under eval_results_dir/subdir_name. Returns path to prepared dir."""
     fdb_prepared = eval_results_dir / subdir_name
@@ -105,6 +113,7 @@ def prepare_fdb_dir(
         ensure_mono_wav(src_wav, dest_wav)
 
     # FDB turn_taking eval requires turn_taking.json (input turn end time) in each sample dir
+    vers = _version_folders(fdb_version)
     if subtest == "turn_taking" and fdb_data_path and fdb_data_path.exists():
         for entry_id, _ in entries_with_audio:
             entry_id = str(entry_id)
@@ -114,13 +123,13 @@ def prepare_fdb_dir(
                 sample_id = entry_id  # e.g. id "1" -> candor_turn_taking/1/
             else:
                 continue
-            for ver in ("v1.0", "v1_0"):
+            for ver in vers:
                 src = fdb_data_path / ver / "candor_turn_taking" / sample_id / "turn_taking.json"
                 if src.exists():
                     shutil.copy2(src, fdb_prepared / entry_id / "turn_taking.json")
                     break
             else:
-                print(f"Warning: turn_taking.json not found for {entry_id} (tried v1.0 and v1_0)")
+                print(f"Warning: turn_taking.json not found for {entry_id} (tried {vers})")
 
     # FDB ASR for interruption expects interrupt.json in each sample dir (to crop audio after interrupt)
     if subtest == "interruption" and fdb_data_path and fdb_data_path.exists():
@@ -132,13 +141,13 @@ def prepare_fdb_dir(
                 sample_id = entry_id
             else:
                 continue
-            for ver in ("v1.0", "v1_0"):
+            for ver in vers:
                 src = fdb_data_path / ver / "synthetic_user_interruption" / sample_id / "interrupt.json"
                 if src.exists():
                     shutil.copy2(src, fdb_prepared / entry_id / "interrupt.json")
                     break
             else:
-                print(f"Warning: interrupt.json not found for {entry_id} (tried v1.0 and v1_0)")
+                print(f"Warning: interrupt.json not found for {entry_id} (tried {vers})")
 
     if run_asr and asr_task and (fdb_repo / "get_transcript" / "asr.py").exists():
         asr_script = fdb_repo / "get_transcript" / "asr.py"
@@ -164,6 +173,9 @@ def main():
     parser.add_argument(
         "--subtest", default=None, help="Subtest name; needed to copy task metadata (turn_taking.json for turn_taking, interrupt.json for interruption)"
     )
+    parser.add_argument(
+        "--fdb_version", default="v1.0", choices=["v1.0", "v1.5"], help="FDB dataset version (for metadata paths under fdb_data_path)"
+    )
     args = parser.parse_args()
 
     output_jsonl = args.eval_results_dir / "output.jsonl"
@@ -180,6 +192,7 @@ def main():
         run_asr=args.run_asr,
         fdb_data_path=args.fdb_data_path,
         subtest=args.subtest,
+        fdb_version=args.fdb_version,
     )
     print(f"Prepared: {path}")
 
