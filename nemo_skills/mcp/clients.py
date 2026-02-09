@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import contextlib
 import copy
 import functools
 import json
@@ -151,6 +152,24 @@ def _extract_tool_result(result) -> Any:
     except ValueError as e:
         LOG.error("Unsupported content type in tool result: %s", e)
         return {"error": "Unsupported content type returned from tool"}
+
+
+def _parse_tools_response(tools_resp) -> List[Dict[str, Any]]:
+    """Parse an MCP ListToolsResult into a list of tool descriptor dicts."""
+    tools_list: List[Dict[str, Any]] = []
+    for t in getattr(tools_resp, "tools", []) or []:
+        # Support both input_schema (python) and inputSchema (wire)
+        input_schema = getattr(t, "input_schema", None)
+        if input_schema is None:
+            input_schema = getattr(t, "inputSchema", None)
+        tools_list.append(
+            {
+                "name": getattr(t, "name", None),
+                "description": getattr(t, "description", ""),
+                "input_schema": input_schema,
+            }
+        )
+    return tools_list
 
 
 def _wrap_call_tool_output_formatter(method):
@@ -342,6 +361,10 @@ class MCPClient(metaclass=MCPClientMeta):
     async def call_tool(self, tool: str, args: dict) -> Any:
         pass
 
+    async def close(self):
+        """Close persistent session resources, if any. Safe to call multiple times."""
+        pass
+
     # Enforcement helpers
     def _assert_tool_allowed(self, tool: str):
         if tool in getattr(self, "_disabled_tools", set()):
@@ -356,6 +379,8 @@ class MCPStreamableHttpClient(MCPClient):
 
     Args:
         base_url: Base URL of the MCP server, e.g. "https://host:port/mcp".
+        persistent: If True, the HTTP session is kept alive across calls instead
+            of reconnecting each time. Use close() to release resources when done.
 
     Behavior:
     - list_tools() fetches tool metadata from the server and normalizes schema
@@ -375,39 +400,68 @@ class MCPStreamableHttpClient(MCPClient):
     ```
     """
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, persistent: bool = False):
         self.base_url = base_url
         self.tools: List[Dict[str, Any]] = []
+        self._persistent = persistent
+        self._exit_stack = None
+        self._session = None
+
+    async def _ensure_session(self):
+        if self._session is not None:
+            return
+        self._exit_stack = contextlib.AsyncExitStack()
+        read_stream, write_stream, _ = await self._exit_stack.enter_async_context(streamablehttp_client(self.base_url))
+        self._session = await self._exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
+        await self._session.initialize()
+
+    async def _reset_session(self):
+        stack = self._exit_stack
+        self._session = None
+        self._exit_stack = None
+        if stack is not None:
+            try:
+                await stack.aclose()
+            except Exception:
+                LOG.debug("Error during persistent session cleanup (already broken)", exc_info=True)
 
     async def list_tools(self):
+        if self._persistent:
+            await self._ensure_session()
+            try:
+                tools_resp = await self._session.list_tools()
+            except Exception:
+                await self._reset_session()
+                raise
+            self.tools = _parse_tools_response(tools_resp)
+            return self.tools
+
         async with streamablehttp_client(self.base_url) as (read_stream, write_stream, _):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 tools_resp = await session.list_tools()
-                tools_list: List[Dict[str, Any]] = []
-                # tools_resp.tools is expected to be a list of Tool objects
-                for t in getattr(tools_resp, "tools", []) or []:
-                    # Support both input_schema (python) and inputSchema (wire)
-                    input_schema = getattr(t, "input_schema", None)
-                    if input_schema is None:
-                        input_schema = getattr(t, "inputSchema", None)
-                    tools_list.append(
-                        {
-                            "name": getattr(t, "name", None),
-                            "description": getattr(t, "description", ""),
-                            "input_schema": input_schema,
-                        }
-                    )
-                self.tools = tools_list
+                self.tools = _parse_tools_response(tools_resp)
                 return self.tools
 
     async def call_tool(self, tool: str, args: dict) -> Any:
         self._assert_tool_allowed(tool)
+        if self._persistent:
+            await self._ensure_session()
+            try:
+                result = await self._session.call_tool(tool, arguments=args)
+            except Exception:
+                await self._reset_session()
+                raise
+            return _extract_tool_result(result)
+
         async with streamablehttp_client(self.base_url) as (read_stream, write_stream, _):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 result = await session.call_tool(tool, arguments=args)
                 return _extract_tool_result(result)
+
+    async def close(self):
+        await self._reset_session()
 
 
 class MCPStdioClient(MCPClient):
@@ -416,6 +470,9 @@ class MCPStdioClient(MCPClient):
     Args:
         command: Executable to launch (e.g., "python").
         args: Command-line arguments (e.g., ["-m", "nemo_skills.mcp.servers.python_tool"]).
+        persistent: If True, the subprocess and MCP session are kept alive across
+            calls instead of spawning a new process each time. Use close() to
+            release resources when done.
 
     Behavior:
     - list_tools() fetches tool metadata from the running stdio server.
@@ -434,37 +491,68 @@ class MCPStdioClient(MCPClient):
     ```
     """
 
-    def __init__(self, command: str, args: list[str] | None = None):
+    def __init__(self, command: str, args: list[str] | None = None, persistent: bool = False):
         if args is None:
             args = []
         # Default: inherit the caller's environment for all stdio-launched servers
         self.server_params = StdioServerParameters(command=command, args=args, env=os.environ.copy())
         self.tools: List[Dict[str, Any]] = []
+        self._persistent = persistent
+        self._exit_stack = None
+        self._session = None
+
+    async def _ensure_session(self):
+        if self._session is not None:
+            return
+        self._exit_stack = contextlib.AsyncExitStack()
+        read_stream, write_stream = await self._exit_stack.enter_async_context(stdio_client(self.server_params))
+        self._session = await self._exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
+        await self._session.initialize()
+
+    async def _reset_session(self):
+        stack = self._exit_stack
+        self._session = None
+        self._exit_stack = None
+        if stack is not None:
+            try:
+                await stack.aclose()
+            except Exception:
+                LOG.debug("Error during persistent session cleanup (already broken)", exc_info=True)
 
     async def list_tools(self):
+        if self._persistent:
+            await self._ensure_session()
+            try:
+                tools_resp = await self._session.list_tools()
+            except Exception:
+                await self._reset_session()
+                raise
+            self.tools = _parse_tools_response(tools_resp)
+            return self.tools
+
         async with stdio_client(self.server_params) as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 tools_resp = await session.list_tools()
-                tools_list: List[Dict[str, Any]] = []
-                for t in getattr(tools_resp, "tools", []) or []:
-                    input_schema = getattr(t, "input_schema", None)
-                    if input_schema is None:
-                        input_schema = getattr(t, "inputSchema", None)
-                    tools_list.append(
-                        {
-                            "name": getattr(t, "name", None),
-                            "description": getattr(t, "description", ""),
-                            "input_schema": input_schema,
-                        }
-                    )
-                self.tools = tools_list
+                self.tools = _parse_tools_response(tools_resp)
                 return self.tools
 
     async def call_tool(self, tool: str, args: dict) -> Any:
         self._assert_tool_allowed(tool)
+        if self._persistent:
+            await self._ensure_session()
+            try:
+                result = await self._session.call_tool(tool, arguments=args)
+            except Exception:
+                await self._reset_session()
+                raise
+            return _extract_tool_result(result)
+
         async with stdio_client(self.server_params) as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 result = await session.call_tool(tool, arguments=args)
                 return _extract_tool_result(result)
+
+    async def close(self):
+        await self._reset_session()

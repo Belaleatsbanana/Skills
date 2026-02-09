@@ -112,6 +112,7 @@ class PythonTool(MCPClientTool):
                 "client_params": {
                     "command": "python",
                     "args": ["-m", "nemo_skills.mcp.servers.python_tool"],
+                    "persistent": True,
                 },
                 # hide args from schemas and sanitize at runtime
                 "hide_args": {"stateful_python_code_exec": ["session_id", "timeout"]},
@@ -137,9 +138,6 @@ class PythonTool(MCPClientTool):
         if output.endswith("\n"):  # there is always a trailing newline, removing it
             output = output[:-1]
         return output
-
-    async def shutdown(self) -> None:
-        return None
 
 
 if __name__ == "__main__":
