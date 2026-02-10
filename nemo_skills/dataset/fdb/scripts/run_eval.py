@@ -67,7 +67,7 @@ def build_score_command(config: dict, subtest: str, force: bool = False) -> str:
     benchmark = _benchmark_name(subtest, fdb_version)
     eval_results_dir = f"{config['output_dir']}/eval-results/{benchmark}"
     fdb_repo = config["fdb_repo_path"]
-    scoring_script = "nemo_skills/dataset/fdb_v1/scripts/run_fdb_scoring.py"
+    scoring_script = "nemo_skills/dataset/fdb/scripts/run_fdb_scoring.py"
 
     cmd_args = [
         f"python {scoring_script}",
@@ -127,7 +127,7 @@ def run_fdb_eval(config: dict):
         print(f"{'=' * 60}")
 
         benchmark = _benchmark_name(subtest, fdb_version)
-        expname = f"{config.get('expname', 'fdb_v1')}_{subtest}"
+        expname = f"{config.get('expname', 'fdb')}_{subtest}"
 
         # Generation phase
         if not scoring_only:
@@ -184,7 +184,7 @@ def run_fdb_eval(config: dict):
     if not generation_only and len(subtests) > 1:
         eval_results_parent = Path(config["output_dir"]) / "eval-results"
         print(f"\nTo see aggregated metrics across all subtests, run:")
-        print(f"  python nemo_skills/dataset/fdb_v1/scripts/aggregate_results.py \\")
+        print(f"  python nemo_skills/dataset/fdb/scripts/aggregate_results.py \\")
         print(f"    --eval_results_dir {eval_results_parent} \\")
         print(f"    --json {eval_results_parent}/summary.json")
     print(f"{'=' * 60}")

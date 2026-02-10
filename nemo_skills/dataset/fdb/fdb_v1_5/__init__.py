@@ -12,17 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Full-Duplex-Bench - A benchmark for evaluating full-duplex spoken dialogue models
+# Full-Duplex-Bench v1.5 subgroup (under fdb/)
 # Source: https://github.com/DanielLin94144/Full-Duplex-Bench
 
 DATASET_GROUP = "speechlm"
 IS_BENCHMARK_GROUP = True
 
-# All Full-Duplex-Bench subtests that can be run individually
-# Based on the four main evaluation dimensions: pause, backchannel, turn-taking, interruption
 BENCHMARKS = {
-    "fdb_v1.pause": {},
-    "fdb_v1.backchannel": {},
-    "fdb_v1.turn_taking": {},
-    "fdb_v1.interruption": {},
+    "fdb_v1_5.background_speech": {},
+    "fdb_v1_5.talking_to_other": {},
+    "fdb_v1_5.backchannel": {},
+    "fdb_v1_5.interruption": {},
 }

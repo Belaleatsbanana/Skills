@@ -30,13 +30,11 @@ containers:
 mounts:
   - /lustre:/lustre
 
-required_env_vars:
-
 env_vars:
   # ------------------------------- Fill this up! -------------------------------
   - HF_HOME=/lustre/fsw/portfolios/llmservice/users/mmkrtchyan/.cache/huggingface
   - AUDIO_SAVE_DIR=/lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fullduplexbench_audio_outputs
-  - NVIDIA_API_KEY=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
+  - NVIDIA_API_KEY=sk-1rabHlSC1YMys_aUFmg1_A
   # -----------------------------------------------------------------------------
 
 timeouts:

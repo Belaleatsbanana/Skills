@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Full-Duplex-Bench v1.5 - same structure as v1.0, separate benchmarks for independent runs
-# Source: https://github.com/DanielLin94144/Full-Duplex-Bench (same Google Drive, v1.5 folder)
+# Full-Duplex-Bench v1.0 subgroup (under fdb/)
+# Source: https://github.com/DanielLin94144/Full-Duplex-Bench
 
 DATASET_GROUP = "speechlm"
 IS_BENCHMARK_GROUP = True
 
 BENCHMARKS = {
-    "fdb_v1_5.background_speech": {},
-    "fdb_v1_5.talking_to_other": {},
-    "fdb_v1_5.backchannel": {},
-    "fdb_v1_5.interruption": {},
+    "fdb_v1.pause": {},
+    "fdb_v1.backchannel": {},
+    "fdb_v1.turn_taking": {},
+    "fdb_v1.interruption": {},
 }

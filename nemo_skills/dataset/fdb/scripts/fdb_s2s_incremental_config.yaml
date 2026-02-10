@@ -2,19 +2,16 @@
 # Use this for the backchannel subtest (incremental can produce short listener reactions).
 # Run: python run_eval.py --config fdb_s2s_incremental_config.yaml --subtests backchannel
 
-# Cluster settings (same as offline)
 cluster: s2s_eval_oci_iad
 partition: batch_block1,batch_block3,batch_block4
 cpu_partition: cpu
 
-# Model (used by eval pipeline; incremental server may also use config_path for model)
 model: /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Nemotron-VoiceChat-november/duplex-eartts-2mim_sw_et_eos_dp_eos_dup_fp32-stt-3-december_stt_edresson_model_R_digits_norm_eip_0.1_EA_model_step_9005
 
 server_type: vllm
 server_gpus: 2
 num_chunks: 10
 
-# Use serve_unified with S2S incremental backend (frame-by-frame; better for backchannel)
 server_entrypoint: "-m nemo_skills.inference.server.serve_unified"
 server_args: >-
   --backend s2s_incremental
@@ -32,13 +29,11 @@ scoring_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/n
 
 server_server_type: vllm_multimodal
 
-# Paths (set to your locations)
-data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset
+data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset/fdb
 output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_runs_incremental
 fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
 fdb_data_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench-data
 
-# Backchannel only (incremental is a better fit for this subtest)
 subtests:
   - backchannel
 

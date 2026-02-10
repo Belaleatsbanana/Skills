@@ -1,22 +1,18 @@
-# Full-Duplex-Bench v1.5 evaluation configuration for S2S offline backend
-# Same as v1.0 but fdb_version: v1.5 and separate output/expname so v1.0 and v1.5 run independently.
-# Run: python run_eval.py --config fdb_s2s_offline_v1.5_config.yaml
+# Full-Duplex-Bench v1.5 evaluation configuration for S2S voicechat offline backend
 
-# Cluster settings
 cluster: s2s_eval_oci_iad
 partition: batch_block1,batch_block3,batch_block4
 cpu_partition: cpu
 
-# Model checkpoint (same as v1.0 config)
 model: /lustre/fsw/portfolios/llmservice/users/apasad/projects/nemo_s2s_merged_dec/exp_SFT-nano9b/IAD_nano9b_parakeet600m_from_PT_32k_64gpu_5e-5_PT0.7_SFT0.05_QA0.02_TEXT0.1_loss0.5_MCQ0.03_ASR0.01_sysp0.03_NoiseProb0.5_SNR-30-60_asr_dtc2_dst15_loss_text5.0_bos10.0_eos5.0_pad1.0_eosplacementsfix_nospecaug_ei0.1_ot8_TN_all_data_v3.2_ir/checkpoints_hf_step-12556-last.ckpt
 
 server_type: vllm
 server_gpus: 2
-num_chunks: 10
+num_chunks: 12
 
 server_entrypoint: "-m nemo_skills.inference.server.serve_unified"
 server_args: >-
-  --backend s2s
+  --backend s2s_voicechat
   --decode_audio
   --config_path /lustre/fsw/portfolios/llmservice/users/kevinhu/projects/duplex-stt/config/inference/infer_nano_eartts_Fullduplexbench_Jan22_2026.yaml
   --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/S2S-full-duplex/inference_references/Emma_S3_A1_SC7_singleturntarget_21_channel_1_audio_in.wav
@@ -30,16 +26,13 @@ scoring_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/n
 
 server_server_type: vllm_multimodal
 
-# v1.5: benchmarks fdb_v1_5.*, separate output from v1.0
 fdb_version: v1.5
 
-# Paths (same data root; fdb_data_path must contain v1.5 or v1_5 folder)
-data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset
-output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_5_runs
+data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset/fdb
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_5_runs_12chunks
 fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
 fdb_data_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench-data
 
-# v1.5 subtasks: background_speech, talking_to_other, backchannel, interruption
 subtests:
   - background_speech
   - talking_to_other
@@ -50,6 +43,7 @@ installation_command: ""
 scoring_installation_command: "pip install numpy scipy scikit-learn silero-vad soundfile"
 
 expname: fdb_v1_5_s2s_offline
+# max_samples: 10
 
 generation_only: false
 scoring_only: false

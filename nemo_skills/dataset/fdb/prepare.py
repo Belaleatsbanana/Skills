@@ -273,14 +273,16 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
                     if isinstance(trans_data, dict):
                         transcription = trans_data.get("text", "")
                     elif isinstance(trans_data, list) and len(trans_data) > 0:
-                        # Word-level transcription
-                        transcription = " ".join([w.get("word", "") for w in trans_data])
+                        # Word-level transcription (FDB uses "text" per segment, some datasets use "word")
+                        transcription = " ".join([w.get("text", w.get("word", "")) for w in trans_data])
 
+            # Treat whitespace-only transcription as empty (use fallback so problem/content are meaningful)
+            prompt_text = (transcription or "").strip() or "Respond to the user's speech in the audio."
             # Create test case
             test_case = {
                 "id": f"{folder_name}_{sample_id}",
                 "audio_path": str(input_wav),
-                "prompt": transcription or "Respond to the user's speech in the audio.",
+                "prompt": prompt_text,
                 "dataset": folder_name,
                 "sample_id": sample_id,
             }
@@ -504,7 +506,7 @@ Examples:
         type=str,
         choices=["v1.0", "v1.5"],
         default="v1.0",
-        help="Dataset version. v1.0 writes to fdb_v1/; v1.5 writes to fdb_v1_5/ (run separately).",
+        help="Dataset version. v1.0 writes to fdb/fdb_v1/; v1.5 writes to fdb/fdb_v1_5/ (run separately).",
     )
     parser.add_argument(
         "--fdb_data_path",
@@ -526,15 +528,14 @@ Examples:
     args = parser.parse_args()
 
     version = args.version
-    base_dir = Path(__file__).parent  # fdb_v1 package dir
-    dataset_parent = base_dir.parent  # nemo_skills/dataset
+    base_dir = Path(__file__).parent  # fdb package dir (v1 and v1_5 are subgroups under it)
     if version == "v1.0":
-        data_dir = base_dir
+        data_dir = base_dir / "fdb_v1"
         dataset_name = "fdb_v1"
     else:
-        data_dir = dataset_parent / "fdb_v1_5"
-        data_dir.mkdir(parents=True, exist_ok=True)
+        data_dir = base_dir / "fdb_v1_5"
         dataset_name = "fdb_v1_5"
+    data_dir.mkdir(parents=True, exist_ok=True)
     audio_dir = data_dir / "data"
     audio_dir.mkdir(parents=True, exist_ok=True)
 

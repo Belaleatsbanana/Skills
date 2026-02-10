@@ -88,6 +88,8 @@ def prepare_fdb_dir(
             e = str(entry_id)
             if e.startswith("icc_backchannel_"):
                 return e.replace("icc_backchannel_", "", 1)
+            if e.startswith("user_backchannel_"):  # v1.5
+                return e.replace("user_backchannel_", "", 1)
             if e.isdigit():
                 return e
         return str(entry_id)
@@ -132,27 +134,95 @@ def prepare_fdb_dir(
                 print(f"Warning: turn_taking.json not found for {entry_id} (tried {vers})")
 
     # FDB ASR for interruption expects interrupt.json in each sample dir (to crop audio after interrupt)
+    # v1.0 uses folder "synthetic_user_interruption" and has interrupt.json; v1.5 uses "user_interruption" and has metadata.json
     if subtest == "interruption" and fdb_data_path and fdb_data_path.exists():
+        folder_v1_0 = "synthetic_user_interruption"
+        folder_v1_5 = "user_interruption"
         for entry_id, _ in entries_with_audio:
             entry_id = str(entry_id)
+            sample_id = None
             if entry_id.startswith("synthetic_user_interruption_"):
                 sample_id = entry_id.replace("synthetic_user_interruption_", "")
+            elif entry_id.startswith("user_interruption_"):
+                sample_id = entry_id.replace("user_interruption_", "")
             elif entry_id.isdigit():
                 sample_id = entry_id
-            else:
+            if sample_id is None:
                 continue
+            dest = fdb_prepared / entry_id / "interrupt.json"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            copied = False
             for ver in vers:
-                src = fdb_data_path / ver / "synthetic_user_interruption" / sample_id / "interrupt.json"
-                if src.exists():
-                    shutil.copy2(src, fdb_prepared / entry_id / "interrupt.json")
+                for folder in (folder_v1_5, folder_v1_0):
+                    src_dir = fdb_data_path / ver / folder / sample_id
+                    src_json = src_dir / "interrupt.json"
+                    if src_json.exists():
+                        shutil.copy2(src_json, dest)
+                        copied = True
+                        break
+                    # v1.5 has metadata.json only: {context_text, current_turn_text, timestamps} -> build interrupt.json
+                    meta_src = src_dir / "metadata.json"
+                    if meta_src.exists():
+                        with open(meta_src, "r", encoding="utf-8") as f:
+                            meta = json.load(f)
+                        interrupt_payload = [
+                            {
+                                "context": meta.get("context_text", ""),
+                                "interrupt": meta.get("current_turn_text", ""),
+                                "timestamp": meta.get("timestamps", [0.0, 0.0]),
+                            }
+                        ]
+                        with open(dest, "w", encoding="utf-8") as f:
+                            json.dump(interrupt_payload, f, indent=2)
+                        copied = True
+                        break
+                if copied:
                     break
+            if not copied:
+                print(f"Warning: interrupt.json/metadata.json not found for {entry_id} (tried {vers}, {folder_v1_5}/{folder_v1_0})")
+
+    # Behavior eval (background_speech, talking_to_other) needs: input.json, clean_input.json, output.json, clean_output.json
+    # Copy input.wav and clean_input.wav from FDB v1.5 data; write placeholder clean_output.json; ASR will fill input.json and clean_input.json
+    if subtest in ("background_speech", "talking_to_other") and fdb_data_path and fdb_data_path.exists():
+        for entry_id, _ in entries_with_audio:
+            entry_id = str(entry_id)
+            sample_id = None
+            if entry_id.startswith("background_speech_"):
+                sample_id = entry_id.replace("background_speech_", "", 1)
+            elif entry_id.startswith("talking_to_other_"):
+                sample_id = entry_id.replace("talking_to_other_", "", 1)
+            if sample_id is None:
+                continue
+            dest_dir = fdb_prepared / entry_id
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            for ver in vers:
+                src_dir = fdb_data_path / ver / subtest / sample_id
+                if not src_dir.exists():
+                    continue
+                for wav_name in ("input.wav", "clean_input.wav"):
+                    src = src_dir / wav_name
+                    if src.exists():
+                        shutil.copy2(src, dest_dir / wav_name)
+                # Placeholder: we don't run model on clean input, so no real clean_output; eval_behavior needs the file to exist
+                clean_out = dest_dir / "clean_output.json"
+                if not clean_out.exists():
+                    with open(clean_out, "w") as f:
+                        json.dump({"text": "", "chunks": []}, f, indent=2)
+                break
             else:
-                print(f"Warning: interrupt.json not found for {entry_id} (tried {vers})")
+                print(f"Warning: FDB data not found for {entry_id} (tried {vers}/{subtest}/{sample_id})")
 
     if run_asr and asr_task and (fdb_repo / "get_transcript" / "asr.py").exists():
         asr_script = fdb_repo / "get_transcript" / "asr.py"
         cmd = [sys.executable, str(asr_script), "--root_dir", str(fdb_prepared), "--task", asr_task]
         subprocess.run(cmd, cwd=str(fdb_repo), check=False)
+        # For behavior subtests, also produce input.json and clean_input.json from copied input.wav / clean_input.wav
+        if subtest in ("background_speech", "talking_to_other"):
+            subprocess.run(
+                [sys.executable, str(asr_script), "--root_dir", str(fdb_prepared), "--task", "inputs_only"],
+                cwd=str(fdb_repo),
+                check=False,
+            )
 
     return fdb_prepared
 

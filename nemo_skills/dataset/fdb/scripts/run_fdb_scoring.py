@@ -18,6 +18,7 @@ Used by run_eval.py.
 """
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -62,11 +63,13 @@ def main():
         print("Error: output.jsonl not found.")
         sys.exit(1)
 
-    # turn_taking and interruption need fdb_data_path so prepare can copy turn_taking.json / interrupt.json
-    if args.subtest in ("turn_taking", "interruption") and (args.fdb_data_path is None or not args.fdb_data_path.exists()):
+    # turn_taking, interruption, background_speech, talking_to_other need fdb_data_path for metadata / input wavs
+    if args.subtest in ("turn_taking", "interruption", "background_speech", "talking_to_other") and (
+        args.fdb_data_path is None or not args.fdb_data_path.exists()
+    ):
         print(
             f"Error: --fdb_data_path is required for subtest '{args.subtest}' "
-            "(FDB dataset root; used to copy turn_taking.json or interrupt.json into each sample dir)."
+            "(FDB dataset root; used to copy task metadata and, for background_speech/talking_to_other, input.wav and clean_input.wav)."
         )
         sys.exit(1)
 
@@ -104,21 +107,53 @@ def main():
 
     metrics = {}
     combined = stdout + "\n" + stderr
-    # Only extract explicitly known FDB metric lines (no generic regex)
+    # Extract explicitly known FDB metric lines
+    # Per-subtask reporting: turn_taking -> TOR %, latency_ms; interruption -> TOR %, rating (GPT), latency_ms; pause -> candor TOR %, synthetic TOR %
     explicit_metrics = [
         ("JSD - Mean", "jsd"),
         ("TOR - Mean", "tor"),
         ("Frequency - Mean", "frequency"),
         ("Average take turn", "turn"),
         ("Average latency", "latency"),
+        ("Average rating", "rating"),  # GPT/LLM judge score (interruption only)
+        ("Candor - TOR %", "tor_candor_pct"),   # pause: candor subset
+        ("Synthetic - TOR %", "tor_synthetic_pct"),  # pause: synthetic subset
     ]
     for name, key in explicit_metrics:
-        m = re.search(rf"{re.escape(name)}\s*:\s*([0-9.]+)", combined)
+        m = re.search(rf"{re.escape(name)}\s*(?:\(s\))?\s*:\s*([0-9.]+)", combined)
         if m:
             try:
                 metrics[key] = float(m.group(1))
             except ValueError:
                 pass
+    # TOR as percentage (0-100) for turn_taking and interruption
+    if "turn" in metrics:
+        metrics["tor_pct"] = round(metrics["turn"] * 100, 2)
+    # Latency in ms for turn_taking and interruption
+    if "latency" in metrics:
+        metrics["latency_ms"] = round(metrics["latency"] * 1000, 2)
+    # Behavior eval (background_speech, talking_to_other): "Ratios (C-axis): {'C_RESPOND': 0.8, 'C_RESUME': 0.2}"
+    ratios_match = re.search(r"Ratios \(C-axis\):\s*(.+)", combined)
+    if ratios_match:
+        raw = ratios_match.group(1).strip().split("\n")[0].strip()
+        # Trim to balanced {...} (in case of trailing text)
+        if raw.startswith("{"):
+            end = raw.rfind("}")
+            if end != -1:
+                raw = raw[: end + 1]
+        try:
+            behavior_ratios = ast.literal_eval(raw)
+            if isinstance(behavior_ratios, dict):
+                metrics["behavior_ratios"] = {k: round(float(v), 4) for k, v in behavior_ratios.items()}
+                for k, v in behavior_ratios.items():
+                    metrics[f"behavior_{k}"] = round(float(v), 4)
+                # Add missing C_* keys as 0 for consistent schema
+                for key in ("C_RESPOND", "C_RESUME", "C_UNCERTAIN_HANDLING", "C_UNKNOWN"):
+                    if key not in metrics["behavior_ratios"]:
+                        metrics["behavior_ratios"][key] = 0.0
+                        metrics[f"behavior_{key}"] = 0.0
+        except (ValueError, SyntaxError):
+            pass
     if not metrics:
         metrics["status"] = "no_metrics_found"
 
