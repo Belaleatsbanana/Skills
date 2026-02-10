@@ -58,7 +58,7 @@ Pipeline can import from Core.
 Core CANNOT import from Pipeline.
 ```
 
-Core modules are everything under `nemo_skills/` **except** `nemo_skills/pipeline/`. They must never have top-level imports from `nemo_skills.pipeline` or `nemo_run`. This boundary is enforced by `tests/test_import_boundary.py`.
+Core modules are everything under `nemo_skills/` **except** `nemo_skills/pipeline/`. They must never have top-level imports from `nemo_skills.pipeline` or `nemo_run`. This boundary is enforced by `tests/test_dependency_isolation.py` which verifies that core modules import successfully without pipeline dependencies installed.
 
 **When adding a new dependency**, put it in the right requirements file:
 

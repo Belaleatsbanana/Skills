@@ -54,16 +54,18 @@ exclude = ["tests", "tests.*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "nemo_skills.version.__version__" }
-# Default install includes everything for backwards compatibility
-dependencies = {file = ["requirements/main.txt"]}
+# Base install = core only (lightweight, no cluster orchestration deps)
+dependencies = {file = ["requirements/core.txt"]}
 
 [tool.setuptools.dynamic.optional-dependencies]
-# Core: agent runtime (inference, evaluation, tool calling, math/code grading)
+# Core: explicit alias for base dependencies
 core = { file = ["requirements/core.txt"] }
-# Pipeline: orchestration, cluster management, CLI
+# Pipeline: orchestration, cluster management, CLI (adds nemo_run, typer, wandb)
 pipeline = { file = ["requirements/pipeline.txt"] }
 # Benchmarks: additional benchmark-specific dependencies
 benchmarks = { file = ["requirements/benchmarks.txt"] }
+# All: full install (equivalent to old default) — use this if unsure
+all = { file = ["requirements/main.txt"] }
 # Dev: development and testing tools
 dev = { file = ["requirements/common-tests.txt", "requirements/common-dev.txt"] }
 

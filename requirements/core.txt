@@ -21,6 +21,7 @@ numpy
 openai
 pyyaml
 requests
+rich
 sympy
 tqdm
 transformers
