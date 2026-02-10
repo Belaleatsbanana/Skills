@@ -66,9 +66,11 @@ Core modules are everything under `nemo_skills/` **except** `nemo_skills/pipelin
 |---|---|
 | Inference, evaluation, math/code grading, MCP clients, prompt formatting | `requirements/core.txt` |
 | CLI commands, cluster orchestration, experiment tracking | `requirements/pipeline.txt` |
-| A specific benchmark (BFCL, BIRD, translation, etc.) | `requirements/benchmarks.txt` |
+| A specific benchmark, or heavyweight/CUDA-dependent packages | `requirements/benchmarks.txt` |
 
 Also add it to `requirements/main.txt` (the monolithic file used for default installs).
+
+`benchmarks.txt` is the right place for dependencies that are only used by one or two benchmarks, especially heavyweight packages with native/CUDA binaries (e.g., `faiss-cpu`, `sentence_transformers`). Keeping these out of `core.txt` avoids bloating the install for users who only need inference and evaluation.
 
 **Examples of correct placement:**
 
