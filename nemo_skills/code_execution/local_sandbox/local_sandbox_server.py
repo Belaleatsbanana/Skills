@@ -76,7 +76,7 @@ if BLOCK_NETWORK:
 # Worker that runs inside the shell process and owns a TerminalInteractiveShell()
 def shell_worker(conn):
     # LAYER 2: Python-level socket blocking for IPython sessions
-    # The shell_worker is forked (not exec'd) from the uWSGI worker, so it does NOT
+    # The shell_worker is forked (not exec'd) from the gunicorn worker, so it does NOT
     # get the ld.so.preload library loaded. We must patch Python's socket module directly.
     # This blocks: socket.socket(), _socket.socket(), requests.get(), urllib, etc.
     if BLOCK_NETWORK:
