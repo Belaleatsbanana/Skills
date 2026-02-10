@@ -109,6 +109,9 @@ class ToolCallingWrapper:
             for tool_call, tool_result in zip(tool_calls, tool_results)
         ]
 
+    async def shutdown(self):
+        await self.tool_manager.shutdown()
+
     async def generate_async(
         self,
         prompt: List,

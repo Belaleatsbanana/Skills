@@ -963,6 +963,14 @@ class GenerationTask:
             self.run_batch_evaluation()
         self.postprocess()
 
+        # Shutdown tool servers (e.g., persistent python_tool HTTP server).
+        # Unwrap ParallelThinkingTask if present to reach ToolCallingWrapper.
+        llm = self.llm
+        if hasattr(llm, "model"):
+            llm = llm.model
+        if hasattr(llm, "shutdown"):
+            asyncio.run(llm.shutdown())
+
 
 GENERATION_TASK_CLASS = GenerationTask
 
