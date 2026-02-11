@@ -28,6 +28,8 @@ from pathlib import Path
 
 ASR_TASK_MAP = {
     "pause": "full",
+    "pause_candor": "full",
+    "pause_synthetic": "full",
     "backchannel": "full",
     "turn_taking": "full",
     "interruption": "user_interruption",
@@ -36,6 +38,8 @@ ASR_TASK_MAP = {
 }
 FDB_TASK_MAP = {
     "pause": "pause_handling",
+    "pause_candor": "pause_handling",
+    "pause_synthetic": "pause_handling",
     "backchannel": "backchannel",
     "turn_taking": "smooth_turn_taking",
     "interruption": "user_interruption",

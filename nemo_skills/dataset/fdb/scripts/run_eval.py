@@ -30,7 +30,8 @@ from nemo_skills.pipeline.cli import eval as nemo_eval
 from nemo_skills.pipeline.cli import run_cmd, wrap_arguments
 
 ALL_SUBTESTS = [
-    "pause",
+    "pause_candor",
+    "pause_synthetic",
     "backchannel",
     "turn_taking",
     "interruption",

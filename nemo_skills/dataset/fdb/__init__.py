@@ -19,8 +19,9 @@ DATASET_GROUP = "speechlm"
 IS_BENCHMARK_GROUP = True
 
 BENCHMARKS = {
-    # v1.0
-    "fdb_v1.pause": {},
+    # v1.0 (pause split for separate TOR/latency)
+    "fdb_v1.pause_candor": {},
+    "fdb_v1.pause_synthetic": {},
     "fdb_v1.backchannel": {},
     "fdb_v1.turn_taking": {},
     "fdb_v1.interruption": {},

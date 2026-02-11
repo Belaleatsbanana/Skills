@@ -21,12 +21,19 @@ from tqdm import tqdm
 
 # Subtest configurations for Full-Duplex-Bench
 # Based on the four main evaluation dimensions
+# Pause split into candor and synthetic for separate TOR/latency reporting
 SUBTESTS = {
-    "pause": {
+    "pause_candor": {
         "has_reference": True,
         "metrics_type": "exact_match",
         "eval_args": "++eval_type=exact_match",
-        "description": "Evaluate model's ability to handle pauses in conversation",
+        "description": "Evaluate model's ability to handle pauses (candor / natural data)",
+    },
+    "pause_synthetic": {
+        "has_reference": True,
+        "metrics_type": "exact_match",
+        "eval_args": "++eval_type=exact_match",
+        "description": "Evaluate model's ability to handle pauses (synthetic data)",
     },
     "backchannel": {
         "has_reference": True,
@@ -116,6 +123,11 @@ def format_entry(entry, subtest_name, config, audio_dir, entry_idx, no_audio=Fal
     # System message (shared across all variants)
     system_message = {"role": "system", "content": "You are a helpful assistant."}
 
+    # Audio filename: {subtest_name}_{sample_id} so we get pause_candor_18.wav, pause_synthetic_18.wav
+    # (not just "pause_18" which would collide when both candor and synthetic write to the same audio_dir)
+    sample_id = entry.get("sample_id", str(entry_idx))
+    audio_id = f"{subtest_name}_{sample_id}"
+
     # Handle audio - copy/link files and get audio info
     audio_info = None
     if not no_audio:
@@ -126,7 +138,6 @@ def format_entry(entry, subtest_name, config, audio_dir, entry_idx, no_audio=Fal
 
             source_audio = Path(entry["audio_path"])
             if source_audio.exists():
-                audio_id = f"{subtest_name}_{entry_idx}"
                 audio_dest = audio_dir / f"{audio_id}.wav"
 
                 # Copy audio file to our data directory
@@ -137,7 +148,6 @@ def format_entry(entry, subtest_name, config, audio_dir, entry_idx, no_audio=Fal
 
         # Handle direct audio data (for compatibility)
         elif "audio" in entry and entry["audio"] is not None:
-            audio_id = f"{subtest_name}_{entry_idx}"
             audio_path = audio_dir / f"{audio_id}.wav"
 
             # Handle different audio data formats
@@ -209,7 +219,8 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
 
     # Map subtests to Full-Duplex-Bench dataset folders (v1.0 vs v1.5 have different folders)
     subtest_mapping_v1_0 = {
-        "pause": ["candor_pause_handling", "synthetic_pause_handling"],
+        "pause_candor": ["candor_pause_handling"],
+        "pause_synthetic": ["synthetic_pause_handling"],
         "backchannel": ["icc_backchannel"],
         "turn_taking": ["candor_turn_taking"],
         "interruption": ["synthetic_user_interruption"],
@@ -589,7 +600,7 @@ Examples:
     elif version == "v1.5":
         subtests_to_process = ["background_speech", "talking_to_other", "backchannel", "interruption"]
     else:
-        subtests_to_process = ["pause", "backchannel", "turn_taking", "interruption"]
+        subtests_to_process = ["pause_candor", "pause_synthetic", "backchannel", "turn_taking", "interruption"]
 
     print(f"Processing {len(subtests_to_process)} subtests for {version} (dataset_name={dataset_name})...")
     if args.no_audio:
