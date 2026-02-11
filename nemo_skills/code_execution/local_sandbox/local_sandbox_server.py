@@ -101,6 +101,11 @@ def shell_worker(conn):
         socket_module.socket = BlockedSocket  # Blocks: import socket; socket.socket()
 
     shell = TerminalInteractiveShell()
+    # TerminalInteractiveShell installs a SIGINT handler that calls sys.exit(0)
+    # instead of raising KeyboardInterrupt when _executing is False (which is
+    # the case when run_cell is called programmatically). Restore the default
+    # handler so SIGINT raises KeyboardInterrupt and our except clause catches it.
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     try:
         while True:
             try:
