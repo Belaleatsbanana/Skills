@@ -49,14 +49,16 @@ def read_excel_to_text(excel_path):
         return f"[Failed to read Excel file: {excel_path.name}]"
 
 
-def format_paths_for_prompt(paths, actual_root, display_root, path_prefix=None):
-    """Format file paths for display in prompt."""
+def format_paths_for_prompt(paths, actual_root, display_root):
+    """Format file paths for display in prompt.
+
+    Args:
+        paths: List of absolute Path objects to format
+        actual_root: Root directory where files actually exist
+        display_root: Root directory to display in paths (absolute for abs paths, Path(".") for relative)
+    """
     if not paths:
         return ""
-
-    prefix = (path_prefix or "").strip()
-    if prefix:
-        prefix = prefix if prefix.endswith("/") else prefix + "/"
 
     formatted = []
     for path in paths:
@@ -65,14 +67,7 @@ def format_paths_for_prompt(paths, actual_root, display_root, path_prefix=None):
             disp_path = display_root / rel
         except ValueError:
             disp_path = path
-
-        base = str(disp_path)
-        if prefix:
-            formatted.append(prefix + base)
-        else:
-            if not disp_path.is_absolute() and not base.startswith("./"):
-                base = "./" + base
-            formatted.append(base)
+        formatted.append(str(disp_path))
 
     return " ".join(formatted)
 
@@ -140,7 +135,7 @@ def save_data(split, data_dir):
             metadata.append(eval(line.strip()))
 
     # Process all tasks
-    print(f"  Processing {len(metadata)} tasks...")
+    print(f"  Processing {len(metadata)} tasks at {extracted_data_dir}...")
     all_entries = []
 
     for task in metadata:
@@ -178,8 +173,7 @@ def save_data(split, data_dir):
         excel_paths = format_paths_for_prompt(
             excel_files,
             actual_root,
-            display_root,
-            path_prefix="./"
+            display_root
         )
 
         # Get image files (for future multimodal support)
