@@ -1,0 +1,157 @@
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Use the base image with Python 3.10 and Flask
+FROM tiangolo/uwsgi-nginx-flask:python3.10
+
+# Install dependencies required for Lean 4, pypy3, and other tools
+ARG TARGETARCH
+RUN apt-get update && \
+    apt-get install -y curl git net-tools bzip2 build-essential libseccomp-dev && \
+    ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
+    case "$ARCH" in \
+        amd64) PYPY_ARCH=linux64 ;; \
+        arm64|aarch64) PYPY_ARCH=aarch64 ;; \
+        x86_64) PYPY_ARCH=linux64 ;; \
+    *) echo "Unsupported TARGETARCH '$ARCH'" >&2; exit 1 ;; \
+    esac && \
+    curl -L https://downloads.python.org/pypy/pypy3.10-v7.3.17-$PYPY_ARCH.tar.bz2 -o /tmp/pypy.tar.bz2 && \
+    tar -xjf /tmp/pypy.tar.bz2 -C /opt/ && \
+    ln -s /opt/pypy3.10-v7.3.17-$PYPY_ARCH/bin/pypy3 /usr/bin/pypy3 && \
+    /usr/bin/pypy3 -m ensurepip && \
+    rm /tmp/pypy.tar.bz2 && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+# Install Lean 4 toolchain
+RUN curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y && \
+    /root/.elan/bin/elan toolchain install leanprover/lean4:v4.12.0 && \
+    /root/.elan/bin/elan default leanprover/lean4:v4.12.0 && \
+    /root/.elan/bin/elan self update
+
+# Set environment variables to include Lean and elan/lake in the PATH
+ENV PATH="/root/.elan/bin:$PATH"
+
+# Create Lean project directory and initialize a new Lean project with Mathlib4
+RUN mkdir -p /lean4 && cd /lean4 && \
+    /root/.elan/bin/lake new my_project && \
+    cd my_project && \
+    echo 'leanprover/lean4:v4.12.0' > lean-toolchain && \
+    echo 'require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.12.0"' >> lakefile.lean
+
+# Download and cache Mathlib4 to avoid recompiling, then build the project
+ARG GITHUB_CI=0
+RUN cd /lean4/my_project && \
+    /root/.elan/bin/lake exe cache get && \
+    /root/.elan/bin/lake build
+
+# Set environment variables to include Lean project path
+ENV LEAN_PATH="/lean4/my_project"
+ENV PATH="/lean4/my_project:$PATH"
+
+# Set up application code and install Python dependencies
+COPY requirements/code_execution.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+
+# Install STEM related libraries
+COPY requirements/stem.txt /app/stem_requirements.txt
+
+
+# Speed/size/env hygiene
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_SYSTEM_PYTHON=1 \
+    PATH="/root/.local/bin:${PATH}"
+
+
+# Install uv (adds to ~/.local/bin), then install deps
+RUN if [ "$GITHUB_CI" != "1" ] && [ "$TARGETARCH" != "arm64" ]; then \
+        curl -LsSf https://astral.sh/uv/install.sh | sh  && \
+        uv pip install --upgrade pip && \
+        uv pip install -r /app/stem_requirements.txt --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu; \
+    fi
+
+# For scicode eval - create data directory and download test data
+# Set GITHUB_CI=1 build arg to skip download (useful for CI when download fails)
+# If skipped, scicode evaluations will fail unless the file is manually mounted
+RUN mkdir -p /data && pip install gdown && \
+    if [ "$GITHUB_CI" != "1" ]; then \
+        python -c "import gdown; url = 'https://drive.google.com/uc?id=17G_k65N_6yFFZ2O-jQH00Lh6iaw3z-AW'; gdown.download(url, '/data/test_data.h5', quiet=False)"; \
+    fi
+# DSBench specific dependencies
+RUN pip install pandas>=2.0.0 openpyxl>=3.1.0 pyxlsb>=1.0.10
+
+COPY nemo_skills/code_execution/local_sandbox/local_sandbox_server.py /app/main.py
+
+# Copy nginx configuration template and startup scripts
+COPY dockerfiles/sandbox/nginx.conf.template /etc/nginx/nginx.conf.template
+COPY dockerfiles/sandbox/start-with-nginx.sh /start-with-nginx.sh
+
+# =============================================================================
+# Network Blocking for Sandboxed Code Execution (Defense in Depth)
+# =============================================================================
+# When NEMO_SKILLS_SANDBOX_BLOCK_NETWORK=1 is set, we use TWO layers of protection:
+#
+# LAYER 1: libblock_network.so (this library, via /etc/ld.so.preload)
+#   - Intercepts socket() syscalls at the C library level
+#   - Blocks any NEW PROCESS that exec()'s (curl, wget, python3 subprocess, etc.)
+#   - System-enforced by the dynamic linker - user code CANNOT bypass it
+#   - Limitation: Doesn't affect forked processes (no exec = no linker = no preload)
+#
+# LAYER 2: Python socket patch (in local_sandbox_server.py shell_worker)
+#   - Patches socket.socket and _socket.socket at Python level
+#   - Blocks code running in the IPython shell_worker (which is forked, not exec'd)
+#   - Limitation: Only works for Python code in the same process
+#
+# WHY BOTH ARE NEEDED:
+#   | Attack Vector                              | Python Patch | ld.so.preload |
+#   |--------------------------------------------|--------------|---------------|
+#   | socket.socket() in IPython                 |  Blocked     |    (forked)   |
+#   | import _socket; _socket.socket() in IPython|  Blocked     |    (forked)   |
+#   | subprocess.run(["curl", url])              |  Can't help  |    Blocked    |
+#   | subprocess.run(["python3",...], env={})    |  Can't help  |    Blocked    |
+#   | requests.get() in IPython                  |  Blocked     |    (forked)   |
+#
+# Neither layer alone is sufficient - together they cover different adversarial scenarios.
+# =============================================================================
+COPY dockerfiles/sandbox/block_network.c /tmp/block_network.c
+RUN gcc -shared -fPIC -o /usr/lib/libblock_network.so /tmp/block_network.c -ldl && \
+    rm /tmp/block_network.c && \
+    echo "Built libblock_network.so for network isolation"
+
+# Make scripts executable
+RUN chmod +x /start-with-nginx.sh
+
+# Set the working directory to /app
+WORKDIR /app
+
+# Environment variables for multi-worker setup
+ENV NGINX_PORT=6000
+
+# Set default port for single worker mode
+ENV LISTEN_PORT=6000
+
+# Default uwsgi configuration
+ARG UWSGI_CHEAPER
+ENV UWSGI_CHEAPER=$UWSGI_CHEAPER
+
+ARG NUM_WORKERS
+ENV NUM_WORKERS=$NUM_WORKERS
+
+ARG UWSGI_PROCESSES
+ENV UWSGI_PROCESSES=$UWSGI_PROCESSES
+
+ENV LISTEN_PORT=6000
+RUN echo "uwsgi_read_timeout 14400s;" > /etc/nginx/conf.d/custom_timeout.conf
+
+CMD /start-with-nginx.sh
