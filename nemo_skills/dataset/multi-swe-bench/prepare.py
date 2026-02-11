@@ -73,6 +73,7 @@ if __name__ == "__main__":
             output_row = {
                 "instance_id": input_row["instance_id"],
                 "repo": input_row["org"] + "/" + input_row["repo"],
+                "language": input_row["language"],
                 "base_commit": input_row["base"]["sha"],
                 "problem_statement": issue["title"] + "\n" + issue["body"],
                 "container_formatter": container_formatter.format(docker_image=docker_image),
