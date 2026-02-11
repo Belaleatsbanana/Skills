@@ -109,11 +109,6 @@ def score_benchmark(output_jsonl: str, scoring_cfg: dict) -> dict:
             codec_codes_path = record.get("debug_info", {}).get("codec_codes_path")
             if audio_path and manifest_entry:
                 entries.append((manifest_entry, audio_path, codec_codes_path))
-                if codec_codes_path:
-                    print(f"[score] Found codec_codes_path: {codec_codes_path}, exists={os.path.exists(codec_codes_path)}")
-                else:
-                    print(f"[score] No codec_codes_path in debug_info. debug_info keys: {list(record.get('debug_info', {}).keys())}")
-
     if not entries:
         return {}
 

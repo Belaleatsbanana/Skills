@@ -284,7 +284,6 @@ class MagpieTTSBackend(InferenceBackend):
             from nemo.collections.tts.modules.magpietts_inference.evaluate_generated_audio import load_evalset_config
 
             dataset = self._runner.create_dataset(load_evalset_config(config_path))
-            print(f"[MagpieTTSBackend] save_codes={self.tts_config.save_codes}, output_dir={output_dir}")
             rtf_list, *_ = self._runner.run_inference_on_dataset(
                 dataset, output_dir, save_cross_attention_maps=False, save_context_audio=False,
                 save_predicted_codes=self.tts_config.save_codes
@@ -324,7 +323,6 @@ class MagpieTTSBackend(InferenceBackend):
                     # Include codec data if save_codes is enabled
                     if self.tts_config.save_codes:
                         codes_path = os.path.join(output_dir, f"predicted_codes_{i}.pt")
-                        print(f"[MagpieTTSBackend] Looking for codec file: {codes_path}, exists={os.path.exists(codes_path)}")
                         if os.path.exists(codes_path):
                             import base64
                             import torch
@@ -332,7 +330,6 @@ class MagpieTTSBackend(InferenceBackend):
                             torch.save(torch.load(codes_path, map_location="cpu"), codes_buf)
                             codes_buf.seek(0)
                             debug_info["codec_data"] = base64.b64encode(codes_buf.read()).decode("utf-8")
-                            print(f"[MagpieTTSBackend] Encoded codec data, size={len(debug_info['codec_data'])} chars")
                         else:
                             # List what files are in output_dir
                             print(f"[MagpieTTSBackend] Files in {output_dir}: {os.listdir(output_dir)}")
