@@ -15,5 +15,23 @@
 # settings that define how evaluation should be done by default (all can be changed from cmdline)
 EVAL_SPLIT = "test"
 DATASET_GROUP = "code"
-METRICS_TYPE = "math"  # Using math for now (boxed extraction), will create custom evaluator later
-GENERATION_ARGS = "++prompt_config=generic/dsbench-da ++eval_type=math"
+METRICS_TYPE = "math"
+
+# Use DSBench evaluator (extends MathEvaluator) with relaxed extraction and case-insensitive MCQ:
+# 1. \boxed{X} - standard LaTeX (caught by search_boxed)
+# 2. "The final answer is X" or "\boxed=X" - (caught by regex)
+# 3. Fallback to relaxed_equal for case-insensitive MCQ and dict/list comparison
+GENERATION_ARGS = (
+    '++prompt_config=generic/dsbench-da '
+    '++eval_type=dsbench '
+    '++eval_config.extract_regex="(?:The final answer is |\\\\boxed=)(.+)$" '
+    '++eval_config.relaxed=true '
+)
+
+# Always run LLM judge for DSBench (some answers hard to verify symbolically)
+JUDGE_PIPELINE_ARGS = {
+    "generation_type": "math_judge",
+    "model": "gpt-4.1",
+    "server_type": "openai",
+    "server_address": "https://api.openai.com/v1",
+}

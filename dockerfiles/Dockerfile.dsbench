@@ -1,0 +1,16 @@
+# Dockerfile for DSBench evaluation
+# Based on nemo-skills with additional Excel processing dependencies
+
+FROM nemo-skills:latest
+
+# Install DSBench-specific dependencies
+RUN pip install --no-cache-dir \
+    pandas>=2.0.0 \
+    openpyxl>=3.1.0 \
+    pyxlsb>=1.0.10
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command
+CMD ["/bin/bash"]
