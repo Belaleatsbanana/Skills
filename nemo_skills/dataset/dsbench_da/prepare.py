@@ -79,7 +79,7 @@ def format_paths_for_prompt(paths, actual_root, display_root, path_prefix=None):
 
 def save_data(split, data_dir):
     """Download and prepare DSBench data."""
-    print(f"Preparing DSBench data for {split} split...")
+    print(f"Preparing DSBench data for {split} split and saving to {data_dir}...")
 
     data_dir = Path(data_dir)
     cache_dir = data_dir / "cache"
