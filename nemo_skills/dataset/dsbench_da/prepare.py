@@ -72,16 +72,15 @@ def format_paths_for_prompt(paths, actual_root, display_root):
     return " ".join(formatted)
 
 
-def save_data(split, data_dir):
+def save_data(split, data_dir, display_root):
     """Download and prepare DSBench data."""
     print(f"Preparing DSBench data for {split} split and saving to {data_dir}...")
 
     data_dir = Path(data_dir)
-    cache_dir = data_dir / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
 
-    extracted_data_dir = cache_dir / "data"
-    metadata_path = cache_dir / "data.json"
+    extracted_data_dir = data_dir / "data"
+    metadata_path = data_dir / "data.json"
 
     # Download and extract if not already cached
     if not extracted_data_dir.exists() or not metadata_path.exists():
@@ -90,7 +89,7 @@ def save_data(split, data_dir):
         # Download data.zip
         print("    Downloading data.zip...")
         zip_url = "https://huggingface.co/datasets/liqiang888/DSBench/resolve/main/data_analysis/data.zip"
-        zip_path = cache_dir / "data.zip"
+        zip_path = data_dir / "data.zip"
         urllib.request.urlretrieve(zip_url, zip_path)
 
         # Validate zip file size
@@ -111,11 +110,11 @@ def save_data(split, data_dir):
         # Extract data
         print("    Extracting data...")
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(cache_dir)
+            zip_ref.extractall(data_dir)
 
         # Find and move data directory to standard location
         if not extracted_data_dir.exists():
-            extracted_data = list(cache_dir.glob("*/data"))
+            extracted_data = list(data_dir.glob("*/data"))
             if extracted_data:
                 shutil.move(str(extracted_data[0]), str(extracted_data_dir))
             else:
@@ -123,9 +122,9 @@ def save_data(split, data_dir):
 
         # Clean up zip file
         zip_path.unlink()
-        print(f"    Dataset cached to {cache_dir}")
+        print(f"    Dataset cached to {data_dir}")
     else:
-        print(f"  Using cached dataset from {cache_dir}")
+        print(f"  Using cached dataset from {data_dir}")
 
     # Load metadata
     print("  Loading metadata...")
@@ -135,7 +134,12 @@ def save_data(split, data_dir):
             metadata.append(eval(line.strip()))
 
     # Process all tasks
-    print(f"  Processing {len(metadata)} tasks at {extracted_data_dir}...")
+    if not display_root:
+        display_root = extracted_data_dir
+    else:
+        display_root = Path(display_root)
+
+    print(f"  Processing {len(metadata)} tasks at {extracted_data_dir} - using display root {display_root} for paths shown in the prompt...")
     all_entries = []
 
     for task in metadata:
@@ -168,12 +172,11 @@ def save_data(split, data_dir):
             excel_content += f"The excel file {excel_file.name} is: {sheets_text}\n\n"
 
         # Format paths for tool mode (relative to data directory)
-        actual_root = extracted_data_dir
-        display_root = actual_root # TODO for later if we want to display a simpler path
+
         excel_paths = format_paths_for_prompt(
             excel_files,
-            actual_root,
-            display_root
+            actual_root = extracted_data_dir,
+            display_root = display_root
         )
 
         # Get image files (for future multimodal support)
@@ -251,6 +254,12 @@ if __name__ == "__main__":
         default=None,
         help="Directory to save the data (defaults to dataset directory)"
     )
+    parser.add_argument(
+        "--display_root",
+        type=str,
+        default=None,
+        help="Root directory to display in paths (absolute for abs paths, Path(\".\") for relative)"
+    )
     args = parser.parse_args()
     print(args)
     if args.data_dir is None:
@@ -259,4 +268,4 @@ if __name__ == "__main__":
     else:
         data_dir = Path(args.data_dir)
 
-    save_data(args.split, data_dir)
+    save_data(args.split, data_dir, args.display_root)
