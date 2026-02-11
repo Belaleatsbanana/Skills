@@ -98,10 +98,20 @@ def save_data(split, data_dir):
         zip_path = cache_dir / "data.zip"
         urllib.request.urlretrieve(zip_url, zip_path)
 
+        # Validate zip file size
+        zip_size = zip_path.stat().st_size
+        if zip_size < 1_000_000:  # < 1MB
+            raise ValueError(f"Downloaded zip is suspiciously small: {zip_size} bytes. Download may have failed.")
+
         # Download metadata
         print("    Downloading data.json...")
         json_url = "https://huggingface.co/datasets/liqiang888/DSBench/resolve/main/data_analysis/data.json"
         urllib.request.urlretrieve(json_url, metadata_path)
+
+        # Validate metadata file size
+        metadata_size = metadata_path.stat().st_size
+        if metadata_size == 0:
+            raise ValueError("Downloaded metadata is empty. Download may have failed.")
 
         # Extract data
         print("    Extracting data...")
@@ -138,8 +148,11 @@ def save_data(split, data_dir):
         task_dir = extracted_data_dir / task_id
 
         if not task_dir.exists():
-            print(f"    Warning: {task_id} not found, skipping")
-            continue
+            raise FileNotFoundError(
+                f"Task directory not found: {task_dir}. "
+                f"Expected task {task_id} from metadata but directory is missing. "
+                "Data extraction may have failed."
+            )
 
         # Read introduction
         intro_file = task_dir / 'introduction.txt'
@@ -214,13 +227,20 @@ def save_data(split, data_dir):
 
             all_entries.append(entry)
 
+    # Validate we got some entries
+    if not all_entries:
+        raise ValueError(
+            f"No valid entries created! Processed {len(metadata)} tasks but all failed. "
+            "Check that data was downloaded correctly and Excel files are readable."
+        )
+
     # Save to output file
     output_file = data_dir / f"{split}.jsonl"
     with open(output_file, 'w') as f:
         for entry in all_entries:
             f.write(json.dumps(entry) + '\n')
 
-    print(f"  Saved {len(all_entries)} questions to {output_file}")
+    print(f"  ✓ Saved {len(all_entries)} questions to {output_file}")
 
 
 if __name__ == "__main__":
