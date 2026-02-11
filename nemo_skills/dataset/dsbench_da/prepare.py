@@ -258,7 +258,7 @@ if __name__ == "__main__":
         help="Directory to save the data (defaults to dataset directory)"
     )
     args = parser.parse_args()
-
+    print(args)
     if args.data_dir is None:
         # Save to the same directory as this script
         data_dir = Path(__file__).absolute().parent
