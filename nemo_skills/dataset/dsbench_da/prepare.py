@@ -174,7 +174,7 @@ def save_data(split, data_dir):
 
         # Format paths for tool mode (relative to data directory)
         actual_root = extracted_data_dir
-        display_root = Path("./data")
+        display_root = actual_root # TODO for later if we want to display a simpler path
         excel_paths = format_paths_for_prompt(
             excel_files,
             actual_root,
