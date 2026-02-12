@@ -8,11 +8,4 @@ user: |-
 
   {problem}
 
-  Give your final answer in \boxed{{your final answer}}
-  The final answer in \boxed should strictly follow any instructions given in the question.
-  If the question is a multiple-choice question, the final answer should be the option letter.
-  If the question is asking for a single value (number or string), then the final answer should simply be the value itself.
-  If the question has fill in the blank type questions, then the final answer should be the answers to the blanks separated by commas.
-  If the question is asking for evaluation of multiple variables, then the final answer should be a dictionary with the keys as the variable names and the values as the evaluated values.
-
-  The answer in \boxed should be strictly your final answer and nothing else.
+  Put your final answer in \boxed{{your final answer}}. The answer in \boxed{} should be only your final answer that strictly follows the instructions given in the question with no extra text.
