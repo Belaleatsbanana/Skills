@@ -8,7 +8,7 @@ cpu_partition: cpu
 model: /lustre/fsw/portfolios/llmservice/users/apasad/projects/nemo_s2s_merged_dec/exp_SFT-nano9b/IAD_nano9b_parakeet600m_from_PT_32k_64gpu_5e-5_PT0.7_SFT0.05_QA0.02_TEXT0.1_loss0.5_MCQ0.03_ASR0.01_sysp0.03_NoiseProb0.5_SNR-30-60_asr_dtc2_dst15_loss_text5.0_bos10.0_eos5.0_pad1.0_eosplacementsfix_nospecaug_ei0.1_ot8_TN_all_data_v3.2_ir/checkpoints_hf_step-12556-last.ckpt
 
 server_type: vllm
-server_gpus: 2
+server_gpus: 4
 num_chunks: 12 # Adjust based on dataset size
 
 # Use serve_unified with S2S voicechat backend
@@ -20,6 +20,10 @@ server_args: >-
   --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/S2S-full-duplex/inference_references/Emma_S3_A1_SC7_singleturntarget_21_channel_1_audio_in.wav
   --tts_ckpt_path /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Duplex_EARTTS/eartts_rvq_cont_task_nanov2_tts_pretraining_wordlist_duplex_data_new_branch_4nodes_duplex_eartts_2_delay_4rd_stage_fp32_wd_1500_et_eos_dp_eos_dup_step_10004.ckpt
   --extra_decoding_seconds 0
+  --ignore_system_prompt
+  --inference_pad_boost -0.5
+  --inference_bos_boost 0.5
+  --inference_eos_boost 0
   --dtype float32
   --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
 
@@ -32,25 +36,31 @@ fdb_version: v1.0
 
 # data_dir must point to fdb so benchmarks resolve to fdb/fdb_v1/* and fdb/fdb_v1_5/*
 data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset/fdb
-output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_runs_stereo_1
-# fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
-fdb_repo_path: /lustre/fsw/portfolios/llmservice/users/kevinhu/Full-Duplex-Bench-NV
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_0_voicechat_tt_boost_0s_ignore_system_prompt
+fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
+# fdb_repo_path: /lustre/fsw/portfolios/llmservice/users/kevinhu/Full-Duplex-Bench-NV
 fdb_data_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench-data
 
-# Pause split into candor and synthetic so TOR/latency are reported separately.
-# Prepare script must map: pause_candor -> candor_pause_handling, pause_synthetic -> synthetic_pause_handling (under fdb_data_path/v1.0/).
+# Turn taking only (boost + merge run)
 subtests:
-  - turn_taking
-  - pause_candor
-  - pause_synthetic
   - interruption
-  - backchannel
+  # - backchannel
+  # - pause_candor
+  # - pause_synthetic
+  # - turn_taking
 
 installation_command: ""
 scoring_installation_command: "pip install numpy scipy scikit-learn silero-vad soundfile"
 
 expname: fdb_v1_0_s2s_offline
-# max_samples: 10  # Uncomment to limit samples for testing
+# max_samples: 50  # Uncomment to limit samples for testing
+
+# Reference sampling (temperature=0.8, top_p=0.8). tokens_to_generate=512 to avoid OOM during TTS codec decode on 80GB GPU; use 1024 if you have headroom.
+# inference_overrides: "++inference.temperature=0.8 ++inference.top_p=0.8 ++inference.tokens_to_generate=512"
+
+# FDB prepare always writes stereo (2ch) output.wav and runs ASR with --stereo; no config to disable.
+# Stereo convention (matches reference inference/scoring): ch0 = user/input, ch1 = model/output.
+# Freeze-omni inference writes two_channel.wav with this layout; for scoring use that path in output.jsonl so prepare + asr.py --stereo align.
 
 # Always use more tokens (1024) and reference sampling (temperature=0.8, top_p=0.8). See REFERENCE_INFERENCE_PARAMS.md.
 inference_overrides: "++inference.temperature=0.8 ++inference.top_p=0.8 ++inference.tokens_to_generate=1024"

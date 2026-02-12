@@ -1,6 +1,5 @@
-# Full-Duplex-Bench evaluation configuration for S2S incremental backend
-# Use this for the backchannel subtest (incremental can produce short listener reactions).
-# Run: python run_eval.py --config fdb_s2s_incremental_config.yaml --subtests backchannel
+# Full-Duplex-Bench v1.0 evaluation configuration for S2S incremental backend
+# Turn taking only (merge run). Run: python run_eval.py --config fdb_s2s_incremental_config.yaml
 
 cluster: s2s_eval_oci_iad
 partition: batch_block1,batch_block3,batch_block4
@@ -9,8 +8,8 @@ cpu_partition: cpu
 model: /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Nemotron-VoiceChat-november/duplex-eartts-2mim_sw_et_eos_dp_eos_dup_fp32-stt-3-december_stt_edresson_model_R_digits_norm_eip_0.1_EA_model_step_9005
 
 server_type: vllm
-server_gpus: 2
-num_chunks: 10
+server_gpus: 4
+num_chunks: 12
 
 server_entrypoint: "-m nemo_skills.inference.server.serve_unified"
 server_args: >-
@@ -20,6 +19,10 @@ server_args: >-
   --ignore_system_prompt
   --num_frames_per_inference 2
   --silence_padding_sec 0.0
+  --extra_decoding_seconds 10
+  --inference_pad_boost -0.5
+  --inference_bos_boost 0.5
+  --inference_eos_boost 0
   --output_frame_alignment
   --session_artifacts_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_incremental_artifacts
   --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
@@ -29,13 +32,15 @@ scoring_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/n
 
 server_server_type: vllm_multimodal
 
+fdb_version: v1.0
 data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset/fdb
-output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_runs_incremental
-fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/fdb_v1_0_incremental_tt
+# fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
+fdb_repo_path: /lustre/fsw/portfolios/llmservice/users/kevinhu/Full-Duplex-Bench-NV
 fdb_data_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench-data
 
 subtests:
-  - backchannel
+  - turn_taking
 
 scoring_installation_command: "pip install numpy scipy scikit-learn silero-vad soundfile"
 

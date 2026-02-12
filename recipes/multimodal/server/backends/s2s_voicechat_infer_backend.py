@@ -61,6 +61,8 @@ class S2SVoiceChatInferConfig(BackendConfig):
     decode_audio: bool = False  # default text-only; can be enabled
     output_dir: Optional[str] = None
     save_artifacts: bool = False
+    # Merge user (input) + model (pred) into two-channel WAV like NeMo ResultsLogger (same timeline for FDB)
+    merge_user_channel: bool = False
 
     # Prompt handling
     ignore_system_prompt: bool = False
@@ -90,6 +92,7 @@ class S2SVoiceChatInferConfig(BackendConfig):
             "decode_audio",
             "output_dir",
             "save_artifacts",
+            "merge_user_channel",
             "ignore_system_prompt",
             "source_sample_rate",
             "target_sample_rate",
@@ -308,6 +311,40 @@ class S2SVoiceChatInferBackend(InferenceBackend):
 
         return audio, audio_path
 
+    def _merge_user_model_audio(
+        self,
+        user_audio: np.ndarray,
+        user_sr: int,
+        pred_audio: np.ndarray,
+        pred_sr: int,
+    ) -> np.ndarray:
+        """Merge user (input) and model (pred) into a two-channel WAV on one timeline.
+        Mirrors NeMo ResultsLogger.merge_and_save_audio: channel 0 = user, channel 1 = pred,
+        same length (padded), so FDB ASR (--stereo) gets a single timeline."""
+        user = np.asarray(user_audio, dtype=np.float64).squeeze()
+        pred = np.asarray(pred_audio, dtype=np.float64).squeeze()
+        if user.ndim > 1:
+            user = user.mean(axis=1)
+        if pred.ndim > 1:
+            pred = pred.mean(axis=1)
+        # Resample user to pred_sr
+        if user_sr != pred_sr:
+            try:
+                import librosa
+                user = librosa.resample(user, orig_sr=user_sr, target_sr=pred_sr)
+            except ImportError:
+                import torchaudio
+                ut = torch.from_numpy(user).float().unsqueeze(0)
+                ut = torchaudio.functional.resample(ut, user_sr, pred_sr)
+                user = ut.squeeze(0).numpy()
+        T1, T2 = user.shape[0], pred.shape[0]
+        max_len = max(T1, T2)
+        user_pad = np.pad(user, (0, max_len - T1), mode="constant", constant_values=0)
+        pred_pad = np.pad(pred, (0, max_len - T2), mode="constant", constant_values=0)
+        # (samples, 2): ch0 = user, ch1 = pred (like NeMo .T after cat)
+        merged = np.stack([user_pad, pred_pad], axis=1).astype(np.float32)
+        return merged
+
     def _artifact_root(self) -> Optional[str]:
         if not (self.vc_config.save_artifacts and self.vc_config.output_dir):
             return None
@@ -470,9 +507,21 @@ class S2SVoiceChatInferBackend(InferenceBackend):
                         max_val = float(np.max(np.abs(wav))) if wav.size else 0.0
                         if max_val > 0:
                             wav = wav / max_val * 0.95
-                        buf = io.BytesIO()
-                        sf.write(buf, wav, out_sr, format="WAV")
-                        out_audio_bytes = buf.getvalue()
+                        if self.vc_config.merge_user_channel:
+                            user_audio = audio_list[bi]
+                            merged = self._merge_user_model_audio(
+                                user_audio,
+                                int(self.vc_config.source_sample_rate),
+                                wav,
+                                out_sr,
+                            )
+                            buf = io.BytesIO()
+                            sf.write(buf, merged, out_sr, format="WAV")
+                            out_audio_bytes = buf.getvalue()
+                        else:
+                            buf = io.BytesIO()
+                            sf.write(buf, wav, out_sr, format="WAV")
+                            out_audio_bytes = buf.getvalue()
                     except Exception as e:
                         print(f"[S2SVoiceChat] Warning: failed encoding audio for {request_id}: {e}")
 

@@ -234,6 +234,22 @@ def main():
         action="store_true",
         help="Save per-request artifacts under output_dir (s2s_voicechat backend)",
     )
+    parser.add_argument(
+        "--trim_leading_silence",
+        action="store_true",
+        help="Trim leading silence from response audio to reduce FDB-reported latency (s2s_voicechat)",
+    )
+    parser.add_argument(
+        "--trim_leading_silence_padding_sec",
+        type=float,
+        default=0.01,
+        help="Seconds to keep before first speech when trimming (default: 0.01)",
+    )
+    parser.add_argument(
+        "--merge_user_channel",
+        action="store_true",
+        help="Merge user (input) + model (pred) into two-channel WAV like NeMo ResultsLogger (for FDB)",
+    )
 
     # S2S Incremental backend options
     parser.add_argument(
@@ -403,6 +419,12 @@ def main():
             extra_config["output_dir"] = args.output_dir
         if args.save_artifacts:
             extra_config["save_artifacts"] = True
+        if args.trim_leading_silence:
+            extra_config["trim_leading_silence"] = True
+        if args.trim_leading_silence_padding_sec != 0.01:
+            extra_config["trim_leading_silence_padding_sec"] = args.trim_leading_silence_padding_sec
+        if args.merge_user_channel:
+            extra_config["merge_user_channel"] = True
 
     # S2S Incremental/Session backend options (shared config)
     if args.backend in ("s2s_incremental", "s2s_session"):

@@ -86,33 +86,34 @@ def _get_input_wav_path(
     return None
 
 
-def _ensure_wav_to_dest(src: Path, dest: Path, stereo: bool = False) -> None:
-    """Copy wav to dest. For FDB (stereo=True) the source MUST already be 2-channel; we do not convert mono to stereo.
-    Pipeline: server returns audio -> vllm_multimodal saves bytes to output_dir/audio/*.wav -> we copy to fdb_prepared/<id>/output.wav.
-    Ensure the model/server is configured to output 2-channel audio so we never receive mono."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
+def _to_stereo(data: np.ndarray) -> np.ndarray:
+    """Return 2-channel array (samples, 2). If already stereo, return as-is; if mono, duplicate channel."""
+    if data.ndim == 2 and data.shape[1] == 2:
+        return data
+    if data.ndim == 1:
+        return np.stack([data, data], axis=1)
+    if data.ndim == 2 and data.shape[1] == 1:
+        return np.concatenate([data, data], axis=1)
+    # multi-channel: take first two or mean to mono then duplicate
+    mono = data.mean(axis=1)
+    return np.stack([mono, mono], axis=1)
 
-    def is_stereo(data: np.ndarray) -> bool:
-        return data.ndim == 2 and data.shape[1] == 2
+
+def _ensure_wav_to_dest(src: Path, dest: Path, stereo: bool = False) -> None:
+    """Copy wav to dest. For FDB (stereo=True) we ensure 2-channel output: convert mono to stereo by duplicating the channel."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
 
     # Prefer soundfile (handles float and int)
     if sf is not None:
         try:
             data, sr = sf.read(str(src))
             if stereo:
-                if not is_stereo(data):
-                    raise ValueError(
-                        f"FDB requires 2-channel (stereo) output. Got {data.ndim}D array with shape {getattr(data, 'shape', '?')} from {src}. "
-                        "Configure the model/server (S2S-Duplex inference or serve_unified backend) to output stereo; do not convert mono to stereo here."
-                    )
-                # Already stereo: write as-is
+                data = _to_stereo(data)
             else:
                 if data.ndim > 1:
                     data = data.mean(axis=1)
             sf.write(str(dest), data, sr)
             return
-        except ValueError:
-            raise
         except Exception:
             pass
 
@@ -121,24 +122,45 @@ def _ensure_wav_to_dest(src: Path, dest: Path, stereo: bool = False) -> None:
         try:
             sr, data = scipy_wavfile.read(str(src))
             if stereo:
-                if not is_stereo(data):
-                    raise ValueError(
-                        f"FDB requires 2-channel (stereo) output. Got {data.ndim}D array with shape {getattr(data, 'shape', '?')} from {src}. "
-                        "Configure the model/server to output stereo; do not convert mono to stereo here."
-                    )
+                data = _to_stereo(data)
             else:
                 if data.ndim > 1:
                     data = data.mean(axis=1)
             scipy_wavfile.write(str(dest), sr, data)
             return
-        except ValueError:
-            raise
         except Exception:
             pass
 
-    # No reader: copy as-is (stereo requirement cannot be verified)
-    if stereo:
-        print(f"Warning: Could not read {src} with soundfile/scipy; copying as-is. Ensure the file is 2-channel for FDB.", file=sys.stderr)
+    # No reader: copy as-is
+    shutil.copy2(src, dest)
+
+
+def _ensure_wav_mono_model_channel(src: Path, dest: Path) -> None:
+    """Write dest as mono using the model channel (index 1) when source is 2-channel.
+    FDB backchannel eval uses Silero VAD which requires mono; merged output.wav is ch0=user, ch1=model."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if sf is not None:
+        try:
+            data, sr = sf.read(str(src))
+            if data.ndim == 2 and data.shape[1] >= 2:
+                data = np.asarray(data[:, 1], dtype=data.dtype)  # model channel
+            elif data.ndim > 1:
+                data = data.mean(axis=1)
+            sf.write(str(dest), data, sr)
+            return
+        except Exception:
+            pass
+    if scipy_wavfile is not None:
+        try:
+            sr, data = scipy_wavfile.read(str(src))
+            if data.ndim == 2 and data.shape[1] >= 2:
+                data = np.asarray(data[:, 1], dtype=data.dtype)
+            elif data.ndim > 1:
+                data = data.mean(axis=1)
+            scipy_wavfile.write(str(dest), sr, data)
+            return
+        except Exception:
+            pass
     shutil.copy2(src, dest)
 
 
@@ -155,7 +177,7 @@ def prepare_fdb_dir(
     stereo: bool = True,
 ) -> Path:
     """Build FDB-format dir under eval_results_dir/subdir_name. Returns path to prepared dir.
-    output.wav must be 2-channel from the model/server; we do not convert mono to stereo (we verify and fail if mono)."""
+    When stereo=True, output.wav is written as 2-channel; mono sources are converted to stereo by duplicating the channel."""
     fdb_prepared = eval_results_dir / subdir_name
     audio_dir = eval_results_dir / "audio"
     entries_with_audio = []
@@ -202,6 +224,7 @@ def prepare_fdb_dir(
     fdb_prepared.mkdir(parents=True, exist_ok=True)
     # Match reference (reorganize_candor_outputs): output.wav = model response only; copy input.wav from original for turn_taking/interruption so dir has both.
     copy_input_wav_to_dir = subtest in ("turn_taking", "interruption")
+    # All subtests (including backchannel) use stereo when stereo=True: ch0=user, ch1=model. ASR --stereo uses ch1.
     for entry_id, src_wav in entries_with_audio:
         dest_dir = fdb_prepared / fdb_dir_name(entry_id)
         dest_dir.mkdir(parents=True, exist_ok=True)

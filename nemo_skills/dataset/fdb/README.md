@@ -69,6 +69,17 @@ FDB expects **2-channel (stereo)** `output.wav`. Scoring uses the [Full-Duplex-B
 
 So when using the **s2s_voicechat** backend with `--decode_audio`, the server already returns stereo; the prepare step only verifies and copies.
 
+### Scoring consistency (stereo + backchannel)
+
+The pipeline is **prepare (stereo output.wav) → ASR (--stereo, ch1) → evaluate**. For consistency:
+
+- **fdb_repo_path** in your config must point to a Full-Duplex-Bench clone that has:
+  1. **get_transcript/asr.py** with `--stereo` (uses channel 1 for transcription).
+  2. **evaluation/eval_backchannel.py** that converts stereo to the model channel (ch1) before calling Silero VAD (Silero expects 1D audio).
+
+The config `fdb_s2s_offline_v1.0_config.yaml` uses **our** Full-Duplex-Bench clone (`.../Full-Duplex-Bench`) for scoring so backchannel runs with the stereo-safe eval. On the cluster, ensure that clone has the updated `eval_backchannel.py` (and `asr.py` with `--stereo`) deployed.
+
+
 ### Reference inference vs s2s_voicechat backend
 
 The reference script `examples/speechlm2/nemotron_voicechat_infer.py` uses **Lightning** `trainer.validate(model, datamodule)` with `DuplexS2SDataset`. It does **not** call `offline_inference()` or write WAVs; audio shape and channel layout come from the model’s validation step and the datamodule. Our **s2s_voicechat** backend instead calls `model.offline_inference()` directly (same `NemotronVoiceChat`, different entry point), then encodes `outputs["audio"]` to WAV and forces 2-channel (duplicate mono to both channels or keep stereo) so FDB receives stereo. So multi-channel behavior is: reference = defined inside NeMo validation/dataset; ours = explicit 2-channel WAV in the backend.
@@ -107,3 +118,18 @@ The prepare step does not convert mono to stereo. Configure the **model/server**
 ### ASR step: HuggingFace read timeout
 
 If scoring fails with `ReadTimeout` when loading the ASR model, or you see `ZeroDivisionError` in `eval_smooth_turn_taking`, the ASR step produced no `output.json` files. Pre-download the ASR model once (e.g. `python -c "import nemo.collections.asr as nemo_asr; nemo_asr.models.ASRModel.from_pretrained('nvidia/parakeet-tdt-0.6b')"`) in an environment with good HuggingFace access, or set `HF_HUB_DOWNLOAD_TIMEOUT=300`.
+
+### FileNotFoundError: ... interruption_0.wav (or other fdb_v1/data/*.wav)
+
+Generation reads `test.jsonl` and resolves audio paths as `data_dir + path` (e.g. `data_dir`/fdb_v1/data/interruption_0.wav). The JSONL must reference the same filenames as the files on disk. Audio filenames are `{subtest}_{sample_id}.wav` (e.g. `interruption_1.wav`, not `interruption_0.wav` for sample_id 1). If your `test.jsonl` still references 0-based names (e.g. `interruption_0.wav`) while the data dir has `interruption_1.wav`, the paths are out of sync.
+
+**Fix on the cluster:** Re-run the FDB prepare so that `test.jsonl` and `data/` are regenerated together. Use the same `data_dir` as in your eval config so output goes to Lustre:
+
+```bash
+# On the cluster (with PYTHONPATH set so nemo_skills is importable)
+python -m nemo_skills.dataset.fdb.prepare \
+  --fdb_data_path /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench-data \
+  --data_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset/fdb
+```
+
+Then re-run your eval; generation will find e.g. `interruption_1.wav` at the path in the new `test.jsonl`.

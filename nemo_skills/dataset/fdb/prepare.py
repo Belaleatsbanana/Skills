@@ -541,10 +541,16 @@ Examples:
         action="store_true",
         help="Skip processing audio files (faster, for testing)",
     )
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default=None,
+        help="Output root for fdb_v1/ or fdb_v1_5/ (default: package dir). Use this to write to Lustre on the cluster so test.jsonl and data/ match.",
+    )
     args = parser.parse_args()
 
     version = args.version
-    base_dir = Path(__file__).parent  # fdb package dir (v1 and v1_5 are subgroups under it)
+    base_dir = Path(args.data_dir) if args.data_dir else Path(__file__).parent  # fdb package dir (v1 and v1_5 are subgroups under it)
     if version == "v1.0":
         data_dir = base_dir / "fdb_v1"
         dataset_name = "fdb_v1"
