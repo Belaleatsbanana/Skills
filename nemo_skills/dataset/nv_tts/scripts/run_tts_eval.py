@@ -151,8 +151,10 @@ def main():
                 # Parallel chunked scoring on a single node:
                 # One Slurm job with num_tasks=num_chunks. Each task gets a
                 # different $SLURM_LOCALID (0..N-1) which becomes the chunk_id.
-                # This mirrors how generation uses gpus_per_node for multi-instance mode.
+                # Each task pins itself to its own GPU via CUDA_VISIBLE_DEVICES
+                # to avoid all processes landing on GPU 0 and hitting OOM.
                 chunk_cmd = (
+                    f"export CUDA_VISIBLE_DEVICES=${{SLURM_LOCALID:-0}} && "
                     f"{base_scoring_args} "
                     f'--num_chunks {scoring_num_chunks} --chunk_id ${{SLURM_LOCALID:-0}}'
                 )
