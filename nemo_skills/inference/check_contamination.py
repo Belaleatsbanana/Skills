@@ -75,6 +75,14 @@ class CheckContaminationTask(GenerationTask):
     def __init__(self, cfg: CheckContaminationConfig):
         super().__init__(cfg)
 
+    async def postprocess_single_output(self, output, original_data_point):
+        """Keep judgments and contaminated_per_item in output so they are written to the file."""
+        extra = {k: output.get(k) for k in ("judgments", "contaminated_per_item", "all_generations") if k in output}
+        await super().postprocess_single_output(output, original_data_point)
+        for k, v in extra.items():
+            if v is not None:
+                output[k] = v
+
     def load_data(self):
         # Load the data as done in the base class
         data = super().load_data()
@@ -121,10 +129,7 @@ class CheckContaminationTask(GenerationTask):
         return query_data
 
     def prefill_generation(self, data_point):
-        """Prefill contamination if there is a string match between the problem and the similar items"""
-        for similar_item in data_point["similar_items"]:
-            if data_point[self.cfg.retrieve_key].strip().lower() == similar_item.strip().lower():
-                return {"generation": True}
+        """Prefill disabled: always run full LLM judgment for all similar items."""
         return None
 
     async def process_single_datapoint(self, data_point, all_data):
@@ -147,7 +152,47 @@ class CheckContaminationTask(GenerationTask):
             if generation.strip() == "True":
                 contaminated = True
 
-        return {"all_generations": all_generations, "generation": contaminated}
+        # Build per-pair judgments for writing to output (one entry per similar_item)
+        similar_items = data_point["similar_items"][: self.cfg.top_k]
+        similarity_scores = data_point.get("similarity_scores")
+        if similarity_scores is not None:
+            similarity_scores = similarity_scores[: len(similar_items)]
+        else:
+            similarity_scores = [None] * len(similar_items)
+
+        # When check_both_ways=True we have 2 results per similar_item (indices 2*i, 2*i+1)
+        step = 2 if self.cfg.check_both_ways else 1
+
+        judgments = []
+        for i, similar_item in enumerate(similar_items):
+            score = similarity_scores[i] if i < len(similarity_scores) else None
+            idx = i * step
+            if idx < len(all_generations):
+                judged = any(
+                    all_generations[idx + j].strip() == "True" for j in range(step) if idx + j < len(all_generations)
+                )
+                raw = [all_generations[idx + j] for j in range(step) if idx + j < len(all_generations)]
+            else:
+                judged = None
+                raw = []
+            judgments.append(
+                {
+                    "similar_item": similar_item,
+                    "similarity_score": score,
+                    "contaminated": judged,
+                    "raw_generation": raw[0] if len(raw) == 1 else raw if raw else None,
+                }
+            )
+
+        # Flat list of 20 True/False for quick inspection: contaminated_per_item[i] = judgment for similar_items[i]
+        contaminated_per_item = [j["contaminated"] for j in judgments]
+
+        return {
+            "all_generations": all_generations,
+            "generation": contaminated,
+            "judgments": judgments,
+            "contaminated_per_item": contaminated_per_item,
+        }
 
     def postprocess(self):
         """Postprocess the output file to calculate the contamination portion."""
