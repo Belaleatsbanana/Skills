@@ -108,7 +108,7 @@ def main():
         gen_exp_name = args.expname  # The expname we passed to ns_eval
         print(f"Generation submitted: {gen_exp}")
 
-    # Stage 2: Scoring (one job per benchmark, depends on generation)
+    # Stage 2: Scoring (depends on generation)
     if args.stage in ("all", "scoring"):
         print("\n" + "=" * 60)
         print("Stage 2: SCORING")
@@ -124,12 +124,17 @@ def main():
         # When running both stages, scoring depends on generation experiment (by name)
         run_after = [gen_exp_name] if args.stage == "all" and gen_exp_name else None
 
+        scoring_num_chunks = scoring.get("num_chunks")
+
         for benchmark in benchmarks:
             benchmark = benchmark.strip()
             # Benchmark dir in eval-results keeps dot notation (nv_tts.libritts_seen)
             benchmark_dir = benchmark
+            # Short name for job (e.g. libritts_seen from nv_tts.libritts_seen)
+            short_name = benchmark.split(".")[-1]
 
-            scoring_cmd = (
+            # Base scoring command arguments (shared between chunked and non-chunked)
+            base_scoring_args = (
                 f"HF_TOKEN={hf_token} "
                 f"PYTHONPATH={scoring_code_path}:$PYTHONPATH "
                 f"python -m nemo_skills.dataset.nv_tts.scripts.score "
@@ -140,29 +145,92 @@ def main():
                 f"--language {scoring.get('language', 'en')}"
             )
             if scoring.get("with_utmosv2"):
-                scoring_cmd += " --with_utmosv2"
-            if scoring.get("with_fcd"):
-                scoring_cmd += " --with_fcd"
-                if scoring.get("codec_model_path"):
-                    scoring_cmd += f" --codec_model_path {scoring['codec_model_path']}"
+                base_scoring_args += " --with_utmosv2"
 
-            # Short name for job (e.g. libritts_seen from nv_tts.libritts_seen)
-            short_name = benchmark.split(".")[-1]
-            print(f"  Submitting scoring job for: {benchmark}")
+            if scoring_num_chunks and scoring_num_chunks > 1:
+                # Parallel chunked scoring on a single node:
+                # One Slurm job with num_tasks=num_chunks. Each task gets a
+                # different $SLURM_LOCALID (0..N-1) which becomes the chunk_id.
+                # This mirrors how generation uses gpus_per_node for multi-instance mode.
+                chunk_cmd = (
+                    f"{base_scoring_args} "
+                    f'--num_chunks {scoring_num_chunks} --chunk_id ${{SLURM_LOCALID:-0}}'
+                )
+                scoring_expname = f"{args.expname}_score_{short_name}"
+                print(
+                    f"  Submitting multi-instance scoring job for: {benchmark} "
+                    f"({scoring_num_chunks} chunks on {scoring_num_chunks} GPUs)"
+                )
 
-            ns_run_cmd(
-                ctx=MockContext(),
-                cluster=cfg["cluster"],
-                container=cfg["container"],
-                partition=cfg["partition"],
-                num_gpus=scoring.get("gpus", 1),
-                mount_paths=cfg["mount_paths"],
-                command=scoring_cmd,
-                installation_command=install_cmd,
-                run_after=run_after,
-                expname=f"{args.expname}_score_{short_name}",
-                log_dir=f"{output_dir}/eval-logs",
-            )
+                ns_run_cmd(
+                    ctx=MockContext(),
+                    cluster=cfg["cluster"],
+                    container=cfg["container"],
+                    partition=cfg["partition"],
+                    num_gpus=scoring_num_chunks,
+                    num_tasks=scoring_num_chunks,
+                    mount_paths=cfg["mount_paths"],
+                    command=chunk_cmd,
+                    installation_command=install_cmd,
+                    run_after=run_after,
+                    expname=scoring_expname,
+                    log_dir=f"{output_dir}/eval-logs",
+                )
+
+                # Aggregation job: merge chunks, recompute global metrics, compute FCD.
+                # Depends on the scoring job above.
+                agg_cmd = (
+                    f"HF_TOKEN={hf_token} "
+                    f"PYTHONPATH={scoring_code_path}:$PYTHONPATH "
+                    f"python -m nemo_skills.dataset.nv_tts.scripts.score "
+                    f"--results_dir {output_dir} "
+                    f"--benchmark {benchmark_dir} "
+                    f"--merge_scoring_chunks "
+                    f"--num_chunks {scoring_num_chunks}"
+                )
+                if scoring.get("with_fcd"):
+                    agg_cmd += " --with_fcd"
+                    if scoring.get("codec_model_path"):
+                        agg_cmd += f" --codec_model_path {scoring['codec_model_path']}"
+
+                agg_expname = f"{args.expname}_score_{short_name}_agg"
+                print(f"  Submitting scoring aggregation job for: {benchmark}")
+
+                ns_run_cmd(
+                    ctx=MockContext(),
+                    cluster=cfg["cluster"],
+                    container=cfg["container"],
+                    partition=cfg["partition"],
+                    num_gpus=1 if scoring.get("with_fcd") else 0,
+                    mount_paths=cfg["mount_paths"],
+                    command=agg_cmd,
+                    run_after=[scoring_expname],
+                    expname=agg_expname,
+                    log_dir=f"{output_dir}/eval-logs",
+                )
+            else:
+                # Non-chunked: original single-job scoring per benchmark
+                scoring_cmd = base_scoring_args
+                if scoring.get("with_fcd"):
+                    scoring_cmd += " --with_fcd"
+                    if scoring.get("codec_model_path"):
+                        scoring_cmd += f" --codec_model_path {scoring['codec_model_path']}"
+
+                print(f"  Submitting scoring job for: {benchmark}")
+
+                ns_run_cmd(
+                    ctx=MockContext(),
+                    cluster=cfg["cluster"],
+                    container=cfg["container"],
+                    partition=cfg["partition"],
+                    num_gpus=scoring.get("gpus", 1),
+                    mount_paths=cfg["mount_paths"],
+                    command=scoring_cmd,
+                    installation_command=install_cmd,
+                    run_after=run_after,
+                    expname=f"{args.expname}_score_{short_name}",
+                    log_dir=f"{output_dir}/eval-logs",
+                )
 
     # Stage 3: Aggregation (only if explicitly requested)
     if args.stage == "aggregation":

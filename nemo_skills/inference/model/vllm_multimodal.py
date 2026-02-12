@@ -132,7 +132,6 @@ class VLLMMultimodalModel(VLLMModel):
             filename = f"{response_id}.pt"
             filepath = os.path.join(self.output_audio_dir, filename)
             torch.save(codes, filepath)
-            LOG.info(f"Saved codec: {filepath}")
             return filepath
         except Exception as e:
             LOG.warning(f"Failed to save codec data: {e}")
