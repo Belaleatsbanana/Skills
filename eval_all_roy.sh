@@ -3,6 +3,6 @@
 python -m nemo_skills.dataset.nv_tts.scripts.run_tts_eval \
   --config nemo_skills/dataset/nv_tts/scripts/config/tts-roy.yaml \
   --stage all \
-  --expname default_eval
+  --expname test3
 
 # --stage all

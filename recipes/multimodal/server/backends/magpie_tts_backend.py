@@ -29,7 +29,6 @@ class MagpieTTSConfig(BackendConfig):
     max_decoder_steps: int = 440
     use_local_transformer: bool = False
     output_sample_rate: int = 22050
-    save_codes: bool = False  # Save codec codes for FCD scoring
     longform_mode: str = "auto"  # "auto" | "always" | "never" - longform inference mode (NeMo InferenceConfig)
     # Checkpoint loading options (alternative to model_path .nemo file)
     hparams_file: Optional[str] = None
@@ -54,7 +53,6 @@ class MagpieTTSConfig(BackendConfig):
             "max_decoder_steps",
             "use_local_transformer",
             "output_sample_rate",
-            "save_codes",
             "longform_mode",
             "hparams_file",
             "checkpoint_file",
@@ -286,7 +284,7 @@ class MagpieTTSBackend(InferenceBackend):
             dataset = self._runner.create_dataset(load_evalset_config(config_path))
             rtf_list, *_ = self._runner.run_inference_on_dataset(
                 dataset, output_dir, save_cross_attention_maps=False, save_context_audio=False,
-                save_predicted_codes=self.tts_config.save_codes
+                save_predicted_codes=True
             )
 
             gen_time = time.time() - start_time
@@ -320,19 +318,15 @@ class MagpieTTSBackend(InferenceBackend):
                         "batch_metrics": batch_metrics,
                     }
 
-                    # Include codec data if save_codes is enabled
-                    if self.tts_config.save_codes:
-                        codes_path = os.path.join(output_dir, f"predicted_codes_{i}.pt")
-                        if os.path.exists(codes_path):
-                            import base64
-                            import torch
-                            codes_buf = io.BytesIO()
-                            torch.save(torch.load(codes_path, map_location="cpu"), codes_buf)
-                            codes_buf.seek(0)
-                            debug_info["codec_data"] = base64.b64encode(codes_buf.read()).decode("utf-8")
-                        else:
-                            # List what files are in output_dir
-                            print(f"[MagpieTTSBackend] Files in {output_dir}: {os.listdir(output_dir)}")
+                    # Include codec data for FCD scoring
+                    codes_path = os.path.join(output_dir, f"predicted_codes_{i}.pt")
+                    if os.path.exists(codes_path):
+                        import base64
+                        import torch
+                        codes_buf = io.BytesIO()
+                        torch.save(torch.load(codes_path, map_location="cpu"), codes_buf)
+                        codes_buf.seek(0)
+                        debug_info["codec_data"] = base64.b64encode(codes_buf.read()).decode("utf-8")
 
                     results.append(
                         GenerationResult(
