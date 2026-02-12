@@ -69,6 +69,8 @@ class NemoRLTask:
     backend: str
     profile_step_range: str
     extra_arguments: str = ""
+    use_gym: bool = False
+    training_config: str = None
 
     def format_train_args(self):
         cmd = (
@@ -88,9 +90,14 @@ class NemoRLTask:
         return cmd
 
     def format_data_args(self):
-        cmd = f"+data.train_data_path={self.prompt_data} "
-        if self.eval_data is not None:
-            cmd += f"+data.val_data_path={self.eval_data} "
+        if self.use_gym:
+            cmd = f"++data.train_jsonl_fpath={self.prompt_data} "
+            if self.eval_data is not None:
+                cmd += f"++data.validation_jsonl_fpath={self.eval_data} "
+        else:
+            cmd = f"+data.train_data_path={self.prompt_data} "
+            if self.eval_data is not None:
+                cmd += f"+data.val_data_path={self.eval_data} "
         return cmd
 
     def format_wandb_args(self):
@@ -132,12 +139,15 @@ class NemoRLTask:
     def get_cmd(self):
         self.logging_params = self.format_wandb_args()
         nsight_cmd = get_nsight_cmd(self.profile_step_range)
+        start_script = "start_grpo_gym.py" if self.use_gym else "start_grpo.py"
+        config_arg = f"--config {self.training_config} " if self.training_config else ""
         cmd = (
             f"export PYTHONPATH=$PYTHONPATH:/nemo_run/code:/opt/NeMo-RL && "
             f"export UV_PROJECT=/opt/NeMo-RL && "
             f"{nsight_cmd}"
             f"echo 'Starting training' && "
-            f"uv run --active python /nemo_run/code/nemo_skills/training/nemo_rl/start_grpo.py "
+            f"uv run --active python /nemo_run/code/nemo_skills/training/nemo_rl/{start_script} "
+            f"  {config_arg}"
             f"  {self.format_train_args()} "
             f"  {self.format_data_args()} "
             f"  {self.logging_params} "
@@ -164,6 +174,8 @@ def get_training_cmd(
     env_variables,
     backend,
     profile_step_range,
+    use_gym=False,
+    training_config=None,
 ):
     timeout = get_timeout_str(cluster_config, partition)
 
@@ -184,6 +196,8 @@ def get_training_cmd(
         env_variables=env_variables,
         backend=backend,
         profile_step_range=profile_step_range,
+        use_gym=use_gym,
+        training_config=training_config,
     )
 
     return task.get_cmd()
@@ -329,6 +343,16 @@ def grpo_nemo_rl(
         "You can use an arbitrary command here and we will run it on a single rank for each node. "
         "E.g. 'pip install my_package'",
     ),
+    use_gym: bool = typer.Option(
+        False,
+        help="If True, uses NeMo Gym for environment interaction instead of NeMo Skills prompt templating. "
+        "Requires both --training-data and --validation-data.",
+    ),
+    training_config: str = typer.Option(
+        None,
+        help="Path to a base training YAML config. When --use-gym is set, defaults to grpo_gym.yaml. "
+        "Overrides the default config used by the training script.",
+    ),
     dry_run: bool = typer.Option(False, help="If True, will not run the job, but will validate all arguments."),
     sbatch_kwargs: str = typer.Option(
         "",
@@ -351,6 +375,10 @@ def grpo_nemo_rl(
     extra_arguments = f"{' '.join(ctx.args)}"
     LOG.info("Starting training job")
     LOG.info("Extra arguments that will be passed to the underlying script: %s", extra_arguments)
+
+    if use_gym:
+        if training_data is None or validation_data is None:
+            raise typer.BadParameter("--use-gym requires both --training-data and --validation-data to be specified.")
 
     cluster_config = get_cluster_config(cluster, config_dir)
     cluster_config = resolve_mount_paths(cluster_config, mount_paths)
@@ -406,6 +434,8 @@ def grpo_nemo_rl(
         env_variables=env_variables,
         backend=backend,
         profile_step_range=profile_step_range,
+        use_gym=use_gym,
+        training_config=training_config,
     )
 
     server_config = None
