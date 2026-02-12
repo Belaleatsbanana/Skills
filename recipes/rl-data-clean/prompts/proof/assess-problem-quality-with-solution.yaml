@@ -1,0 +1,84 @@
+# Strengthened problem quality assessment: judge uses BOTH problem and a solution attempt.
+# Use after solve-proof-for-quality. Same output format as assess-problem-quality for postprocess compatibility.
+user: |-
+  You are a mathematics education expert and IMO competition judge specializing in proof problems.
+  Your task is to evaluate the quality of a PROOF PROBLEM for IMO-level mathematics.
+  You have already seen a SOLUTION ATTEMPT to this problem. Use both the problem and the solution attempt to make a more informed judgment.
+
+  Problem:
+  {problem}
+
+  Solution attempt (by a strong model):
+  {solution}
+
+  Analyze the problem quality across these dimensions, using the solution attempt as evidence:
+
+  ## 1. CLARITY & WELL-DEFINEDNESS (problem + solution evidence)
+  Was the problem clear enough to attempt? Did the solver understand what to prove?
+  - Are all mathematical objects and terms well-defined (in problem or clarified by solution attempt)?
+  - Is the statement to be proven completely clear?
+  - If the solution failed or got stuck, was it due to problem ambiguity?
+
+  ## 2. SOLVABILITY & SOLUTION QUALITY (new: from solution attempt)
+  - Could a complete proof be attempted? (complete / partial / failed / ill-posed)
+  - Is the solution attempt mathematically correct and rigorous?
+  - Does the solution support that the problem is well-posed and has a verifiable answer?
+  - If the solver said "ambiguous" or "missing info", weigh that against ACCEPT.
+
+  ## 3. PROOF STRUCTURE QUALITY
+  Does this problem have good mathematical structure?
+  - Is there a clear logical path from assumptions to conclusion (in the solution)?
+  - Does it require multiple proof steps (vs. single insight)?
+  - Can proof progress be objectively verified?
+
+  ## 4. MATHEMATICAL RIGOR & CORRECTNESS
+  Is the problem mathematically sound?
+  - Is the statement mathematically valid? (Does the solution suggest it is true/provable?)
+  - Are the given conditions sufficient?
+  - Any mathematical errors or imprecision in the problem or solution?
+
+  ## 5. DIFFICULTY & IMO FIT
+  Difficulty: P1 (accessible) … P6 (extremely hard) / TOO_SIMPLE / UNCLEAR.
+  - Is this appropriate for IMO-style training?
+  - Does the solution show non-trivial reasoning?
+
+  ## Decision criteria
+
+  ACCEPT if:
+  - Problem is clear and well-defined (solution attempt supports this if it progressed)
+  - Problem is mathematically well-posed; solution attempt is correct or plausibly complete
+  - Requires non-trivial reasoning; proof can be verified
+  - Appropriate difficulty (P1–P6, not TOO_SIMPLE or UNCLEAR)
+
+  REJECT if:
+  - Problem is ambiguous or unclear (e.g. solver could not proceed due to missing info)
+  - Statement is invalid or contradictory
+  - Solution attempt shows the problem is ill-posed or has no clear proof
+  - Problem is not a proper proof problem or is trivial
+
+  Provide your assessment in the following EXACT format:
+
+  CLARITY_ANALYSIS:
+  <Was the problem clear? Did the solution attempt show understanding? Any ambiguities?>
+
+  SOLVABILITY_AND_SOLUTION_QUALITY:
+  <Was a proof completed or attempted? Correct/partial/failed? Does this support that the problem is well-posed?>
+
+  PROOF_STRUCTURE_ANALYSIS:
+  <Proof steps, logical path, verifiability (from solution attempt).>
+
+  MATHEMATICAL_RIGOR_ANALYSIS:
+  <Statement valid? Conditions sufficient? Issues in problem or solution?>
+
+  DIFFICULTY_AND_COMPLEXITY_ANALYSIS:
+  <Difficulty (P1-P6/TOO_SIMPLE/UNCLEAR)? Proof complexity? IMO appropriateness?>
+
+  DIFFICULTY_ESTIMATE: <One of: P1, P2, P3, P4, P5, P6, TOO_SIMPLE, UNCLEAR>
+
+  CRITICAL_ISSUES:
+  <Serious problems that would prevent using this problem. If none, state "None">
+
+  DECISION: <ACCEPT/REJECT>
+  DECISION_REASONING: <Why accept/reject? Use both problem and solution attempt. Reference clarity, solvability, rigor, and difficulty.>
+
+  Output:

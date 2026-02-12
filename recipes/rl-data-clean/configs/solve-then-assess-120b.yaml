@@ -1,0 +1,40 @@
+# Solve-then-assess problem quality (gpt-oss-120b, proof, 2 stages only)
+# Stage 1: solve each problem; Stage 2: judge with (problem + solution) → accepted/rejected
+
+cluster: dfw
+base_output_dir: /workspace/rl-data-clean/proof
+model_name: gpt-oss-120b
+expname: solve-then-assess-${model_name}
+suffix: 120b
+
+# Input: e.g. step-3 accepted.jsonl from main proof pipeline, or your 5k sample
+input_file: /lustre/fsw/portfolios/llmservice/projects/llmservice_nemo_reasoning/users/wedu/workspace/rl-data-clean/proof/check_contamination/dedup_5000.jsonl
+
+generate_kwargs:
+  model: /hf_models/${model_name}
+  server_type: vllm
+  server_gpus: 8
+  server_nodes: 1
+  num_chunks: 5
+
+pipeline_stages:
+  - solve_proof_for_quality
+  - assess_problem_quality_with_solution
+
+directories:
+  step-1-solve: ${base_output_dir}/${model_name}/solve-then-assess/step-1-solve
+  step-2-assess-with-solution: ${base_output_dir}/${model_name}/solve-then-assess/step-2-assess-with-solution
+
+stages:
+  solve_proof_for_quality:
+    output_dir: ${directories.step-1-solve}
+    input_file: ${input_file}
+    dependencies: null
+    stage_kwargs: ${generate_kwargs}
+
+  assess_problem_quality_with_solution:
+    output_dir: ${directories.step-2-assess-with-solution}
+    input_file: ${directories.step-1-solve}/solved.jsonl
+    dependencies:
+      - solve_proof_for_quality
+    stage_kwargs: ${generate_kwargs}

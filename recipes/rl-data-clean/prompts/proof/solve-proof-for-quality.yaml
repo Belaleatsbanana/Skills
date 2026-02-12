@@ -1,0 +1,11 @@
+# Used as step 1 of "solve then assess": model attempts to solve the problem.
+# Output is then passed to assess-problem-quality-with-solution for strengthened judgment.
+user: |-
+  You are an expert at solving mathematical proof problems. Attempt to prove the following statement. Give a complete, rigorous proof.
+
+  Problem:
+  {problem}
+
+  Provide your proof step by step. Use clear mathematical reasoning. If the problem is ambiguous or you cannot complete a valid proof, explain what is missing or where you are stuck. End with a clear conclusion.
+
+  Proof:
