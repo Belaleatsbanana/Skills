@@ -16,7 +16,7 @@ pip install git+https://github.com/NVIDIA-NeMo/Skills.git
 pip install -e .
 ```
 
-## Lightweight installation (for Gym/RL integration)
+## Lightweight installation
 
 If you only need inference, evaluation, and tool calling (no cluster orchestration):
 
@@ -25,8 +25,6 @@ pip install "nemo-skills-core @ git+https://github.com/NVIDIA-NeMo/Skills.git#su
 # or, from a local clone:
 pip install -e core/
 ```
-
-This is what NeMo Gym and NeMo RL use in their `requirements.txt`.
 
 ## Extras (dependency groups)
 
@@ -45,7 +43,7 @@ Each extra maps to a requirements file under `requirements/`.
 # Full install (default)
 pip install -e .
 
-# Core only — for NeMo Gym/RL integration or custom agent code
+# Core only — lightweight runtime for downstream integrations
 pip install -e core/
 
 # Development (everything + dev tools)
