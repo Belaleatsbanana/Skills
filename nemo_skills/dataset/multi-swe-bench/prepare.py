@@ -18,6 +18,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from tqdm import tqdm
+
 from nemo_skills.dataset.utils import download_with_retries
 
 DATASET_NAME = {
@@ -102,34 +104,38 @@ if __name__ == "__main__":
 
     output_file = Path(__file__).parent / f"{args.setup}.jsonl"
 
-    for data_file in data_files:
-        with open(data_file, "r") as fin, open(output_file, "w") as fout:
-            for i, line in enumerate(fin):
-                input_row = json.loads(line)
+    with open(output_file, "w") as fout:
+        for data_file in tqdm(data_files, desc="Preparing dataset"):
+            with open(data_file, "r") as fin:
+                for i, line in enumerate(fin):
+                    input_row = json.loads(line)
 
-                # Multi-SWE-bench docker image format: mswebench/facebook_m_zstd:pr-3942
-                docker_image = f"mswebench/{input_row['org']}_m_{input_row['repo']}:pr-{input_row['number']}".lower()
-                if container_formatter.endswith(".sif"):
-                    docker_image = docker_image.replace("/", "_").replace(":", "_")
+                    # Multi-SWE-bench docker image format: mswebench/facebook_m_zstd:pr-3942
+                    docker_image = f"mswebench/{input_row['org']}_m_{input_row['repo']}:pr-{input_row['number']}"
+                    docker_image = docker_image.lower()
+                    if container_formatter.endswith(".sif"):
+                        docker_image = docker_image.replace("/", "_").replace(":", "_")
 
-                # Convert instance from Multi-SWE-bench format to SWE-bench Verified format:
-                # https://github.com/OpenHands/OpenHands/blob/main/evaluation/benchmarks/multi_swe_bench/scripts/data/data_change.py#L30
-                issue = input_row["resolved_issues"][0]
-                output_row = {
-                    "instance_id": input_row["instance_id"],
-                    "repo": input_row["org"] + "/" + input_row["repo"],
-                    "language": convert_language(data_file.parent.name if subset == "full" else input_row["language"]),
-                    "base_commit": input_row["base"]["sha"],
-                    "problem_statement": issue["title"] + "\n" + issue["body"],
-                    "container_formatter": container_formatter.format(docker_image=docker_image),
-                    "container_id": i,
-                    "dataset_name": DATASET_NAME[subset],
-                    "split": "train",
-                    # We save the original row because the evaluation harness will need it.
-                    # We save it as a string to prevent HF load_dataset errors.
-                    "original_row": json.dumps(input_row),
-                }
+                    # Convert instance from Multi-SWE-bench format to SWE-bench Verified format (plus language column).
+                    # Based on: https://github.com/OpenHands/OpenHands/blob/0.62.0/evaluation/benchmarks/multi_swe_bench/scripts/data/data_change.py
+                    issue = input_row["resolved_issues"][0]
+                    output_row = {
+                        "instance_id": input_row["instance_id"],
+                        "repo": input_row["org"] + "/" + input_row["repo"],
+                        "language": convert_language(
+                            data_file.parent.name if subset == "full" else input_row["language"]
+                        ),
+                        "base_commit": input_row["base"]["sha"],
+                        "problem_statement": issue["title"] + "\n" + issue["body"],
+                        "container_formatter": container_formatter.format(docker_image=docker_image),
+                        "container_id": i,
+                        "dataset_name": DATASET_NAME[subset],
+                        "split": "train",
+                        # We save the original row because the evaluation harness will need it.
+                        # We save it as a string to prevent HF load_dataset errors.
+                        "original_row": json.dumps(input_row),
+                    }
 
-                print(json.dumps(output_row), file=fout)
+                    print(json.dumps(output_row), file=fout)
 
     shutil.rmtree(temp_dir)
