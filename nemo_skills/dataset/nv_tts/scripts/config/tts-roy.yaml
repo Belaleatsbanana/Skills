@@ -3,7 +3,7 @@
 # Cluster and execution settings (shared across all stages)
 cluster: eos-roy
 container: /lustre/fsw/convai_convaird_nemo-speech/data/containers/nemo_25.11-260122.sqsh
-partition: batch
+partition: batch # interactive
 mount_paths: /lustre:/lustre
 output_dir: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/skills/eval_results
 
@@ -15,7 +15,7 @@ scoring_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/gitrepos/N
 
 # Generation settings (ns eval arguments)
 generation:
-  benchmarks: nv_tts.libritts_seen #,nv_tts.libritts_test_clean #,nv_tts.riva_hard_digits,nv_tts.riva_hard_letters,nv_tts.riva_hard_money,nv_tts.riva_hard_short,nv_tts.vctk
+  benchmarks: nv_tts.libritts_test_clean,nv_tts.libritts_seen,nv_tts.riva_hard_digits,nv_tts.riva_hard_letters,nv_tts.riva_hard_money,nv_tts.riva_hard_short,nv_tts.vctk
   model: my-checkpoint-symbolic-name # or HF path like nvidia/magpie_tts_multilingual_357m
   server_type: generic
   server_gpus: 1
@@ -44,3 +44,4 @@ scoring:
   with_fcd: true
   codec_model_path: nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps
   gpus: 1
+  num_chunks: 8  # number of parallel scoring jobs (set to null or remove for single-job scoring)

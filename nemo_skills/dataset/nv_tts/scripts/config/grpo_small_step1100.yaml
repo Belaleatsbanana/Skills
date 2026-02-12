@@ -38,3 +38,4 @@ scoring:
   language: en
   with_utmosv2: true
   gpus: 1
+  # num_chunks: 8  # set to >1 to enable parallel scoring across multiple GPUs
