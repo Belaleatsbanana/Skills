@@ -1,13 +1,14 @@
 # Installation & Dependency Groups
 
-NeMo Skills is organized into dependency groups so that downstream integrations
-(NeMo Gym, NeMo RL, custom agents) can install only what they need.
+NeMo Skills provides two installable packages:
+
+- **`nemo-skills`** (root) — full install with CLI, cluster orchestration, benchmarks
+- **`nemo-skills-core`** (`core/` subdirectory) — lightweight runtime only
 
 ## Default installation
 
-The base `pip install` gives you **core only** (inference, evaluation, math/code
-grading, MCP tool calling). This is all you need for NeMo Gym/RL integration or
-custom agent code:
+`pip install nemo-skills` gives you **everything** (inference, evaluation, CLI,
+cluster orchestration, benchmarks):
 
 ```bash
 pip install git+https://github.com/NVIDIA-NeMo/Skills.git
@@ -15,12 +16,17 @@ pip install git+https://github.com/NVIDIA-NeMo/Skills.git
 pip install -e .
 ```
 
-For the **full install** (cluster orchestration, all benchmarks — equivalent to
-the old default), use the `all` extra:
+## Lightweight installation (for Gym/RL integration)
+
+If you only need inference, evaluation, and tool calling (no cluster orchestration):
 
 ```bash
-pip install -e ".[all]"
+pip install "nemo-skills-core @ git+https://github.com/NVIDIA-NeMo/Skills.git#subdirectory=core"
+# or, from a local clone:
+pip install -e core/
 ```
+
+This is what NeMo Gym and NeMo RL use in their `requirements.txt`.
 
 ## Extras (dependency groups)
 
@@ -28,27 +34,22 @@ Each extra maps to a requirements file under `requirements/`.
 
 | Extra | Requirements file | What it provides |
 |-------|-------------------|------------------|
-| `core` | `requirements/core.txt` | Agent runtime: inference, evaluation, tool calling (MCP), prompt formatting, math/code grading. No cluster orchestration. Same as base install. |
+| `core` | `requirements/core.txt` | Agent runtime: inference, evaluation, tool calling (MCP), prompt formatting, math/code grading. No cluster orchestration. |
 | `pipeline` | `requirements/pipeline.txt` | CLI (`ns` command), cluster management, experiment tracking (`nemo_run`, `typer`, `wandb`). |
 | `benchmarks` | `requirements/benchmarks.txt` | Assorted benchmark dependencies (BFCL, BIRD, translation, etc.). |
-| `all` | `requirements/main.txt` | Everything (core + pipeline + benchmarks). Use this if unsure. |
 | `dev` | `requirements/common-tests.txt`, `requirements/common-dev.txt` | Development and testing tools (`pytest`, `ruff`, `pre-commit`). |
 
 ### Examples
 
 ```bash
-# Core only — for NeMo Gym/RL integration or custom agent code
+# Full install (default)
 pip install -e .
-# (or equivalently: pip install -e ".[core]")
 
-# Core + pipeline (cluster orchestration, no benchmark deps)
-pip install -e ".[pipeline]"
-
-# Full install (everything)
-pip install -e ".[all]"
+# Core only — for NeMo Gym/RL integration or custom agent code
+pip install -e core/
 
 # Development (everything + dev tools)
-pip install -e ".[all,dev]"
+pip install -e ".[dev]"
 ```
 
 ## Core / Pipeline architecture boundary

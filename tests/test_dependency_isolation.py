@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests that verify dependency isolation between core, pipeline, and benchmark extras.
+"""Tests that verify dependency isolation between nemo-skills-core and nemo-skills.
 
-Each test creates a fresh virtualenv, installs specific extras, and checks that
-only the expected modules are importable. These tests are slow (~30s each) due
-to venv creation and pip install, so they're marked with @pytest.mark.isolation.
+- nemo-skills-core (core/ subpackage): lightweight runtime only (inference, eval, tools)
+- nemo-skills (root): full install with pipeline, benchmarks, CLI
 
 Run with:
     pytest tests/test_dependency_isolation.py -v
@@ -28,16 +27,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 
 
-def _make_venv(tmp_path, extras=None):
-    """Create a venv and install nemo-skills with the given extras."""
+def _make_venv(tmp_path, install_path, extras=None):
+    """Create a venv and install a package from the given path."""
     venv_dir = tmp_path / "venv"
     subprocess.run(["uv", "venv", "--python", "3.10", str(venv_dir)], check=True, capture_output=True)
     python = str(venv_dir / "bin" / "python")
 
     if extras:
-        install_target = f"{REPO_ROOT}[{extras}]"
+        install_target = f"{install_path}[{extras}]"
     else:
-        install_target = str(REPO_ROOT)
+        install_target = str(install_path)
 
     subprocess.run(
         ["uv", "pip", "install", "--python", python, install_target],
@@ -66,40 +65,28 @@ def _import_check(python, statement):
 
 
 def test_core_only(tmp_path):
-    """Base install (no extras) should have core modules but NOT pipeline or nemo_run."""
-    python = _make_venv(tmp_path)
+    """nemo-skills-core (core/ subpackage) should have core modules but NOT pipeline or nemo_run."""
+    python = _make_venv(tmp_path, REPO_ROOT / "core")
 
     # Core modules must work
     assert _import_check(python, "from nemo_skills.dataset.utils import get_dataset_module")
     assert _import_check(python, "from nemo_skills.inference.generate import GenerationTask")
     assert _import_check(python, "from nemo_skills.evaluation.evaluator import evaluate, EVALUATOR_MAP")
 
-    # Pipeline must NOT be importable (missing nemo_run)
+    # Pipeline must NOT be importable (missing nemo_run/typer)
     assert not _can_import(python, "nemo_run"), "nemo_run should not be installed with core-only"
-    assert not _import_check(python, "from nemo_skills.pipeline.dataset import get_dataset_module"), (
-        "pipeline.dataset should not import without pipeline deps"
+    assert not _import_check(python, "from nemo_skills.pipeline.cli import generate"), (
+        "pipeline.cli should not import without pipeline deps"
     )
 
 
-def test_pipeline_extra(tmp_path):
-    """.[pipeline] should have core + pipeline modules, nemo_run available."""
-    python = _make_venv(tmp_path, extras="pipeline")
+def test_full_install(tmp_path):
+    """pip install . (full) should have everything including pipeline and benchmark deps."""
+    python = _make_venv(tmp_path, REPO_ROOT)
 
     # Core
     assert _import_check(python, "from nemo_skills.dataset.utils import get_dataset_module")
     assert _import_check(python, "from nemo_skills.inference.generate import GenerationTask")
-
-    # Pipeline
-    assert _can_import(python, "nemo_run")
-    assert _import_check(python, "from nemo_skills.pipeline.dataset import get_dataset_module")
-
-
-def test_all_extra(tmp_path):
-    """.[all] should have everything including benchmark deps."""
-    python = _make_venv(tmp_path, extras="all")
-
-    # Core
-    assert _import_check(python, "from nemo_skills.dataset.utils import get_dataset_module")
 
     # Pipeline
     assert _can_import(python, "nemo_run")
