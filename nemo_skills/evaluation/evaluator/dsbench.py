@@ -58,6 +58,10 @@ def relaxed_equal(gt_answer: Any, predicted_answer: Any) -> bool:
 
 
 class DSBenchEvaluator(MathEvaluator):
+    def __init__(self, config: dict, num_parallel_requests=10):
+        super().__init__(config, num_parallel_requests)
+        self.eval_config.extract_regex = r"(?:The final answer is |\\boxed=)(.+)$"
+
     async def eval_single(self, data_point: dict[str, Any]) -> dict[str, Any]:
         """Evaluate single DSBench problem with relaxed fallback."""
         # First try standard math evaluation

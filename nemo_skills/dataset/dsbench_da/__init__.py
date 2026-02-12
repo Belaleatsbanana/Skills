@@ -24,7 +24,6 @@ METRICS_TYPE = "math"
 GENERATION_ARGS = (
     '++prompt_config=generic/dsbench-da '
     '++eval_type=dsbench '
-    '++eval_config.extract_regex="(?:The final answer is |\\\\boxed=)(.+)$" '
     '++eval_config.relaxed=true '
 )
 
