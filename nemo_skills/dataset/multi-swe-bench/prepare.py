@@ -14,6 +14,7 @@
 
 import argparse
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -62,7 +63,8 @@ if __name__ == "__main__":
     # Instead, we download the jsonl files directly and format them to work with our swebench generation module.
 
     temp_dir = Path(__file__).parent / ".temp"
-    temp_dir.unlink(missing_ok=True)
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
     temp_dir.mkdir()
 
     if subset == "flash":
@@ -130,4 +132,4 @@ if __name__ == "__main__":
 
                 print(json.dumps(output_row), file=fout)
 
-    temp_dir.unlink()
+    shutil.rmtree(temp_dir)
