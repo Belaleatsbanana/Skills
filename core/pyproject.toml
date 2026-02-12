@@ -24,7 +24,7 @@ dynamic = ["version"]
 
 name = "nemo-skills-core"
 description = "NeMo Skills core runtime — inference, evaluation, and tool calling"
-readme = "../README.md"
+readme = {text = "NeMo Skills core runtime for inference, evaluation, and tool calling. See https://nvidia-nemo.github.io/Skills for full documentation.", content-type = "text/plain"}
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

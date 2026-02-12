@@ -13,7 +13,7 @@
 # limitations under the License.
 
 try:
-    import typer  # noqa: F401
+    import nemo_run  # noqa: F401
 except ModuleNotFoundError:
     raise ImportError(
         "nemo-skills-core is installed but pipeline functionality requires the full package. "
