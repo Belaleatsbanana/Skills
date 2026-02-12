@@ -8,4 +8,4 @@ user: |-
 
   {problem}
 
-  Put your final answer in \boxed{{your final answer}}. The answer in \boxed{} should be only your final answer that strictly follows the instructions given in the question with no extra text.
+  Put your final answer in \boxed{{your final answer}}. The answer in \boxed{{}} should be only your final answer with no extra text.
