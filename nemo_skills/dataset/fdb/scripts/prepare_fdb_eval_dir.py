@@ -24,12 +24,18 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import numpy as np
 from typing import Optional
 
 try:
     import soundfile as sf
 except ImportError:
     sf = None
+try:
+    from scipy.io import wavfile as scipy_wavfile
+except ImportError:
+    scipy_wavfile = None
 
 
 def _version_folders(fdb_version: str):
@@ -37,6 +43,103 @@ def _version_folders(fdb_version: str):
     if fdb_version == "v1.5":
         return ("v1.5", "v1_5")
     return ("v1.0", "v1_0")
+
+
+def _get_sample_id_and_folder(subtest: str, entry_id: str, fdb_version: str) -> Optional[tuple]:
+    """Return (sample_id, fdb_folder_name) for looking up input.wav in fdb_data_path, or None."""
+    entry_id = str(entry_id)
+    if fdb_version == "v1.5":
+        if entry_id.startswith("user_interruption_"):
+            return (entry_id.replace("user_interruption_", ""), "user_interruption")
+        # v1.5 turn_taking if we ever support it
+        return None
+    # v1.0
+    if subtest == "turn_taking":
+        if entry_id.startswith("candor_turn_taking_"):
+            return (entry_id.replace("candor_turn_taking_", ""), "candor_turn_taking")
+        if entry_id.isdigit():
+            return (entry_id, "candor_turn_taking")
+    if subtest == "interruption":
+        if entry_id.startswith("synthetic_user_interruption_"):
+            return (entry_id.replace("synthetic_user_interruption_", ""), "synthetic_user_interruption")
+        if entry_id.isdigit():
+            return (entry_id, "synthetic_user_interruption")
+    return None
+
+
+def _get_input_wav_path(
+    subtest: str,
+    entry_id: str,
+    fdb_data_path: Path,
+    fdb_version: str,
+) -> Optional[Path]:
+    """Return path to input.wav in FDB data for this sample, or None if not found."""
+    t = _get_sample_id_and_folder(subtest, entry_id, fdb_version)
+    if t is None:
+        return None
+    sample_id, folder = t
+    vers = _version_folders(fdb_version)
+    for ver in vers:
+        candidate = fdb_data_path / ver / folder / sample_id / "input.wav"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _ensure_wav_to_dest(src: Path, dest: Path, stereo: bool = False) -> None:
+    """Copy wav to dest. For FDB (stereo=True) the source MUST already be 2-channel; we do not convert mono to stereo.
+    Pipeline: server returns audio -> vllm_multimodal saves bytes to output_dir/audio/*.wav -> we copy to fdb_prepared/<id>/output.wav.
+    Ensure the model/server is configured to output 2-channel audio so we never receive mono."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    def is_stereo(data: np.ndarray) -> bool:
+        return data.ndim == 2 and data.shape[1] == 2
+
+    # Prefer soundfile (handles float and int)
+    if sf is not None:
+        try:
+            data, sr = sf.read(str(src))
+            if stereo:
+                if not is_stereo(data):
+                    raise ValueError(
+                        f"FDB requires 2-channel (stereo) output. Got {data.ndim}D array with shape {getattr(data, 'shape', '?')} from {src}. "
+                        "Configure the model/server (S2S-Duplex inference or serve_unified backend) to output stereo; do not convert mono to stereo here."
+                    )
+                # Already stereo: write as-is
+            else:
+                if data.ndim > 1:
+                    data = data.mean(axis=1)
+            sf.write(str(dest), data, sr)
+            return
+        except ValueError:
+            raise
+        except Exception:
+            pass
+
+    # Fallback: scipy.io.wavfile (int only)
+    if scipy_wavfile is not None:
+        try:
+            sr, data = scipy_wavfile.read(str(src))
+            if stereo:
+                if not is_stereo(data):
+                    raise ValueError(
+                        f"FDB requires 2-channel (stereo) output. Got {data.ndim}D array with shape {getattr(data, 'shape', '?')} from {src}. "
+                        "Configure the model/server to output stereo; do not convert mono to stereo here."
+                    )
+            else:
+                if data.ndim > 1:
+                    data = data.mean(axis=1)
+            scipy_wavfile.write(str(dest), sr, data)
+            return
+        except ValueError:
+            raise
+        except Exception:
+            pass
+
+    # No reader: copy as-is (stereo requirement cannot be verified)
+    if stereo:
+        print(f"Warning: Could not read {src} with soundfile/scipy; copying as-is. Ensure the file is 2-channel for FDB.", file=sys.stderr)
+    shutil.copy2(src, dest)
 
 
 def prepare_fdb_dir(
@@ -49,8 +152,10 @@ def prepare_fdb_dir(
     fdb_data_path: Optional[Path] = None,
     subtest: Optional[str] = None,
     fdb_version: str = "v1.0",
+    stereo: bool = True,
 ) -> Path:
-    """Build FDB-format dir under eval_results_dir/subdir_name. Returns path to prepared dir."""
+    """Build FDB-format dir under eval_results_dir/subdir_name. Returns path to prepared dir.
+    output.wav must be 2-channel from the model/server; we do not convert mono to stereo (we verify and fail if mono)."""
     fdb_prepared = eval_results_dir / subdir_name
     audio_dir = eval_results_dir / "audio"
     entries_with_audio = []
@@ -94,25 +199,18 @@ def prepare_fdb_dir(
                 return e
         return str(entry_id)
 
-    def ensure_mono_wav(src: Path, dest: Path) -> None:
-        """Copy wav to dest; if multi-channel, convert to mono (FDB backchannel Silero VAD requires mono)."""
-        if sf is None:
-            shutil.copy2(src, dest)
-            return
-        try:
-            data, sr = sf.read(str(src))
-            if data.ndim > 1:
-                data = data.mean(axis=1)
-            sf.write(str(dest), data, sr)
-        except Exception:
-            shutil.copy2(src, dest)
-
     fdb_prepared.mkdir(parents=True, exist_ok=True)
+    # Match reference (reorganize_candor_outputs): output.wav = model response only; copy input.wav from original for turn_taking/interruption so dir has both.
+    copy_input_wav_to_dir = subtest in ("turn_taking", "interruption")
     for entry_id, src_wav in entries_with_audio:
         dest_dir = fdb_prepared / fdb_dir_name(entry_id)
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest_wav = dest_dir / "output.wav"
-        ensure_mono_wav(src_wav, dest_wav)
+        _ensure_wav_to_dest(src_wav, dest_wav, stereo=stereo)
+        if copy_input_wav_to_dir and fdb_data_path and fdb_data_path.exists():
+            input_wav_path = _get_input_wav_path(subtest, entry_id, fdb_data_path, fdb_version)
+            if input_wav_path is not None:
+                shutil.copy2(input_wav_path, dest_dir / "input.wav")
 
     # FDB turn_taking eval requires turn_taking.json (input turn end time) in each sample dir
     vers = _version_folders(fdb_version)
@@ -215,6 +313,8 @@ def prepare_fdb_dir(
     if run_asr and asr_task and (fdb_repo / "get_transcript" / "asr.py").exists():
         asr_script = fdb_repo / "get_transcript" / "asr.py"
         cmd = [sys.executable, str(asr_script), "--root_dir", str(fdb_prepared), "--task", asr_task]
+        if stereo:
+            cmd.append("--stereo")
         subprocess.run(cmd, cwd=str(fdb_repo), check=False)
         # For behavior subtests, also produce input.json and clean_input.json from copied input.wav / clean_input.wav
         if subtest in ("background_speech", "talking_to_other"):
@@ -263,6 +363,7 @@ def main():
         fdb_data_path=args.fdb_data_path,
         subtest=args.subtest,
         fdb_version=args.fdb_version,
+        stereo=True,
     )
     print(f"Prepared: {path}")
 

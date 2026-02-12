@@ -120,6 +120,8 @@ def run_fdb_eval(config: dict):
         base_extra_args.append(f"++server.server_type={config['server_server_type']}")
     if config.get("api_key_env_var"):
         base_extra_args.append(f"++server.api_key_env_var={config['api_key_env_var']}")
+    if config.get("inference_overrides"):
+        base_extra_args.extend(config["inference_overrides"].strip().split())
 
     for subtest in subtests:
         extra_args_str = " ".join(base_extra_args)

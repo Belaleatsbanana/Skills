@@ -266,8 +266,13 @@ def process_subtest(subtest_name, config, data_dir, audio_dir, fdb_data_path, no
         sample_dirs = sorted([d for d in folder_path.iterdir() if d.is_dir()])
         print(f"  Found {len(sample_dirs)} samples in {folder_name}")
 
+        # FDB candor_turn_taking and synthetic_user_interruption use 1-based sample IDs (no 0)
+        skip_id_zero = folder_name in ("candor_turn_taking", "synthetic_user_interruption")
+
         for sample_dir in sample_dirs:
             sample_id = sample_dir.name
+            if skip_id_zero and sample_id == "0":
+                continue
             input_wav = sample_dir / "input.wav"
 
             if not input_wav.exists():
