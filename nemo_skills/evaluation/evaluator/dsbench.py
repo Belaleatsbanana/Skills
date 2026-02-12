@@ -38,8 +38,8 @@ def relaxed_equal(gt_answer: Any, predicted_answer: Any) -> bool:
         predicted_answer = json.loads(predicted_answer)
         gt_answer = json.loads(gt_answer)
     except Exception:
-        predicted_answer = predicted_answer.strip()
-        gt_answer = gt_answer.strip()
+        predicted_answer = predicted_answer
+        gt_answer = gt_answer
 
     if isinstance(predicted_answer, dict):
         return all(relaxed_equal(gt_answer[k], predicted_answer.get(k)) for k in gt_answer.keys()) 

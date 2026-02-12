@@ -23,14 +23,14 @@ METRICS_TYPE = "math"
 # 3. Fallback to relaxed_equal for case-insensitive MCQ and dict/list comparison
 GENERATION_ARGS = (
     '++prompt_config=generic/dsbench-da '
-    '++eval_type=dsbench '
+    '++eval_type=math ' # dsbench
     '++eval_config.relaxed=true '
 )
 
-# Always run LLM judge for DSBench (some answers hard to verify symbolically)
-JUDGE_PIPELINE_ARGS = {
-    "generation_type": "math_judge",
-    "model": "gpt-4.1",
-    "server_type": "openai",
-    "server_address": "https://api.openai.com/v1",
-}
+# # Always run LLM judge for DSBench (some answers hard to verify symbolically)
+# JUDGE_PIPELINE_ARGS = {
+#     "generation_type": "math_judge",
+#     "model": "gpt-4.1",
+#     "server_type": "openai",
+#     "server_address": "https://api.openai.com/v1",
+# }
