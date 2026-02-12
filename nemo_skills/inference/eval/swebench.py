@@ -707,12 +707,14 @@ class SweBenchGenerationTask(GenerationTask):
             )
         return pred_file
 
-    async def _eval_swe_bench(self, data_point, pred_mounted_path):
+    async def _eval_swe_bench(self, data_point, pred_file):
         """
         Evaluates a patch using the SWE-bench harness.
-        pred_mounted_path must be a mounted path to a file in the SWE-bench evaluation format.
-        Returns the absolute (not mounted) path to the evaluation report file.
+        pred_file must be an absolute (not mounted) path to a file in the SWE-bench evaluation format.
+        Returns the absolute path to the evaluation report file.
         """
+        pred_mounted_path = pred_file.replace(str(self.output_dir), "/trajectories_mount")
+
         swe_bench_cmd = (
             # copy installed repo & uv dir from /root_mount
             "cp -r /root_mount/SWE-bench /root && "
@@ -738,21 +740,20 @@ class SweBenchGenerationTask(GenerationTask):
             timeout=self.cfg.swebench_tests_timeout + 120,
         )
 
-    async def _eval_multi_swe_bench(self, data_point, pred_mounted_path):
+    async def _eval_multi_swe_bench(self, data_point, pred_file):
         """
         Evaluates a patch using the Multi-SWE-bench harness.
-        pred_mounted_path must be a mounted path to a file in the SWE-bench evaluation format.
-        Returns the absolute (not mounted) path to the evaluation report file.
+        pred_file must be an absolute (not mounted) path to a file in the SWE-bench evaluation format.
+        Returns the absolute path to the evaluation report file.
         """
+        eval_outputs_dir = self.output_dir / "eval-outputs" / data_point["instance_id"]
+        eval_outputs_dir.mkdir(parents=True, exist_ok=True)
         eval_outputs_mounted_dir = f"/trajectories_mount/eval-outputs/{data_point['instance_id']}"
 
-        # Multi-SWE-bench evaluation uses a config file for settings
         config = {
             "mode": "evaluation",
             "workdir": f"{eval_outputs_mounted_dir}/workdir",
-            # for gold patch evaluation we use dataset_row for both patch_files and dataset_files
-            # TODO: support real evaluation
-            "patch_files": [f"{eval_outputs_mounted_dir}/dataset_row.json"],
+            "patch_files": [f"{eval_outputs_mounted_dir}/patch.json"],
             "dataset_files": [f"{eval_outputs_mounted_dir}/dataset_row.json"],
             "force_build": False,
             "output_dir": f"{eval_outputs_mounted_dir}/output",
@@ -770,14 +771,29 @@ class SweBenchGenerationTask(GenerationTask):
             "log_level": "DEBUG",
         }
 
-        # Save original dataset row and config.
-        # We need to use absolute paths here, since we are not in the Apptainer container yet
-        eval_outputs_dir = self.output_dir / "eval-outputs" / data_point["instance_id"]
-        eval_outputs_dir.mkdir(parents=True, exist_ok=True)
+        # Save the original Multi-SWE-bench dataset row for this instance
         with open(eval_outputs_dir / "dataset_row.json", "w") as fout:
+            original_row = json.loads(data_point["original_row"])
             fout.write(data_point["original_row"])  # already a json string
+
+        # Save the evaluation config
         with open(eval_outputs_dir / "config.json", "w") as fout:
             fout.write(json.dumps(config))
+
+        # Create the file with the model patch
+        with open(pred_file, "r") as fin:
+            model_patch = json.loads(fin.read())["model_patch"]
+        with open(eval_outputs_dir / "patch.json", "w") as fout:
+            fout.write(
+                json.dumps(
+                    {
+                        "org": original_row["org"],
+                        "repo": original_row["repo"],
+                        "number": original_row["number"],
+                        "fix_patch": model_patch,
+                    }
+                )
+            )
 
         multi_swe_bench_cmd = (
             # copy installed repo & uv dir from /root_mount
@@ -824,30 +840,26 @@ class SweBenchGenerationTask(GenerationTask):
         # TODO: what's the right way to support api models, so that our standard parameters for that can be used?
         # TODO: use self.cfg.server.base_url, etc. Can we pass in API key?
 
-        # if "base_url" in self.cfg.server:
-        #     api_base = self.cfg.server.base_url
-        # else:
-        #     api_base = f"http://{self.cfg.server.host}:{self.cfg.server.port}/v1"
+        if "base_url" in self.cfg.server:
+            api_base = self.cfg.server.base_url
+        else:
+            api_base = f"http://{self.cfg.server.host}:{self.cfg.server.port}/v1"
 
-        # if self.cfg.agent_framework == SupportedAgentFrameworks.swe_agent:
-        #     pred_file = await self._run_swe_agent(data_point, api_base)
-        # elif self.cfg.agent_framework == SupportedAgentFrameworks.openhands:
-        #     pred_file = await self._run_openhands(data_point, api_base)
-        # else:
-        #     raise ValueError(
-        #         f"Unsupported agent framework: {self.cfg.agent_framework}. "
-        #         f"Supported frameworks: {', '.join(SupportedAgentFrameworks)}."
-        #     )
+        if self.cfg.agent_framework == SupportedAgentFrameworks.swe_agent:
+            pred_file = await self._run_swe_agent(data_point, api_base)
+        elif self.cfg.agent_framework == SupportedAgentFrameworks.openhands:
+            pred_file = await self._run_openhands(data_point, api_base)
+        else:
+            raise ValueError(
+                f"Unsupported agent framework: {self.cfg.agent_framework}. "
+                f"Supported frameworks: {', '.join(SupportedAgentFrameworks)}."
+            )
 
-        # pred_mounted_path = pred_file.replace(str(self.output_dir), "/trajectories_mount")
-        # with open(pred_file, "r") as f:
-        #     trajectory_dict = json.loads(f.read())
+        with open(pred_file, "r") as f:
+            trajectory_dict = json.loads(f.read())
 
-        # # Check if the trajectory has an empty patch before running evaluation
-        # has_patch = trajectory_dict["model_patch"] is not None
-        has_patch = True
-        trajectory_dict = {}
-        pred_mounted_path = None
+        # Check if the trajectory has an empty patch before running evaluation
+        has_patch = trajectory_dict["model_patch"] is not None
 
         if not has_patch:
             report_json = {
@@ -861,9 +873,9 @@ class SweBenchGenerationTask(GenerationTask):
             # TODO: should we fail on errors here? Seems that json isn't always generated
             try:
                 if self.cfg.dataset_type == SupportedDatasetTypes.swe_bench:
-                    report_file = await self._eval_swe_bench(data_point, pred_mounted_path)
+                    report_file = await self._eval_swe_bench(data_point, pred_file)
                 elif self.cfg.dataset_type == SupportedDatasetTypes.multi_swe_bench:
-                    report_file = await self._eval_multi_swe_bench(data_point, pred_mounted_path)
+                    report_file = await self._eval_multi_swe_bench(data_point, pred_file)
             except ValueError:
                 LOG.error("Failed to execute SWE-bench evaluation command for %s", data_point["instance_id"])
                 report_json = {
