@@ -239,7 +239,11 @@ def main():
         print("\n" + "=" * 60)
         print("Stage 3: AGGREGATION")
         print("=" * 60)
-        agg_cmd = f"python -m nemo_skills.dataset.nv_tts.scripts.score --results_dir {output_dir} --aggregation_only"
+        # score.py imports NeMo at top level; container needs NeMo on PYTHONPATH
+        agg_cmd = (
+            f"PYTHONPATH={scoring_code_path}:$PYTHONPATH "
+            f"python -m nemo_skills.dataset.nv_tts.scripts.score --results_dir {output_dir} --aggregation_only"
+        )
         ns_run_cmd(
             ctx=MockContext(),
             cluster=cfg["cluster"],
