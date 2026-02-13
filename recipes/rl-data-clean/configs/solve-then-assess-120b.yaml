@@ -23,7 +23,7 @@ pipeline_stages:
 
 directories:
   step-1-solve: ${base_output_dir}/${model_name}/solve-then-assess/step-1-solve
-  step-2-assess-with-solution: ${base_output_dir}/${model_name}/solve-then-assess/step-2-assess-with-solution
+  step-2-assess-with-solution: ${base_output_dir}/${model_name}/solve-then-assess/step-2-assess-with-solution-combined
 
 stages:
   solve_proof_for_quality:
