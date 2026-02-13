@@ -20,15 +20,24 @@ Usage:
     python run_tts_eval.py --config config.yaml
     python run_tts_eval.py --config config.yaml --stage scoring
     python run_tts_eval.py --config config.yaml --stage aggregation
+
+The aggregation stage downloads metrics.json and output_with_metrics.jsonl
+from the cluster and runs report generation locally. This allows the
+aggregation code to use any Python libraries available in the local
+environment (e.g. statistics, scipy) without being constrained by what's
+installed on the cluster login node or inside the container.
 """
 
 import argparse
 import os
+import shutil
 
 import yaml
 
+from nemo_skills.dataset.nv_tts.scripts.score import run_aggregation
 from nemo_skills.pipeline.eval import eval as ns_eval
 from nemo_skills.pipeline.run_cmd import run_cmd as ns_run_cmd
+from nemo_skills.pipeline.utils.cluster import get_cluster_config, get_tunnel
 
 
 class MockContext:
@@ -146,6 +155,8 @@ def main():
             )
             if scoring.get("with_utmosv2"):
                 base_scoring_args += " --with_utmosv2"
+            if scoring.get("codec_model_path"):
+                base_scoring_args += f" --codec_model_path {scoring['codec_model_path']}"
 
             if scoring_num_chunks and scoring_num_chunks > 1:
                 # Parallel chunked scoring on a single node:
@@ -153,6 +164,8 @@ def main():
                 # different $SLURM_LOCALID (0..N-1) which becomes the chunk_id.
                 # Each task pins itself to its own GPU via CUDA_VISIBLE_DEVICES
                 # to avoid all processes landing on GPU 0 and hitting OOM.
+                # Each chunk auto-attempts the merge after finishing (self-aggregation),
+                # so no separate aggregation job is needed.
                 chunk_cmd = (
                     f"export CUDA_VISIBLE_DEVICES=${{SLURM_LOCALID:-0}} && "
                     f"{base_scoring_args} "
@@ -178,45 +191,9 @@ def main():
                     expname=scoring_expname,
                     log_dir=f"{output_dir}/eval-logs",
                 )
-
-                # Aggregation job: merge chunks, recompute global metrics, compute FCD.
-                # Depends on the scoring job above.
-                agg_cmd = (
-                    f"HF_TOKEN={hf_token} "
-                    f"PYTHONPATH={scoring_code_path}:$PYTHONPATH "
-                    f"python -m nemo_skills.dataset.nv_tts.scripts.score "
-                    f"--results_dir {output_dir} "
-                    f"--benchmark {benchmark_dir} "
-                    f"--merge_scoring_chunks "
-                    f"--num_chunks {scoring_num_chunks}"
-                )
-                if scoring.get("with_fcd"):
-                    agg_cmd += " --with_fcd"
-                    if scoring.get("codec_model_path"):
-                        agg_cmd += f" --codec_model_path {scoring['codec_model_path']}"
-
-                agg_expname = f"{args.expname}_score_{short_name}_agg"
-                print(f"  Submitting scoring aggregation job for: {benchmark}")
-
-                ns_run_cmd(
-                    ctx=MockContext(),
-                    cluster=cfg["cluster"],
-                    container=cfg["container"],
-                    partition=cfg["partition"],
-                    num_gpus=1 if scoring.get("with_fcd") else 0,
-                    mount_paths=cfg["mount_paths"],
-                    command=agg_cmd,
-                    run_after=[scoring_expname],
-                    expname=agg_expname,
-                    log_dir=f"{output_dir}/eval-logs",
-                )
             else:
                 # Non-chunked: original single-job scoring per benchmark
                 scoring_cmd = base_scoring_args
-                if scoring.get("with_fcd"):
-                    scoring_cmd += " --with_fcd"
-                    if scoring.get("codec_model_path"):
-                        scoring_cmd += f" --codec_model_path {scoring['codec_model_path']}"
 
                 print(f"  Submitting scoring job for: {benchmark}")
 
@@ -234,27 +211,63 @@ def main():
                     log_dir=f"{output_dir}/eval-logs",
                 )
 
-    # Stage 3: Aggregation (only if explicitly requested)
+    # Stage 3: Aggregation (runs locally after downloading results from cluster)
+    # Downloads metrics.json and output_with_metrics.jsonl per benchmark,
+    # then runs aggregation/report generation locally where we have full
+    # control over the Python environment (e.g. stats libraries).
     if args.stage == "aggregation":
         print("\n" + "=" * 60)
-        print("Stage 3: AGGREGATION")
+        print("Stage 3: AGGREGATION (local)")
         print("=" * 60)
-        # score.py imports NeMo at top level; container needs NeMo on PYTHONPATH
-        agg_cmd = (
-            f"PYTHONPATH={scoring_code_path}:$PYTHONPATH "
-            f"python -m nemo_skills.dataset.nv_tts.scripts.score --results_dir {output_dir} --aggregation_only"
-        )
-        ns_run_cmd(
-            ctx=MockContext(),
-            cluster=cfg["cluster"],
-            container=cfg["container"],
-            partition=cfg["partition"],
-            num_gpus=0,
-            mount_paths=cfg["mount_paths"],
-            command=agg_cmd,
-            expname=f"{args.expname}_agg",
-            log_dir=f"{output_dir}/eval-logs",
-        )
+
+        cluster_config = get_cluster_config(cfg["cluster"])
+        tunnel = get_tunnel(cluster_config)
+
+        # Create local results directory mirroring remote structure
+        local_results_dir = os.path.join(os.getcwd(), "tts_results", args.expname)
+        local_eval_dir = os.path.join(local_results_dir, "eval-results")
+        os.makedirs(local_eval_dir, exist_ok=True)
+
+        # Discover benchmarks on the remote cluster
+        remote_eval_dir = os.path.join(output_dir, "eval-results")
+        ls_result = tunnel.run(f"ls {remote_eval_dir}", hide=True, warn=True)
+        if ls_result.return_code != 0:
+            print(f"  ERROR: Could not list benchmarks at {remote_eval_dir}")
+            print(ls_result.stderr)
+        else:
+            benchmarks = [b.strip() for b in ls_result.stdout.strip().split("\n") if b.strip()]
+            print(f"  Found {len(benchmarks)} benchmark(s): {', '.join(benchmarks)}")
+
+            # Download metrics.json and output_with_metrics.jsonl for each benchmark
+            for benchmark in benchmarks:
+                remote_bench_dir = os.path.join(remote_eval_dir, benchmark)
+                local_bench_dir = os.path.join(local_eval_dir, benchmark)
+                os.makedirs(local_bench_dir, exist_ok=True)
+
+                for filename in ["metrics.json", "output_with_metrics.jsonl"]:
+                    remote_path = os.path.join(remote_bench_dir, filename)
+                    local_path = os.path.join(local_bench_dir, filename)
+
+                    # Check if the remote file exists before downloading
+                    check = tunnel.run(f"test -f {remote_path}", hide=True, warn=True)
+                    if check.return_code != 0:
+                        print(f"  WARNING: {benchmark}/{filename} not found on cluster, skipping")
+                        continue
+
+                    print(f"  Downloading {benchmark}/{filename}...")
+                    tunnel.get(remote_path, local_path)
+
+            # Run aggregation locally on the downloaded files
+            print("\n  Running aggregation locally...")
+            run_aggregation(local_results_dir)
+
+            # Copy report to a convenient location in the working directory
+            report_path = os.path.join(local_results_dir, "tts_eval_report.md")
+            if os.path.exists(report_path):
+                local_report_path = os.path.join(os.getcwd(), f"tts_eval_report_{args.expname}.md")
+                shutil.copy2(report_path, local_report_path)
+                print(f"\nReport saved to: {local_report_path}")
+                print(f"Full results downloaded to: {local_results_dir}")
 
     print("\nDone!")
 

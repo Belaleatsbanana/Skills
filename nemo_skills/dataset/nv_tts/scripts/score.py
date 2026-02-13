@@ -20,11 +20,14 @@ Supports parallel scoring by splitting output.jsonl into chunks:
         --results_dir /path --benchmark nv_tts.libritts_seen \
         --num_chunks 8 --chunk_id 0
 
-After all chunks finish, merge with:
+Each chunk automatically attempts to merge all chunks after finishing its own
+scoring (self-aggregation). Only the last chunk to complete performs the merge.
+
+Manual merge is also supported:
     python -m nemo_skills.dataset.nv_tts.scripts.score \
         --results_dir /path --benchmark nv_tts.libritts_seen \
         --merge_scoring_chunks --num_chunks 8 \
-        --with_fcd --codec_model_path nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps
+        --codec_model_path nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps
 """
 
 import argparse
@@ -32,10 +35,16 @@ import json
 import os
 import tempfile
 
-from nemo.collections.tts.modules.magpietts_inference.evaluate_generated_audio import (
-    compute_global_metrics,
-    evaluate,
-)
+
+
+def _import_nemo_evaluate():
+    """Lazy import of NeMo evaluate functions (requires NeMo + GPU environment)."""
+    from nemo.collections.tts.modules.magpietts_inference.evaluate_generated_audio import (
+        compute_global_metrics,
+        evaluate,
+    )
+
+    return evaluate, compute_global_metrics
 
 
 def _get_chunk_output_path(benchmark_dir: str, chunk_id: int) -> str:
@@ -75,7 +84,6 @@ def run_scoring(
     asr_model_name: str = "nvidia/parakeet-tdt-1.1b",
     language: str = "en",
     with_utmosv2: bool = False,
-    with_fcd: bool = False,
     codec_model_path: str = None,
     benchmark: str = None,
     num_chunks: int = None,
@@ -83,13 +91,22 @@ def run_scoring(
 ) -> None:
     """Run NeMo scoring on benchmarks in results_dir.
 
+    FCD is always enabled. In chunked mode it is skipped per-chunk and
+    computed during the merge step instead.
+
+    When running in chunked mode, each chunk automatically attempts to merge
+    all chunks after finishing its own scoring (self-aggregation pattern).
+    Only the last chunk to complete will actually perform the merge, since
+    merge_scoring_chunks checks for all .done files and metrics.json existence.
+
     Args:
         benchmark: If provided, score only this benchmark. Otherwise score all.
         num_chunks: If set, split the data into this many chunks.
         chunk_id: If set (along with num_chunks), score only this chunk.
-            When chunked, FCD is skipped and metrics.json is NOT written.
     """
     from nemo_skills.file_utils import calculate_chunk_indices
+
+    evaluate, _ = _import_nemo_evaluate()
 
     benchmarks_dir = os.path.join(results_dir, "eval-results")
     if not os.path.exists(benchmarks_dir):
@@ -97,15 +114,13 @@ def run_scoring(
 
     # When running in chunked mode, skip FCD (computed in aggregation)
     is_chunked = num_chunks is not None and chunk_id is not None
-    if is_chunked:
-        with_fcd = False
 
     scoring_cfg = {
         "sv_model": sv_model,
         "asr_model_name": asr_model_name,
         "language": language,
         "with_utmosv2": with_utmosv2,
-        "with_fcd": with_fcd,
+        "with_fcd": not is_chunked,
         "codec_model_path": codec_model_path,
     }
 
@@ -131,11 +146,20 @@ def run_scoring(
             done_file = f"{chunk_output_path}.done"
             if os.path.exists(done_file):
                 print(f"Skipping {bench} chunk {chunk_id}: already done")
-                continue
+            else:
+                print(f"\nScoring: {bench} (chunk {chunk_id}/{num_chunks})")
+                _score_benchmark_chunk(
+                    output_jsonl, scoring_cfg, benchmark_dir, num_chunks, chunk_id, calculate_chunk_indices
+                )
 
-            print(f"\nScoring: {bench} (chunk {chunk_id}/{num_chunks})")
-            _score_benchmark_chunk(
-                output_jsonl, scoring_cfg, benchmark_dir, num_chunks, chunk_id, calculate_chunk_indices
+            # Auto-attempt merge (mirrors generation's self-aggregation pattern).
+            # merge_scoring_chunks checks all .done files and metrics.json existence,
+            # so only the last chunk to finish will actually perform the merge.
+            merge_scoring_chunks(
+                results_dir=results_dir,
+                benchmark=bench,
+                num_chunks=num_chunks,
+                codec_model_path=codec_model_path,
             )
         else:
             # Non-chunked mode: original behavior
@@ -281,15 +305,16 @@ def merge_scoring_chunks(
     results_dir: str,
     benchmark: str,
     num_chunks: int,
-    with_fcd: bool = False,
     codec_model_path: str = None,
 ) -> None:
     """Merge per-chunk scoring outputs and compute global metrics.
 
     Reads output_with_metrics_chunk_*.jsonl files, concatenates them into
     output_with_metrics.jsonl, recomputes global metrics (cumulative WER/CER,
-    averages), and optionally computes FCD. Writes metrics.json.
+    averages), and computes FCD. Writes metrics.json.
     """
+    _, compute_global_metrics = _import_nemo_evaluate()
+
     benchmarks_dir = os.path.join(results_dir, "eval-results")
     if not os.path.exists(benchmarks_dir):
         benchmarks_dir = results_dir
@@ -339,15 +364,14 @@ def merge_scoring_chunks(
                     all_records.append(record)
                     if "metrics" in record:
                         all_filewise_metrics.append(record["metrics"])
-                        # Collect paths for FCD if needed
-                        if with_fcd:
-                            gt_path = record["metrics"].get("gt_audio_filepath")
-                            if gt_path:
-                                gt_audio_paths.append(gt_path)
-                            # Get codec codes path from debug_info in original record
-                            codes_path = record.get("debug_info", {}).get("codec_codes_path")
-                            if codes_path:
-                                predicted_codes_paths.append(codes_path)
+                        # Collect paths for FCD
+                        gt_path = record["metrics"].get("gt_audio_filepath")
+                        if gt_path:
+                            gt_audio_paths.append(gt_path)
+                        # Get codec codes path from debug_info in original record
+                        codes_path = record.get("debug_info", {}).get("codec_codes_path")
+                        if codes_path:
+                            predicted_codes_paths.append(codes_path)
 
         if not all_filewise_metrics:
             print(f"  No metrics found in chunks for {bench}")
@@ -355,17 +379,17 @@ def merge_scoring_chunks(
 
         print(f"  Merged {len(all_filewise_metrics)} scored items from {num_chunks} chunks")
 
-        # Compute global metrics using the NeMo helper
-        fcd_gt_paths = gt_audio_paths if with_fcd and len(gt_audio_paths) == len(all_filewise_metrics) else None
+        # Compute global metrics using the NeMo helper (always includes FCD)
+        fcd_gt_paths = gt_audio_paths if len(gt_audio_paths) == len(all_filewise_metrics) else None
         fcd_codes_paths = (
-            predicted_codes_paths if with_fcd and len(predicted_codes_paths) == len(all_filewise_metrics) else None
+            predicted_codes_paths if len(predicted_codes_paths) == len(all_filewise_metrics) else None
         )
 
         avg_metrics = compute_global_metrics(
             filewise_metrics=all_filewise_metrics,
             gt_audio_paths=fcd_gt_paths,
             predicted_codes_paths=fcd_codes_paths,
-            codec_model_path=codec_model_path if with_fcd else None,
+            codec_model_path=codec_model_path,
         )
 
         # Write merged output_with_metrics.jsonl
@@ -383,7 +407,7 @@ def merge_scoring_chunks(
         print(f"    WER: {avg_metrics.get('wer_cumulative', 'N/A'):.4f}")
         if "utmosv2_avg" in avg_metrics:
             print(f"    UTMOSv2: {avg_metrics.get('utmosv2_avg', 'N/A'):.4f}")
-        if with_fcd:
+        if "frechet_codec_distance" in avg_metrics:
             print(f"    FCD: {avg_metrics.get('frechet_codec_distance', 'N/A')}")
 
         # Clean up chunk files
@@ -396,11 +420,106 @@ def merge_scoring_chunks(
         print(f"  Cleaned up chunk files")
 
 
+def _format_value(value, format_spec: str = ".4f", na_str: str = "N/A") -> str:
+    """Format a value for display."""
+    if value is None:
+        return na_str
+    try:
+        return f"{value:{format_spec}}"
+    except (ValueError, TypeError):
+        return str(value)
+
+
+def _format_percent(value, na_str: str = "N/A") -> str:
+    """Format a value as percentage."""
+    if value is None:
+        return na_str
+    try:
+        return f"{value * 100:.2f}%"
+    except (ValueError, TypeError):
+        return str(value)
+
+
+# TTS metrics: (key, display_name, format_func, higher_is_better)
+_TTS_METRICS = [
+    ("wer_cumulative", "WER (cumulative)", _format_percent, False),
+    ("cer_cumulative", "CER (cumulative)", _format_percent, False),
+    ("wer_filewise_avg", "WER (filewise avg)", _format_percent, False),
+    ("cer_filewise_avg", "CER (filewise avg)", _format_percent, False),
+    ("utmosv2_avg", "UTMOS v2", lambda v: _format_value(v, ".3f"), True),
+    ("ssim_pred_gt_avg", "SSIM (pred vs GT)", lambda v: _format_value(v, ".4f"), True),
+    ("ssim_pred_context_avg", "SSIM (pred vs context)", lambda v: _format_value(v, ".4f"), True),
+    ("total_gen_audio_seconds", "Total audio (sec)", lambda v: _format_value(v, ".1f"), None),
+    ("frechet_codec_distance", "FCD", lambda v: _format_value(v, ".4f"), False),
+]
+
+
+def _generate_markdown_report(
+    results_dir: str,
+    benchmark_metrics: dict[str, dict],
+) -> str:
+    """Generate a Markdown summary report for a single model's eval results.
+
+    Args:
+        results_dir: Path to the results directory (used in report title).
+        benchmark_metrics: Mapping of benchmark name -> metrics dict.
+
+    Returns:
+        The Markdown report as a string.
+    """
+    model_name = os.path.basename(results_dir.rstrip("/"))
+    lines = []
+    lines.append(f"# TTS Evaluation Report: {model_name}\n")
+
+    # Summary section: average across all benchmarks
+    if len(benchmark_metrics) > 1:
+        lines.append("## Summary (Averaged Across Test Sets)\n")
+        # Compute averages
+        totals: dict[str, float] = {}
+        counts: dict[str, int] = {}
+        for m in benchmark_metrics.values():
+            for key, _, _, _ in _TTS_METRICS:
+                if key in m and m[key] is not None:
+                    totals[key] = totals.get(key, 0) + m[key]
+                    counts[key] = counts.get(key, 0) + 1
+        averages = {k: totals[k] / counts[k] for k in totals if counts.get(k, 0) > 0}
+
+        lines.append("| Metric | Value |")
+        lines.append("|---|---|")
+        for metric_key, display_name, fmt_func, _ in _TTS_METRICS:
+            if metric_key == "total_gen_audio_seconds":
+                continue
+            val = averages.get(metric_key)
+            if val is not None:
+                lines.append(f"| {display_name} | {fmt_func(val)} |")
+        lines.append("")
+
+    # Per-benchmark sections
+    lines.append("## Per-Test-Set Results\n")
+    for benchmark in sorted(benchmark_metrics):
+        m = benchmark_metrics[benchmark]
+        lines.append(f"### {benchmark}\n")
+        lines.append("| Metric | Value |")
+        lines.append("|---|---|")
+        for metric_key, display_name, fmt_func, _ in _TTS_METRICS:
+            val = m.get(metric_key)
+            if val is not None:
+                lines.append(f"| {display_name} | {fmt_func(val)} |")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("*Lower WER/CER/FCD is better, higher UTMOS/SSIM is better.*")
+
+    return "\n".join(lines)
+
+
 def run_aggregation(results_dir: str) -> None:
-    """Print summary of all metrics."""
+    """Print summary of all metrics and generate a Markdown report."""
     benchmarks_dir = os.path.join(results_dir, "eval-results")
     if not os.path.exists(benchmarks_dir):
         benchmarks_dir = results_dir
+
+    benchmark_metrics: dict[str, dict] = {}
 
     print("\nAggregated Results:")
     for benchmark in sorted(os.listdir(benchmarks_dir)):
@@ -408,11 +527,19 @@ def run_aggregation(results_dir: str) -> None:
         if os.path.exists(metrics_path):
             with open(metrics_path) as f:
                 metrics = json.load(f)
+            benchmark_metrics[benchmark] = metrics
             print(f"  {benchmark}:")
             print(f"    CER: {metrics.get('cer_cumulative', 'N/A'):.4f}")
             print(f"    WER: {metrics.get('wer_cumulative', 'N/A'):.4f}")
             if "utmosv2_avg" in metrics:
                 print(f"    UTMOSv2: {metrics.get('utmosv2_avg', 'N/A'):.4f}")
+
+    if benchmark_metrics:
+        report = _generate_markdown_report(results_dir, benchmark_metrics)
+        report_path = os.path.join(results_dir, "tts_eval_report.md")
+        with open(report_path, "w") as f:
+            f.write(report)
+        print(f"\nMarkdown report saved to: {report_path}")
 
 
 if __name__ == "__main__":
@@ -422,7 +549,6 @@ if __name__ == "__main__":
     parser.add_argument("--asr_model_name", default="nvidia/parakeet-tdt-1.1b")
     parser.add_argument("--language", default="en")
     parser.add_argument("--with_utmosv2", action="store_true")
-    parser.add_argument("--with_fcd", action="store_true")
     parser.add_argument("--codec_model_path", default=None, help="Path to codec model for FCD scoring")
     parser.add_argument("--aggregation_only", action="store_true")
     parser.add_argument("--benchmark", default=None, help="Score only this benchmark (e.g. nv_tts.libritts_seen)")
@@ -446,7 +572,6 @@ if __name__ == "__main__":
             results_dir=args.results_dir,
             benchmark=args.benchmark,
             num_chunks=args.num_chunks,
-            with_fcd=args.with_fcd,
             codec_model_path=args.codec_model_path,
         )
     else:
@@ -456,7 +581,6 @@ if __name__ == "__main__":
             asr_model_name=args.asr_model_name,
             language=args.language,
             with_utmosv2=args.with_utmosv2,
-            with_fcd=args.with_fcd,
             codec_model_path=args.codec_model_path,
             benchmark=args.benchmark,
             num_chunks=args.num_chunks,
