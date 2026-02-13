@@ -1,0 +1,30 @@
+# Solve-then-assess single-stage (DeepSeek): combined solve+judge in one call.
+# One stage only: assess_problem_quality_with_solution — input = problem list.
+
+cluster: dfw
+base_output_dir: /workspace/rl-data-clean/proof
+model_name: DeepSeek-V3.2
+expname: solve-then-assess-${model_name}
+suffix: deepseek
+
+input_file: /lustre/fsw/portfolios/llmservice/projects/llmservice_nemo_reasoning/users/wedu/workspace/rl-data-clean/proof/check_contamination/dedup.jsonl
+
+generate_kwargs:
+  model: /hf_models/${model_name}
+  server_type: sglang
+  server_gpus: 8
+  server_nodes: 2
+  num_chunks: 10
+
+pipeline_stages:
+  - assess_problem_quality_with_solution
+
+directories:
+  step-assess-single: ${base_output_dir}/${model_name}/solve-then-assess-single
+
+stages:
+  assess_problem_quality_with_solution:
+    output_dir: ${directories.step-assess-single}
+    input_file: ${input_file}
+    dependencies: null
+    stage_kwargs: ${generate_kwargs}
