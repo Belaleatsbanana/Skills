@@ -14,30 +14,81 @@
 # limitations under the License.
 
 """
-TTS Pipeline: Generation -> Scoring (-> Aggregation)
+TTS Pipeline: Generation -> Scoring -> Aggregation
 
 Usage:
-    python run_tts_eval.py --config config.yaml
-    python run_tts_eval.py --config config.yaml --stage scoring
-    python run_tts_eval.py --config config.yaml --stage aggregation
+    python run_tts_eval.py --config config.yaml                           # all stages (fire-and-forget)
+    python run_tts_eval.py --config config.yaml --stage scoring           # scoring only
+    python run_tts_eval.py --config config.yaml --stage download          # download results locally
+    python run_tts_eval.py --config config.yaml --stage download --wait   # poll until done, then download
 
-The aggregation stage downloads metrics.json and output_with_metrics.jsonl
-from the cluster and runs report generation locally. This allows the
-aggregation code to use any Python libraries available in the local
-environment (e.g. statistics, scipy) without being constrained by what's
-installed on the cluster login node or inside the container.
+All three stages (generation, scoring, aggregation of scoring results) are submitted as
+dependent Slurm jobs. The aggregation job runs after all scoring jobs
+complete and generates tts_eval_report.md on the cluster.
+
+Use --stage download to fetch the report and metrics locally after jobs finish.
+Add --wait to poll the aggregation job and download automatically when it completes.
 """
 
 import argparse
 import os
 import shutil
+import time
 
 import yaml
 
+from nemo_skills.dataset.nv_tts.scripts.resolve_code_repo import resolve_code_repo
 from nemo_skills.dataset.nv_tts.scripts.score import run_aggregation
 from nemo_skills.pipeline.eval import eval as ns_eval
 from nemo_skills.pipeline.run_cmd import run_cmd as ns_run_cmd
 from nemo_skills.pipeline.utils.cluster import get_cluster_config, get_tunnel
+
+
+def wait_for_experiment(expname: str, poll_interval: int = 60):
+    """Poll a nemo-run experiment until all its tasks reach a terminal state.
+
+    Returns True if all tasks succeeded, False otherwise.
+    """
+    import nemo_run as run
+    from torchx.specs.api import AppState
+
+    terminal = {AppState.SUCCEEDED, AppState.FAILED, AppState.CANCELLED}
+
+    print(f"Waiting for experiment '{expname}' to complete (polling every {poll_interval}s)...")
+    while True:
+        try:
+            with run.Experiment.from_title(expname) as exp:
+                status_dict = exp.status(return_dict=True)
+        except (FileNotFoundError, AssertionError):
+            print(f"  Experiment '{expname}' not found yet, retrying...")
+            time.sleep(poll_interval)
+            continue
+
+        if not status_dict:
+            print(f"  No tasks found in '{expname}', retrying...")
+            time.sleep(poll_interval)
+            continue
+
+        all_terminal = True
+        any_failed = False
+        for task_name, info in status_dict.items():
+            state = info["status"]
+            if state in terminal:
+                if state != AppState.SUCCEEDED:
+                    any_failed = True
+            else:
+                all_terminal = False
+
+        if all_terminal:
+            if any_failed:
+                print(f"  Experiment '{expname}' finished with failures.")
+                return False
+            print(f"  Experiment '{expname}' completed successfully.")
+            return True
+
+        states = ", ".join(f"{k}: {v['status'].name}" for k, v in status_dict.items())
+        print(f"  [{time.strftime('%H:%M:%S')}] {states}")
+        time.sleep(poll_interval)
 
 
 class MockContext:
@@ -52,14 +103,14 @@ def load_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def run_generation(cfg: dict, expname: str):
+def run_generation(cfg: dict, expname: str, output_dir: str, code_path: str = ""):
     """Run generation stage using ns eval, returns experiment object."""
     gen = cfg["generation"]
 
-    # Add generation_code_path to server_args
+    # Add code_path to server_args (used for PYTHONPATH in the generation server)
     server_args = gen["server_args"]
-    if cfg.get("generation_code_path"):
-        server_args += f" --code_path {cfg['generation_code_path']}"
+    if code_path:
+        server_args += f" --code_path {code_path}"
 
     # Parse extra_args for the context
     extra_args = gen.get("extra_args", "").split() if gen.get("extra_args") else []
@@ -69,7 +120,7 @@ def run_generation(cfg: dict, expname: str):
     return ns_eval(
         ctx=ctx,
         cluster=cfg["cluster"],
-        output_dir=cfg["output_dir"],
+        output_dir=output_dir,
         benchmarks=gen["benchmarks"],
         model=gen["model"],
         server_type=gen["server_type"],
@@ -92,18 +143,40 @@ def main():
     parser.add_argument("--config", required=True)
     parser.add_argument(
         "--stage",
-        choices=["all", "generation", "scoring", "aggregation"],
+        choices=["all", "generation", "scoring", "download"],
         default="all",
-        help="Stage to run. 'all' runs generation+scoring (no aggregation)",
+        help="Stage to run. 'all' runs generation+scoring+aggregation on the cluster. "
+        "'download' fetches results from the cluster after jobs complete.",
     )
     parser.add_argument("--expname", default="tts_eval", help="Base experiment name for job tracking")
+    parser.add_argument(
+        "--wait",
+        action="store_true",
+        help="Poll for job completion before running the download stage. "
+        "Only meaningful with --stage download.",
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=int,
+        default=60,
+        help="Seconds between status polls when --wait is used (default: 60)",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     scoring = cfg.get("scoring", {})
     hf_token = os.environ.get("HF_TOKEN", "")
-    scoring_code_path = cfg.get("scoring_code_path", "")
-    output_dir = cfg["output_dir"]
+    output_dir = os.path.join(cfg["output_dir"], args.expname)
+
+    # Resolve code_path: explicit path takes precedence, then repo+commit, then legacy fields
+    code_path = cfg.get("code_path") or cfg.get("nemo_code_path", "")
+    if not code_path and cfg.get("code_repo"):
+        cluster_config = get_cluster_config(cfg["cluster"])
+        tunnel = get_tunnel(cluster_config)
+        code_path = resolve_code_repo(
+            cfg["code_repo"], cfg["code_commit"], output_dir, tunnel,
+        )
+        print(f"  Resolved code path: {code_path}")
 
     gen_exp_name = None
 
@@ -112,7 +185,7 @@ def main():
         print("\n" + "=" * 60)
         print("Stage 1: GENERATION")
         print("=" * 60)
-        gen_exp = run_generation(cfg, args.expname)
+        gen_exp = run_generation(cfg, args.expname, output_dir, code_path=code_path)
         # Extract experiment name/id for dependency tracking
         gen_exp_name = args.expname  # The expname we passed to ns_eval
         print(f"Generation submitted: {gen_exp}")
@@ -134,6 +207,7 @@ def main():
         run_after = [gen_exp_name] if args.stage == "all" and gen_exp_name else None
 
         scoring_num_chunks = scoring.get("num_chunks")
+        scoring_exp_names = []
 
         for benchmark in benchmarks:
             benchmark = benchmark.strip()
@@ -145,7 +219,7 @@ def main():
             # Base scoring command arguments (shared between chunked and non-chunked)
             base_scoring_args = (
                 f"HF_TOKEN={hf_token} "
-                f"PYTHONPATH={scoring_code_path}:$PYTHONPATH "
+                f"PYTHONPATH={code_path}:$PYTHONPATH "
                 f"python -m nemo_skills.dataset.nv_tts.scripts.score "
                 f"--results_dir {output_dir} "
                 f"--benchmark {benchmark_dir} "
@@ -172,6 +246,7 @@ def main():
                     f'--num_chunks {scoring_num_chunks} --chunk_id ${{SLURM_LOCALID:-0}}'
                 )
                 scoring_expname = f"{args.expname}_score_{short_name}"
+                scoring_exp_names.append(scoring_expname)
                 print(
                     f"  Submitting multi-instance scoring job for: {benchmark} "
                     f"({scoring_num_chunks} chunks on {scoring_num_chunks} GPUs)"
@@ -197,6 +272,9 @@ def main():
 
                 print(f"  Submitting scoring job for: {benchmark}")
 
+                scoring_expname = f"{args.expname}_score_{short_name}"
+                scoring_exp_names.append(scoring_expname)
+
                 ns_run_cmd(
                     ctx=MockContext(),
                     cluster=cfg["cluster"],
@@ -207,17 +285,56 @@ def main():
                     command=scoring_cmd,
                     installation_command=install_cmd,
                     run_after=run_after,
-                    expname=f"{args.expname}_score_{short_name}",
+                    expname=scoring_expname,
                     log_dir=f"{output_dir}/eval-logs",
                 )
 
-    # Stage 3: Aggregation (runs locally after downloading results from cluster)
-    # Downloads metrics.json and output_with_metrics.jsonl per benchmark,
-    # then runs aggregation/report generation locally where we have full
-    # control over the Python environment (e.g. stats libraries).
-    if args.stage == "aggregation":
+        # Stage 3: Aggregation (submitted as dependent Slurm job)
+        # Runs after all scoring jobs complete, generates the markdown report on the cluster.
+        if scoring_exp_names:
+            print("\n" + "=" * 60)
+            print("Stage 3: AGGREGATION (dependent Slurm job)")
+            print("=" * 60)
+
+            agg_cmd = (
+                f"python -m nemo_skills.dataset.nv_tts.scripts.score "
+                f"--results_dir {output_dir} --aggregation_only"
+            )
+            agg_expname = f"{args.expname}_aggregate"
+            print(f"  Submitting aggregation job (depends on: {', '.join(scoring_exp_names)})")
+
+            ns_run_cmd(
+                ctx=MockContext(),
+                cluster=cfg["cluster"],
+                container=cfg["container"],
+                partition=cfg["partition"],
+                num_gpus=1,
+                mount_paths=cfg["mount_paths"],
+                command=agg_cmd,
+                run_after=scoring_exp_names,
+                expname=agg_expname,
+                log_dir=f"{output_dir}/eval-logs",
+            )
+
+            # Print the download command so the user can easily grab it later
+            download_cmd = f"python {__file__} --config {args.config} --stage download"
+            if args.expname != "tts_eval":
+                download_cmd += f" --expname {args.expname}"
+            wait_cmd = download_cmd + " --wait"
+            print(f"\nTo auto-wait for jobs and download results:\n\n  {wait_cmd}\n")
+            print(f"Or, if jobs are already done:\n\n  {download_cmd}\n")
+
+    # Wait for jobs to finish before downloading (if --wait is set)
+    if args.stage == "download" and args.wait:
+        agg_expname = f"{args.expname}_aggregate"
+        ok = wait_for_experiment(agg_expname, poll_interval=args.poll_interval)
+        if not ok:
+            print("WARNING: aggregation job did not succeed; downloading whatever is available.")
+
+    # Download results from cluster (for local inspection after jobs complete)
+    if args.stage == "download":
         print("\n" + "=" * 60)
-        print("Stage 3: AGGREGATION (local)")
+        print("DOWNLOAD RESULTS")
         print("=" * 60)
 
         cluster_config = get_cluster_config(cfg["cluster"])
@@ -257,16 +374,24 @@ def main():
                     print(f"  Downloading {benchmark}/{filename}...")
                     tunnel.get(remote_path, local_path)
 
-            # Run aggregation locally on the downloaded files
-            print("\n  Running aggregation locally...")
-            run_aggregation(local_results_dir)
+            # Download the report generated by the aggregation Slurm job
+            remote_report_path = os.path.join(output_dir, "tts_eval_report.md")
+            local_report_path = os.path.join(local_results_dir, "tts_eval_report.md")
+            check = tunnel.run(f"test -f {remote_report_path}", hide=True, warn=True)
+            if check.return_code == 0:
+                print(f"  Downloading tts_eval_report.md...")
+                tunnel.get(remote_report_path, local_report_path)
+            else:
+                # Aggregation job may not have run yet; generate report locally from downloaded metrics
+                print("  Report not found on cluster, generating locally from downloaded metrics...")
+                run_aggregation(local_results_dir)
 
             # Copy report to a convenient location in the working directory
             report_path = os.path.join(local_results_dir, "tts_eval_report.md")
             if os.path.exists(report_path):
-                local_report_path = os.path.join(os.getcwd(), f"tts_eval_report_{args.expname}.md")
-                shutil.copy2(report_path, local_report_path)
-                print(f"\nReport saved to: {local_report_path}")
+                convenient_path = os.path.join(os.getcwd(), f"tts_eval_report_{args.expname}.md")
+                shutil.copy2(report_path, convenient_path)
+                print(f"\nReport saved to: {convenient_path}")
                 print(f"Full results downloaded to: {local_results_dir}")
 
     print("\nDone!")
