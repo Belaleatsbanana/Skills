@@ -39,7 +39,6 @@ scoring:
   asr_model_name: nvidia/parakeet-tdt-1.1b
   language: en
   with_utmosv2: true
-  with_fcd: true
   codec_model_path: nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps
   gpus: 1
   # num_chunks: 1  # set to >1 to enable parallel scoring across multiple GPUs
