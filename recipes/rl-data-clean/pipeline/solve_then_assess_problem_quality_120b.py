@@ -82,7 +82,7 @@ def assess_problem_quality_with_solution(cluster, expname, run_after, stage_conf
 
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-problem-quality-with-solution.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/proof/assess-problem-quality-with-solution-combined.yaml "
             f"++inference.tokens_to_generate=120000 "
             f"++inference.temperature=1.0 "
             f"++inference.top_p=1.0 "

@@ -1,0 +1,38 @@
+# Combined / concise prompt for (problem + solution) quality assessment. Compare with assess-problem-quality-with-solution.yaml.
+# Same output keys (DECISION, DIFFICULTY_ESTIMATE, DECISION_REASONING) for postprocess compatibility.
+user: |-
+  You are an IMO-style proof problem judge. You will see a PROBLEM and a SOLUTION ATTEMPT. Decide if the problem is good enough for IMO-level training and give a difficulty.
+
+  ---
+  Problem:
+  {problem}
+
+  ---
+  Solution attempt:
+  {solution}
+  ---
+
+  Checklist (use the solution as evidence):
+  1) Clear: problem is well-defined; solver could understand what to prove.
+  2) Solvable: a proof was completed or seriously attempted; solution supports that the problem is well-posed.
+  3) Rigorous: statement is valid, conditions sufficient; no major errors in problem or solution.
+  4) Non-trivial: not too simple; proof has multiple steps or non-obvious reasoning.
+  5) Difficulty: P1 (easiest) to P6 (hardest), or TOO_SIMPLE, or UNCLEAR.
+
+  Output exactly in this format (one line or short block per field):
+
+  CLARITY_ANALYSIS:
+  <one short paragraph>
+
+  MATHEMATICAL_RIGOR_ANALYSIS:
+  <one short paragraph>
+
+  DIFFICULTY_ESTIMATE: <exactly one of: P1, P2, P3, P4, P5, P6, TOO_SIMPLE, UNCLEAR>
+
+  CRITICAL_ISSUES:
+  <any serious issues; if none, write "None">
+
+  DECISION: <ACCEPT or REJECT>
+  DECISION_REASONING: <2-3 sentences: why accept/reject, referring to problem and solution.>
+
+  Output:
