@@ -258,7 +258,9 @@ class SweBenchGenerationTask(GenerationTask):
                 # make venv & install swe-agent dependencies
                 "uv venv --python 3.12 --managed-python venv && "
                 "source venv/bin/activate && "
-                "uv pip install -e ."
+                "uv pip install -e . && "
+                # downgrade tiktoken to fix missing glibc 2.35 in some containers
+                "uv pip install tiktoken==0.11.0"
             )
 
         elif self.cfg.agent_framework == SupportedAgentFrameworks.openhands:
