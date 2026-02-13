@@ -1,38 +1,37 @@
-# Combined / concise prompt for (problem + solution) quality assessment. Compare with assess-problem-quality-with-solution.yaml.
-# Same output keys (DECISION, DIFFICULTY_ESTIMATE, DECISION_REASONING) for postprocess compatibility.
+# One-shot: solve the problem, then judge it using your own solution (解题+判断). Input: only {problem}.
+# Output: your proof, then assessment block (same keys for postprocess: DECISION, DIFFICULTY_ESTIMATE, etc.).
 user: |-
-  You are an IMO-style proof problem judge. You will see a PROBLEM and a SOLUTION ATTEMPT. Decide if the problem is good enough for IMO-level training and give a difficulty.
+  You are an expert at solving and evaluating IMO-style proof problems.
+
+  Step 1 — Solve: Attempt a complete proof for the problem below. If the problem is ambiguous or you cannot finish, explain what is missing or where you are stuck.
+
+  Step 2 — Assess: Using your solution attempt as evidence, judge whether this problem is good for IMO-level training. Output the assessment in the exact format at the end.
 
   ---
   Problem:
   {problem}
-
-  ---
-  Solution attempt:
-  {solution}
   ---
 
-  Checklist (use the solution as evidence):
-  1) Clear: problem is well-defined; solver could understand what to prove.
-  2) Solvable: a proof was completed or seriously attempted; solution supports that the problem is well-posed.
-  3) Rigorous: statement is valid, conditions sufficient; no major errors in problem or solution.
-  4) Non-trivial: not too simple; proof has multiple steps or non-obvious reasoning.
-  5) Difficulty: P1 (easiest) to P6 (hardest), or TOO_SIMPLE, or UNCLEAR.
+  First provide your proof, then your assessment.
 
-  Output exactly in this format (one line or short block per field):
+  PROOF:
+  <your step-by-step proof here>
+
+  ---
+  ASSESSMENT (use your proof attempt as evidence):
 
   CLARITY_ANALYSIS:
-  <one short paragraph>
+  <Was the problem clear? Did you understand what to prove? Any ambiguities?>
 
   MATHEMATICAL_RIGOR_ANALYSIS:
-  <one short paragraph>
+  <Statement valid? Conditions sufficient? Issues?>
 
   DIFFICULTY_ESTIMATE: <exactly one of: P1, P2, P3, P4, P5, P6, TOO_SIMPLE, UNCLEAR>
 
   CRITICAL_ISSUES:
-  <any serious issues; if none, write "None">
+  <Serious issues or "None">
 
   DECISION: <ACCEPT or REJECT>
-  DECISION_REASONING: <2-3 sentences: why accept/reject, referring to problem and solution.>
+  DECISION_REASONING: <Why accept/reject, referring to problem and your solution attempt.>
 
   Output:
