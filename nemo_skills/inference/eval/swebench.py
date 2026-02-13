@@ -420,8 +420,19 @@ class SweBenchGenerationTask(GenerationTask):
         logs_dir = self.output_dir / "apptainer_logs"
         logs_dir.mkdir(exist_ok=True)
 
+        # Commands to be executed in the Apptainer container, in order
+        container_commands = []
+
         # Fix localhost URLs not working sometimes
-        command = f"echo '127.0.0.1 localhost' >/etc/hosts && {command}"
+        container_commands.append("echo '127.0.0.1 localhost' >/etc/hosts")
+
+        # Copy repo to /testbed before running the agent
+        if mode == "agent" and self.cfg.dataset_type == SupportedDatasetTypes.multi_swe_bench:
+            repo = data_point["repo"].split("/")[1]
+            container_commands.append(f"cp -r /home/{repo} /testbed")
+
+        container_commands.append(command)
+        combined_command = " && ".join(container_commands)
 
         # Launch Apptainer container and execute the command
         apptainer_cmd = (
@@ -429,7 +440,7 @@ class SweBenchGenerationTask(GenerationTask):
             f"--mount type=bind,src=/nemo_run/code,dst=/nemo_run/code "
             f"--mount type=bind,src=/root,dst=/root_mount,ro "
             f"--mount type=bind,src={self.output_dir},dst=/trajectories_mount "
-            f" {container_name} bash -c {shlex.quote(command)}"
+            f" {container_name} bash -c {shlex.quote(combined_command)}"
         )
 
         # Retry apptainer command up to max_retries times
