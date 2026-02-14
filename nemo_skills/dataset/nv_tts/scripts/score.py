@@ -106,8 +106,6 @@ def run_scoring(
     """
     from nemo_skills.file_utils import calculate_chunk_indices
 
-    evaluate, _ = _import_nemo_evaluate()
-
     benchmarks_dir = os.path.join(results_dir, "eval-results")
     if not os.path.exists(benchmarks_dir):
         benchmarks_dir = results_dir
@@ -190,6 +188,8 @@ def _score_benchmark_chunk(
     calculate_chunk_indices,
 ) -> None:
     """Score a single chunk of a benchmark and write per-file metrics."""
+    # for benchmarking, write an empty "chunk.start" file so we can track the time it takes to score a chunk
+    open(os.path.join(benchmark_dir, "chunk.start"), "w").close()
     evaluate, _ = _import_nemo_evaluate()
     records, entries = _read_output_jsonl(output_jsonl)
 
@@ -336,19 +336,18 @@ def merge_scoring_chunks(
             print(f"Skipping {bench}: metrics.json already exists")
             continue
 
-        print(f"\nMerging scoring chunks for: {bench}")
-
         # Check all chunks are done
         all_done = True
         for chunk_id in range(num_chunks):
             chunk_path = _get_chunk_output_path(benchmark_dir, chunk_id)
             done_file = f"{chunk_path}.done"
             if not os.path.exists(done_file):
-                print(f"  WARNING: chunk {chunk_id} not done ({done_file} missing)")
                 all_done = False
+                break
         if not all_done:
-            print(f"  Skipping {bench}: not all chunks are done")
             continue
+
+        print(f"\nAll chunks complete for {bench}, proceeding to merge")
 
         # Read and concatenate all chunk outputs
         all_records = []
