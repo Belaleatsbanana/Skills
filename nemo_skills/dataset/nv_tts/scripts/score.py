@@ -190,6 +190,7 @@ def _score_benchmark_chunk(
     calculate_chunk_indices,
 ) -> None:
     """Score a single chunk of a benchmark and write per-file metrics."""
+    evaluate, _ = _import_nemo_evaluate()
     records, entries = _read_output_jsonl(output_jsonl)
 
     if not entries:
@@ -254,6 +255,7 @@ def _score_benchmark_chunk(
 
 def score_benchmark(output_jsonl: str, scoring_cfg: dict) -> dict:
     """Score a single benchmark (non-chunked, original behavior)."""
+    evaluate, _ = _import_nemo_evaluate()
     records, entries = _read_output_jsonl(output_jsonl)
 
     if not entries:

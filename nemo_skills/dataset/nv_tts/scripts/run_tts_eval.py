@@ -322,7 +322,6 @@ def main():
                 download_cmd += f" --expname {args.expname}"
             wait_cmd = download_cmd + " --wait"
             print(f"\nTo auto-wait for jobs and download results:\n\n  {wait_cmd}\n")
-            print(f"Or, if jobs are already done:\n\n  {download_cmd}\n")
 
     # Wait for jobs to finish before downloading (if --wait is set)
     if args.stage == "download" and args.wait:
