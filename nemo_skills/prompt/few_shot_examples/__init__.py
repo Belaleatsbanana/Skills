@@ -11,11 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from collections import ChainMap
+
 from nemo_skills.prompt.few_shot_examples.gsm8k import examples_map as examples_gsm8k
 from nemo_skills.prompt.few_shot_examples.lean4 import examples_map as examples_lean4
 from nemo_skills.prompt.few_shot_examples.math import examples_map as examples_math
 from nemo_skills.prompt.few_shot_examples.mmlu import examples_map as examples_mmlu
 from nemo_skills.prompt.few_shot_examples.mmlu_pro import examples_map as examples_mmlu_pro
+from nemo_skills.prompt.few_shot_examples.mmlu_prox import examples_map as examples_mmlu_prox
 from nemo_skills.prompt.few_shot_examples.open_science import examples_map as examples_open_science
 
 all_example_sets = [
@@ -24,11 +28,15 @@ all_example_sets = [
     examples_lean4,
     examples_mmlu_pro,
     examples_mmlu,
+    examples_mmlu_prox,
     examples_open_science,
 ]
 
-examples_map = {k: v for d in all_example_sets for k, v in d.items()}
+_static_examples_map = {k: v for d in all_example_sets for k, v in d.items()}
 
-# Verify no duplicate keys exist across example sets
+# Verify no duplicate keys exist across static example sets
 expected_total_examples = sum(len(example_set) for example_set in all_example_sets)
-assert len(examples_map) == expected_total_examples, "Duplicate keys in examples!"
+assert len(_static_examples_map) == expected_total_examples, "Duplicate keys in examples!"
+
+# Dynamic maps (e.g. mmlu_prox) are consulted first via ChainMap, then static
+examples_map = ChainMap(examples_mmlu_prox, _static_examples_map)

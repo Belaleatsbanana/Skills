@@ -14,4 +14,13 @@
 # settings that define how evaluation should be done by default (all can be changed from cmdline)
 
 METRICS_TYPE = "multichoice"
-GENERATION_ARGS = "++prompt_config=generic/default ++eval_type=multichoice"
+
+# Few-shot: set to "{examples_type}" to enable 5-shot; set to None to disable. Default: off (None).
+examples_type = None
+
+# Which branch runs is determined by examples_type above (None → default, no few-shot).
+GENERATION_ARGS = (
+    "++prompt_config=generic/general-boxed ++examples_type='{examples_type}' ++eval_type=multichoice"
+    if examples_type is not None
+    else "++prompt_config=generic/default ++eval_type=multichoice"
+)

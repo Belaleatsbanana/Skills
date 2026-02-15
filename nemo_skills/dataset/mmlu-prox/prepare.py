@@ -95,8 +95,12 @@ def format_entry(entry, language, lang_libs, lang_subjects):
     def get_mcq_fields(question, choices, language):
         options_dict = {chr(ord("A") + i): option for i, option in enumerate(choices)}
         options_text = "\n".join(f"{letter}. {option}" for letter, option in options_dict.items())
+        question_text = (
+            f"{description}{lang_libs[language][0]}\n{question}\n{lang_libs[language][1]}\n{options_text}\n"
+        )
         return {
-            "question": f"{description}{lang_libs[language][0]}\n{question}\n{lang_libs[language][1]}\n{options_text}\n",
+            "question": question_text,
+            "problem": question_text,  # alias for compatibility with generic/general-boxed few-shot prompt
             "options": options_text,
             **options_dict,
         }
@@ -109,6 +113,7 @@ def format_entry(entry, language, lang_libs, lang_subjects):
 
     return {
         "expected_answer": entry["answer"],
+        "examples_type": f"mmlu_prox_few_shot_{language}",
         "extract_from_boxed": False,
         "extract_regex": extract_regex,
         "subset_for_metrics": language,
@@ -122,7 +127,12 @@ def write_data_to_file(output_file, datasets, languages, lang_libs, lang_subject
         for idx, dataset in enumerate(datasets):
             for entry in tqdm(dataset, desc=f"Writing {output_file.name}"):
                 json.dump(
-                    format_entry(entry, language=languages[idx], lang_libs=lang_libs, lang_subjects=lang_subjects),
+                    format_entry(
+                        entry,
+                        language=languages[idx],
+                        lang_libs=lang_libs,
+                        lang_subjects=lang_subjects,
+                    ),
                     fout,
                 )
                 fout.write("\n")
@@ -138,7 +148,11 @@ def main(args):
     data_dir.mkdir(exist_ok=True)
     output_file = data_dir / f"{args.split}.jsonl"
     write_data_to_file(
-        output_file, datasets, languages=args.languages, lang_libs=lang_libs, lang_subjects=lang_subjects
+        output_file,
+        datasets,
+        languages=args.languages,
+        lang_libs=lang_libs,
+        lang_subjects=lang_subjects,
     )
 
 
