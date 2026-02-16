@@ -408,6 +408,31 @@ def grpo_gym_nemo_rl(
     if "n_servers" in add_task_params and server_config is not None:
         extra_add_task_kwargs["n_servers"] = server_config.get("n_servers", 1)
 
+    # Inject JUDGE_SERVER_ARGS into the main task command so the process has it even if executor
+    # env_vars are not passed to the container (e.g. some het job setups). math_with_judge needs it.
+    if server_config is not None:
+        judge_het_group = 1  # main task first (server_goes_first_override=False) → judge is het group 1
+        judge_server_args = json.dumps(
+            {
+                "server_type": server_config["server_type"],
+                "model": server_config["model_path"],
+                "port": server_config["server_port"],
+                "n_servers": server_config.get("n_servers", 1),
+                "judge_het_group": judge_het_group,
+            }
+        )
+        # Escape for shell single-quoted string: ' -> '\''
+        escaped = judge_server_args.replace("'", "'\"'\"'")
+        math_judge_log_dir = f"{log_dir}/training-logs"
+        escaped_log_dir = math_judge_log_dir.replace("'", "'\"'\"'")
+        train_cmd = (
+            f"export JUDGE_SERVER_ARGS='{escaped}' && export MATH_JUDGE_LOG_DIR='{escaped_log_dir}' && {train_cmd}"
+        )
+        LOG.info(
+            "Prefixed train_cmd with export JUDGE_SERVER_ARGS and MATH_JUDGE_LOG_DIR=%s for main task.",
+            math_judge_log_dir,
+        )
+
     with get_exp(expname, cluster_config, _reuse_exp) as exp:
         prev_task = _task_dependencies
         with temporary_env_update(cluster_config, env_update):

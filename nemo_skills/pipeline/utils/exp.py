@@ -512,6 +512,10 @@ def add_task(
     env_vars = get_env_variables(cluster_config)
     # Inject judge server args for the main task so start_grpo_gym can resolve judge URL (e.g. for math_with_judge)
     # When server_goes_first: judge is het group 0. When main first (not server_goes_first): judge is het group 1.
+    if server_config is None:
+        print(
+            "[add_task] server_config is None → JUDGE_SERVER_ARGS will NOT be set; math_with_judge will use policy_model path."
+        )
     if server_config is not None:
         server_needs_gpus = int(server_config.get("num_gpus", 0)) > 0
         client_num_gpus = num_gpus or 0
@@ -533,6 +537,10 @@ def add_task(
             "Injected JUDGE_SERVER_ARGS for main task (judge_het_group=%s, port=%s).",
             judge_het_group,
             server_config["server_port"],
+        )
+        print(
+            f"[add_task] Injected JUDGE_SERVER_ARGS for main task (judge_het_group={judge_het_group}, port={server_config['server_port']}). "
+            "Main task env will include it (env_vars_override=env_vars)."
         )
     # If not explicitly set, resolve from cluster config
     if skip_hf_home_check is None:
