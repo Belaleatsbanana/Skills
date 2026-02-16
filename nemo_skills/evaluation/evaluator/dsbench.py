@@ -20,6 +20,7 @@ from math_verify import StringExtractionConfig, parse, verify
 import re
 
 from nemo_skills.evaluation.evaluator.math import MathEvaluator
+from nemo_skills.evaluation.math_grader import math_equal
 from nemo_skills.utils import get_logger_name
 
 LOG = logging.getLogger(get_logger_name(__file__))
@@ -47,14 +48,17 @@ def relaxed_equal(gt_answer: Any, predicted_answer: Any) -> bool:
     if isinstance(predicted_answer, list):
         return len(gt_answer) == len(predicted_answer) and all(relaxed_equal(e, p) for e, p in zip(gt_answer, predicted_answer))
 
+
     # Try case-insensitive MCQ matching
     mcq_options = "ABCDEFGHIJKLMNabcdefghijklmn"
-    norm_gt_mcq = gt_answer.strip()
+    norm_gt_mcq = str(gt_answer).strip()
     is_mcq = re.fullmatch("|".join(mcq_options), norm_gt_mcq)
     parsed_gt = parse(gt_answer, [StringExtractionConfig(strings=tuple(mcq_options))])
     parsed_pred = parse(predicted_answer, [StringExtractionConfig(strings=tuple(mcq_options))])
     if is_mcq and verify(parsed_gt, parsed_pred):
         return verify(parsed_gt, parsed_pred)
+    
+    return math_equal(str(gt_answer), str(predicted_answer))
 
 
 class DSBenchEvaluator(MathEvaluator):
