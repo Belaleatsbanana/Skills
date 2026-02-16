@@ -23,7 +23,7 @@ METRICS_TYPE = "math"
 # 3. Fallback to relaxed_equal for case-insensitive MCQ and dict/list comparison
 GENERATION_ARGS = (
     '++prompt_config=generic/dsbench-da '
-    '++eval_type=math ' # dsbench
+    '++eval_type=dsbench' # similar to math evaluator but uses case insensitive matching for MCQ, and parsing for dict and list 
     '++eval_config.relaxed=true '
 )
 
