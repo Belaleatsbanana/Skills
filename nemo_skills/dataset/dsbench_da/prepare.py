@@ -72,7 +72,7 @@ def format_paths_for_prompt(paths, actual_root, display_root):
     return " ".join(formatted)
 
 
-def save_data(split, data_dir, display_root):
+def save_data(split, data_dir, display_root, incontext_data):
     """Download and prepare DSBench data."""
     print(f"Preparing DSBench data for {split} split and saving to {data_dir}...")
 
@@ -166,13 +166,13 @@ def save_data(split, data_dir, display_root):
         excel_files = [f for f in excel_files if 'answer' not in f.name.lower()]
 
         # Read Excel content for in-context mode
-        excel_content = ""
-        for excel_file in excel_files:
-            sheets_text = read_excel_to_text(excel_file)
-            excel_content += f"The excel file {excel_file.name} is: {sheets_text}\n\n"
-
+        if incontext_data:
+            excel_content = ""
+            for excel_file in excel_files:
+                sheets_text = read_excel_to_text(excel_file)
+                excel_content += f"The excel file {excel_file.name} is: {sheets_text}\n\n"
+    
         # Format paths for tool mode (relative to data directory)
-
         excel_paths = format_paths_for_prompt(
             excel_files,
             actual_root = extracted_data_dir,
@@ -207,13 +207,8 @@ def save_data(split, data_dir, display_root):
                 # Skills standard fields
                 'problem': problem_text,
                 'expected_answer': task['answers'][idx],
-
-                # For in-context mode
-                'excel_content': excel_content.strip(),
-
                 # For tool mode
                 'excel_paths': excel_paths,
-
                 # Metadata
                 'task_id': task_id,
                 'question_id': question_name,
@@ -221,6 +216,9 @@ def save_data(split, data_dir, display_root):
                 'task_url': task['url'],
                 'task_year': task['year'],
             }
+
+            if incontext_data:
+                entry['excel_content'] = excel_content.strip()
 
             all_entries.append(entry)
 
@@ -260,6 +258,11 @@ if __name__ == "__main__":
         default=None,
         help="Root directory to display in paths (absolute for abs paths, Path(\".\") for relative)"
     )
+    parser.add_argument(
+        "--incontext_data",
+        action="store_true",
+        help="Have the excel files read in-context under 'excel_content' field (Default: False)"
+    )
     args = parser.parse_args()
     print(args)
     if args.data_dir is None:
@@ -268,4 +271,4 @@ if __name__ == "__main__":
     else:
         data_dir = Path(args.data_dir)
 
-    save_data(args.split, data_dir, args.display_root)
+    save_data(args.split, data_dir, args.display_root, args.incontext_data)

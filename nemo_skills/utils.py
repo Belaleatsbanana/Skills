@@ -105,6 +105,7 @@ def nested_dataclass(*args, **kwargs):
 def setup_logging(disable_hydra_logs: bool = True, log_level: int = logging.INFO, use_rich: bool = False):
     logger = logging.getLogger("nemo_skills")
     logger.setLevel(log_level)
+    logger.propagate = False  # Avoid duplicate output when root logger also has a handler (e.g. from litellm/Rich)
 
     # Remove all existing handlers
     if logger.hasHandlers():
