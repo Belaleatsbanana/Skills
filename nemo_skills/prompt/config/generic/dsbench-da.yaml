@@ -7,7 +7,7 @@ user: |-
 
   Feel free to use python tool to read the files or perform other actions or calculations.
 
-  If you need to use the files, avoid unnecessary mistakes by planning to explore the file to understand its structure and identify the relevant data for the question before jumping into solution.
+  If you need to use the files, avoid unnecessary mistakes by exploring the file to understand its structure and identify the relevant data for the question before jumping into solution.
 
   Put your final answer in \boxed{{your final answer}}. Format your answer based on the question type:
   - Multiple choice: Put only the option letter case-sensitive (e.g., \boxed{{A}})
