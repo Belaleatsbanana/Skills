@@ -184,12 +184,6 @@ def run_fdb_eval(config: dict):
 
     print(f"\n{'=' * 60}")
     print("Done!")
-    if not generation_only and len(subtests) > 1:
-        eval_results_parent = Path(config["output_dir"]) / "eval-results"
-        print(f"\nTo see aggregated metrics across all subtests, run:")
-        print(f"  python nemo_skills/dataset/fdb/scripts/aggregate_results.py \\")
-        print(f"    --eval_results_dir {eval_results_parent} \\")
-        print(f"    --json {eval_results_parent}/summary.json")
     print(f"{'=' * 60}")
 
 

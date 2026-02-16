@@ -498,7 +498,17 @@ class S2SVoiceChatInferBackend(InferenceBackend):
                         if hasattr(wav, "detach"):
                             wav = wav.detach().float().cpu().numpy()
                         wav = np.asarray(wav).squeeze()
-                        if audio_len is not None:
+                        # Trim to per-sample input duration to remove batch-padding artifacts.
+                        # When multiple samples are batched, shorter ones get padded to the longest,
+                        # and the model generates audio for all frames including padding. Trimming to the
+                        # input duration (converted to target SR) matches NeMo ResultsLogger behavior and
+                        # ensures the output WAV only contains audio corresponding to the actual input.
+                        source_sr = int(self.vc_config.source_sample_rate)
+                        per_sample_input_len = int(lengths[bi].item()) + input_pad_len
+                        per_sample_pred_len = int(per_sample_input_len / source_sr * out_sr)
+                        if per_sample_pred_len > 0 and per_sample_pred_len < len(wav):
+                            wav = wav[:per_sample_pred_len]
+                        elif audio_len is not None:
                             try:
                                 n = int(audio_len[bi].item())
                                 wav = wav[:n]

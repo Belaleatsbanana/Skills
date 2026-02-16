@@ -302,22 +302,34 @@ def prepare_fdb_dir(
             if not copied:
                 print(f"Warning: interrupt.json/metadata.json not found for {entry_id} (tried {vers}, {folder_v1_5}/{folder_v1_0})")
 
-    # Behavior eval (background_speech, talking_to_other) needs: input.json, clean_input.json, output.json, clean_output.json
+    # Behavior eval (background_speech, talking_to_other, v1.5 backchannel) needs: input.json, clean_input.json, output.json, clean_output.json
     # Copy input.wav and clean_input.wav from FDB v1.5 data; write placeholder clean_output.json; ASR will fill input.json and clean_input.json
-    if subtest in ("background_speech", "talking_to_other") and fdb_data_path and fdb_data_path.exists():
+    _behavior_subtests = ("background_speech", "talking_to_other")
+    _is_v1_5_backchannel = subtest == "backchannel" and fdb_version == "v1.5"
+    if (subtest in _behavior_subtests or _is_v1_5_backchannel) and fdb_data_path and fdb_data_path.exists():
+        # Map subtest to v1.5 source folder name
+        _src_folder = "user_backchannel" if _is_v1_5_backchannel else subtest
+        _prefixes = {
+            "background_speech": "background_speech_",
+            "talking_to_other": "talking_to_other_",
+        }
+        if _is_v1_5_backchannel:
+            _prefixes["backchannel"] = "user_backchannel_"
         for entry_id, _ in entries_with_audio:
             entry_id = str(entry_id)
             sample_id = None
-            if entry_id.startswith("background_speech_"):
-                sample_id = entry_id.replace("background_speech_", "", 1)
-            elif entry_id.startswith("talking_to_other_"):
-                sample_id = entry_id.replace("talking_to_other_", "", 1)
+            for prefix in _prefixes.values():
+                if entry_id.startswith(prefix):
+                    sample_id = entry_id.replace(prefix, "", 1)
+                    break
+            if sample_id is None and entry_id.isdigit():
+                sample_id = entry_id
             if sample_id is None:
                 continue
-            dest_dir = fdb_prepared / entry_id
+            dest_dir = fdb_prepared / fdb_dir_name(entry_id)
             dest_dir.mkdir(parents=True, exist_ok=True)
             for ver in vers:
-                src_dir = fdb_data_path / ver / subtest / sample_id
+                src_dir = fdb_data_path / ver / _src_folder / sample_id
                 if not src_dir.exists():
                     continue
                 for wav_name in ("input.wav", "clean_input.wav"):
@@ -339,8 +351,7 @@ def prepare_fdb_dir(
         if stereo:
             cmd.append("--stereo")
         subprocess.run(cmd, cwd=str(fdb_repo), check=False)
-        # For behavior subtests, also produce input.json and clean_input.json from copied input.wav / clean_input.wav
-        if subtest in ("background_speech", "talking_to_other"):
+        if subtest in ("background_speech", "talking_to_other") or (subtest == "backchannel" and fdb_version == "v1.5"):
             subprocess.run(
                 [sys.executable, str(asr_script), "--root_dir", str(fdb_prepared), "--task", "inputs_only"],
                 cwd=str(fdb_repo),

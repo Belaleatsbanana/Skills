@@ -10,7 +10,7 @@
 #     --config nemo_skills/dataset/voicebench/scripts/voicebench_s2s_voicechat_offline_config.yaml
 
 # Cluster settings
-cluster: oci_iad
+cluster: s2s_eval_oci_iad
 partition: batch_block1,batch_block3,batch_block4
 cpu_partition: cpu
 
@@ -28,18 +28,23 @@ server_args: >-
   --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/S2S-full-duplex/inference_references/Emma_S3_A1_SC7_singleturntarget_21_channel_1_audio_in.wav
   --tts_ckpt_path /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Duplex_EARTTS/eartts_rvq_cont_task_nanov2_tts_pretraining_wordlist_duplex_data_new_branch_4nodes_duplex_eartts_2_delay_4rd_stage_fp32_wd_1500_et_eos_dp_eos_dup_step_10004.ckpt
   --extra_decoding_seconds 20
+  --inference_pad_boost -0.5
+  --inference_bos_boost 0.5
+  --inference_eos_boost 0
+  --ignore_system_prompt
   --dtype float32
   --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
-  --output_dir /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/voicebench_s2s_voicechat_offline/runs/voicebench
+  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/voicebench_s2s_voicechat_offline_20s
   --save_artifacts
-  # To enable audio output, add: --decode_audio
+  --decode_audio
+  --batch_size 2
 
 server_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/nemo_duplex_november_eartts.sqsh
 server_server_type: vllm_multimodal
 
 # Paths
 data_dir: /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/voicebench_test/data_dir
-output_dir: /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/voicebench_s2s_voicechat_offline/runs/voicebench
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/voicebench_s2s_voicechat_offline_20s
 voicebench_repo_path: /lustre/fsw/portfolios/llmservice/users/vmendelev/code/VoiceBench
 
 subtests:

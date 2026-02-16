@@ -43,8 +43,14 @@ FDB_TASK_MAP = {
     "backchannel": "backchannel",
     "turn_taking": "smooth_turn_taking",
     "interruption": "user_interruption",
-    "background_speech": "background_speech",
-    "talking_to_other": "talking_to_other",
+    "background_speech": "behavior",
+    "talking_to_other": "behavior",
+}
+# v1.5 uses behavior eval for backchannel (not the v1.0 JSD-based eval_backchannel)
+FDB_TASK_MAP_V1_5 = {
+    **FDB_TASK_MAP,
+    "backchannel": "behavior",
+    "interruption": "user_interruption",
 }
 
 
@@ -78,7 +84,8 @@ def main():
         sys.exit(1)
 
     asr_task = ASR_TASK_MAP[args.subtest]
-    fdb_task = FDB_TASK_MAP[args.subtest]
+    task_map = FDB_TASK_MAP_V1_5 if args.fdb_version == "v1.5" else FDB_TASK_MAP
+    fdb_task = task_map[args.subtest]
     prep_script = Path(__file__).resolve().parent / "prepare_fdb_eval_dir.py"
 
     prep_cmd = [
