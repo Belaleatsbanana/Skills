@@ -17,10 +17,12 @@ Pipeline command for GRPO training with NemoGym (no proxy server).
 For quick debugging and simple task evaluation.
 """
 
+import inspect
+import json
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
 import typer
 
@@ -33,6 +35,7 @@ from nemo_skills.pipeline.utils import (
     get_cluster_config,
     get_env_variables,
     get_exp,
+    get_free_port,
     get_mounted_path,
     get_nsight_cmd,
     get_timeout_str,
@@ -303,6 +306,20 @@ def grpo_gym_nemo_rl(
         None,
         help="Max position embeddings to use for conversion. If not specified, will be inferred from the model config.",
     ),
+    # LLM-as-a-judge: start a judge server in the same heterogeneous job
+    server_model: Optional[str] = typer.Option(
+        None,
+        help="Model path/name for the judge server (e.g. HF model name). If set, starts a judge server in a heterogeneous job so math_with_judge can use it.",
+    ),
+    server_type: str = typer.Option(
+        "vllm",
+        help="How to serve the judge model: 'vllm', 'sglang', 'trtllm', or 'generic'. Must have a matching key under cluster config 'containers'.",
+    ),
+    server_gpus: int = typer.Option(1, help="Number of GPUs per node for the judge server."),
+    server_nodes: int = typer.Option(1, help="Number of nodes for the judge server."),
+    server_args: str = typer.Option(
+        "", help="Extra arguments passed to the judge server command (e.g. vLLM/sglang CLI flags)."
+    ),
 ):
     """Runs NeMo-RL GRPO training with NemoGym integration (no proxy server).
 
@@ -362,9 +379,34 @@ def grpo_gym_nemo_rl(
         profile_step_range=profile_step_range,
     )
 
+    # Build judge server config for heterogeneous job (LLM-as-a-judge for math_with_judge)
     server_config = None
+    if server_model:
+        if not server_gpus or server_gpus < 1:
+            raise typer.BadParameter("server_model requires server_gpus >= 1.")
+        server_port = get_free_port(strategy="random")
+        server_config = {
+            "server_type": server_type,
+            "num_gpus": server_gpus,
+            "num_nodes": server_nodes,
+            "model_path": server_model,
+            "server_port": server_port,
+            "server_args": server_args or "",
+            "n_servers": 1,
+        }
+        LOG.info("Judge server will be started in heterogeneous job: %s", json.dumps(server_config, indent=2))
+
     env_update = {"RAY_LOG_SYNC_FREQUENCY": 20} if profile_step_range else {}
     sbatch_kwargs = parse_kwargs(sbatch_kwargs, exclusive=exclusive, qos=qos, time_min=time_min)
+
+    # When with_ray + judge: start nemo-rl (main) first so Ray head runs in nemo-rl container (has ray[client]).
+    add_task_params = inspect.signature(add_task).parameters
+    server_goes_first_override = False if (server_config is not None) else None
+    extra_add_task_kwargs = {}
+    if "server_goes_first_override" in add_task_params:
+        extra_add_task_kwargs["server_goes_first_override"] = server_goes_first_override
+    if "n_servers" in add_task_params and server_config is not None:
+        extra_add_task_kwargs["n_servers"] = server_config.get("n_servers", 1)
 
     with get_exp(expname, cluster_config, _reuse_exp) as exp:
         prev_task = _task_dependencies
@@ -386,11 +428,12 @@ def grpo_gym_nemo_rl(
                     reuse_code_exp=reuse_code_exp,
                     task_dependencies=[prev_task] if prev_task is not None else None,
                     sbatch_kwargs=sbatch_kwargs,
-                    heterogeneous=False,
+                    heterogeneous=True if server_config is not None else False,
                     with_sandbox=with_sandbox,
                     with_ray=True,
                     installation_command=installation_command,
                     skip_hf_home_check=skip_hf_home_check,
+                    **extra_add_task_kwargs,
                 )
 
         prev_task = add_task(

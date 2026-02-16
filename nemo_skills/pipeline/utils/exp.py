@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import contextlib
+import json
 import logging
 import os
 import shlex
@@ -176,6 +177,8 @@ def get_executor(
     sbatch_kwargs: dict | None = None,
     overlap: bool = False,
     with_ray: bool = False,
+    ray_template: str | None = None,
+    env_vars_override: dict | None = None,
 ):
     """Create and configure a nemo-run executor for the target environment.
 
@@ -280,7 +283,9 @@ def get_executor(
     if gpus_per_node is not None and gpus_per_node > 0:
         partition = partition or cluster_config.get("partition")
     else:
-        partition = partition or cluster_config.get("cpu_partition") or cluster_config.get("partition")
+        # 0-GPU tasks (e.g. sandbox) must use a CPU partition when available; many GPU partitions
+        # (e.g. interactive) require a GPU spec and reject 0-GPU jobs
+        partition = cluster_config.get("cpu_partition") or partition or cluster_config.get("partition")
         if partition == cluster_config.get("cpu_partition"):
             # by default we use exclusive if no gpus are needed and use non-exclusive if gpus are required
             # as cpu jobs almost always need more resources than automatically allocated by slurm
@@ -358,6 +363,10 @@ def get_executor(
         "env_vars": env_vars,
     }
 
+    # Add ray_template if provided
+    if ray_template is not None:
+        executor_params["ray_template"] = ray_template
+
     # Update with explicit_kwargs to allow overriding default values
     if explicit_kwargs:
         # Check which parameters are being overridden
@@ -431,6 +440,8 @@ def add_task(
     keep_mounts_for_sandbox=False,
     sandbox_port: int | None = None,
     server_config=None,
+    n_servers: int = 1,
+    server_goes_first_override: bool | None = None,
     reuse_code_exp: str | run.Experiment | None = None,
     reuse_code: bool = True,
     task_dependencies: list[str] = None,
@@ -444,6 +455,7 @@ def add_task(
     skip_hf_home_check: bool | None = None,
     dry_run: bool = False,
     sandbox_env_overrides: list[str] | None = None,
+    ray_template: str | None = None,
 ):
     """Wrapper for nemo-run exp.add to help setting up executors and dependencies.
 
@@ -498,6 +510,30 @@ def add_task(
         sandbox_port = get_free_port(strategy="random")
 
     env_vars = get_env_variables(cluster_config)
+    # Inject judge server args for the main task so start_grpo_gym can resolve judge URL (e.g. for math_with_judge)
+    # When server_goes_first: judge is het group 0. When main first (not server_goes_first): judge is het group 1.
+    if server_config is not None:
+        server_needs_gpus = int(server_config.get("num_gpus", 0)) > 0
+        client_num_gpus = num_gpus or 0
+        if server_goes_first_override is not None:
+            _server_goes_first = server_goes_first_override
+        else:
+            _server_goes_first = server_needs_gpus and not client_num_gpus
+        judge_het_group = 0 if _server_goes_first else 1  # judge het group index for single judge
+        env_vars["JUDGE_SERVER_ARGS"] = json.dumps(
+            {
+                "server_type": server_config["server_type"],
+                "model": server_config["model_path"],
+                "port": server_config["server_port"],
+                "n_servers": server_config.get("n_servers", n_servers),
+                "judge_het_group": judge_het_group,
+            }
+        )
+        LOG.info(
+            "Injected JUDGE_SERVER_ARGS for main task (judge_het_group=%s, port=%s).",
+            judge_het_group,
+            server_config["server_port"],
+        )
     # If not explicitly set, resolve from cluster config
     if skip_hf_home_check is None:
         skip_hf_home_check = cluster_config.get("skip_hf_home_check", False)
@@ -514,47 +550,64 @@ def add_task(
 
     het_group = 0
     het_group_indices = []
-    total_het_groups = (server_config is not None) + bool(cmd) + with_sandbox
+    total_het_groups = (n_servers if server_config is not None else 0) + bool(cmd) + with_sandbox
 
     LOG.info("Adding a task with commands:")
 
     commands = []
     executors = []
-    # assuming server always has the largest resources request, so it needs to go first
-    if server_config is not None and int(server_config["num_gpus"]) > 0:
-        # do not pass container into the command builder
-        # NOTE: avoid evaluating default (which would index cluster_config) unless needed
-        server_container = server_config.pop("container", None)
-        if server_container is None:
-            server_container = cluster_config["containers"][server_config["server_type"]]
-        server_cmd, num_server_tasks = get_server_command(**server_config, cluster_config=cluster_config)
-        server_executor = get_executor(
-            cluster_config=cluster_config,
-            container=server_container,
-            num_nodes=server_config["num_nodes"],
-            tasks_per_node=num_server_tasks,
-            gpus_per_node=server_config["num_gpus"],
-            partition=partition,
-            dependencies=dependencies,
-            job_name=task_name,
-            log_dir=log_dir,
-            log_prefix="server",
-            extra_package_dirs=extra_package_dirs,
-            sbatch_kwargs=sbatch_kwargs,
-            heterogeneous=heterogeneous,
-            het_group=het_group,
-            total_het_groups=total_het_groups,
-            with_ray=with_ray,
-        )
-        if cluster_config["executor"] != "slurm" and num_server_tasks > 1:
-            server_cmd = f"mpirun --allow-run-as-root -np {num_server_tasks} bash -c {shlex.quote(server_cmd)}"
-        commands.append(server_cmd)
-        executors.append(server_executor)
-        het_group_indices.append(het_group)
-        het_group += 1
-        LOG.info("Server command: %s", server_cmd)
 
-    # then goes the main task(s) unless it's empty
+    # For ray heterogenous jobs, nemo-run may assume the first het group is the main task.
+    # So we schedule server first only when the main task does not need GPUs (server gets GPU partition).
+    # Callers (e.g. grpo_gym) can pass server_goes_first_override=True so judge is up before training.
+    server_needs_gpus = server_config is not None and int(server_config.get("num_gpus", 0)) > 0
+    client_num_gpus = num_gpus or 0
+    if server_goes_first_override is not None:
+        server_goes_first = server_goes_first_override
+    else:
+        server_goes_first = server_needs_gpus and not client_num_gpus
+
+    def add_server_tasks():
+        nonlocal het_group
+        # Use a copy so we do not mutate the caller's server_config (container/n_servers are not for get_server_command).
+        server_keys = ("server_type", "num_gpus", "num_nodes", "model_path", "server_port", "server_args")
+        local_sc = {k: server_config[k] for k in server_keys if k in server_config}
+        server_container = server_config.get("container") or cluster_config["containers"][server_config["server_type"]]
+        for server_idx in range(n_servers):
+            server_cmd, num_server_tasks = get_server_command(**local_sc, cluster_config=cluster_config)
+            server_executor = get_executor(
+                cluster_config=cluster_config,
+                container=server_container,
+                num_nodes=server_config["num_nodes"],
+                tasks_per_node=num_server_tasks,
+                gpus_per_node=server_config["num_gpus"],
+                partition=partition,
+                dependencies=dependencies,
+                job_name=task_name,
+                log_dir=log_dir,
+                log_prefix=f"server_{server_idx}" if n_servers > 1 else "server",
+                extra_package_dirs=extra_package_dirs,
+                sbatch_kwargs=sbatch_kwargs,
+                heterogeneous=heterogeneous,
+                het_group=het_group,
+                total_het_groups=total_het_groups,
+                overlap=not client_num_gpus,
+                with_ray=with_ray,
+                ray_template=ray_template,
+            )
+            cmd_to_add = server_cmd
+            if cluster_config["executor"] != "slurm" and num_server_tasks > 1:
+                cmd_to_add = f"mpirun --allow-run-as-root -np {num_server_tasks} bash -c {shlex.quote(server_cmd)}"
+            commands.append(cmd_to_add)
+            executors.append(server_executor)
+            het_group_indices.append(het_group)
+            het_group += 1
+            LOG.info("Server %d command: %s", server_idx, server_cmd)
+
+    if server_goes_first:
+        add_server_tasks()
+
+    # Then the main task(s) unless empty.
     if cmd:
         if isinstance(cmd, str):
             cmd = [cmd]
@@ -564,6 +617,8 @@ def add_task(
             num_tasks = [num_tasks]
         if len(cmd) != len(container) or len(cmd) != len(num_tasks):
             raise ValueError("Number of commands, containers and num_tasks must match.")
+        # Single-node het job with server: main task gets 0 GPUs so server can use GPU partition.
+        main_task_gpus = num_gpus if (server_config is None or num_nodes > 1) else 0
         for cur_idx, (cur_cmd, cur_container, cur_tasks) in enumerate(zip(cmd, container, num_tasks)):
             if cluster_config["executor"] != "slurm" and cur_tasks > 1:
                 cur_cmd = f"mpirun --allow-run-as-root -np {cur_tasks} bash -c {shlex.quote(cur_cmd)}"
@@ -576,7 +631,7 @@ def add_task(
                         container=cur_container,
                         num_nodes=num_nodes,
                         tasks_per_node=cur_tasks,
-                        gpus_per_node=num_gpus if server_config is None else 0,
+                        gpus_per_node=main_task_gpus,
                         partition=partition,
                         dependencies=dependencies,
                         job_name=task_name,
@@ -587,15 +642,17 @@ def add_task(
                         heterogeneous=heterogeneous,
                         het_group=het_group,
                         total_het_groups=total_het_groups,
-                        overlap=(server_config is not None) or with_sandbox,
+                        overlap=(not main_task_gpus) or with_sandbox,
                         with_ray=with_ray,
+                        ray_template=ray_template,
+                        env_vars_override=env_vars,
                     )
                 )
                 het_group_indices.append(het_group)
         het_group += 1
         LOG.info("Main command(s): %s", ", ".join(cmd))
 
-    # finally a sandbox if needed
+    # Sandbox if needed (before server when server does not go first, so order matches PR: main -> sandbox -> server).
     if with_sandbox:
         sandbox_env_updates = {
             "LISTEN_PORT": sandbox_port,
@@ -614,13 +671,24 @@ def add_task(
 
         with temporary_env_update(cluster_config, sandbox_env_updates):
             commands.append(get_sandbox_command(cluster_config))
+            # In a het job with judge: use cpu_partition (0 GPU) when set, else request 1 GPU on
+            # batch so the cluster accepts (batch often rejects 0-GPU groups).
+            if heterogeneous and server_config is not None and cluster_config.get("cpu_partition"):
+                sandbox_partition = cluster_config["cpu_partition"]
+                sandbox_gpus = 0
+            elif heterogeneous and server_config is not None:
+                sandbox_partition = partition
+                sandbox_gpus = 1
+            else:
+                sandbox_partition = partition
+                sandbox_gpus = 0
             sandbox_executor = get_executor(
                 cluster_config=cluster_config,
                 container=cluster_config["containers"]["sandbox"],
                 num_nodes=executors[0].nodes if cluster_config["executor"] == "slurm" else 1,
                 tasks_per_node=1,
-                gpus_per_node=0,
-                partition=partition,
+                gpus_per_node=sandbox_gpus,
+                partition=sandbox_partition,
                 mounts=None if keep_mounts_for_sandbox else [],
                 dependencies=dependencies,
                 job_name=task_name,
@@ -633,11 +701,16 @@ def add_task(
                 total_het_groups=total_het_groups,
                 overlap=True,
                 with_ray=with_ray,
+                ray_template=ray_template,
             )
             executors.append(sandbox_executor)
             het_group_indices.append(het_group)
         het_group += 1
         LOG.info("Sandbox command: %s", commands[-1])
+
+    # If server was not added first (client needs GPUs or server does not need GPUs), add server(s) now.
+    if server_config is not None and not server_goes_first:
+        add_server_tasks()
 
     if cluster_config["executor"] != "none":
         tunnel = get_tunnel(cluster_config)

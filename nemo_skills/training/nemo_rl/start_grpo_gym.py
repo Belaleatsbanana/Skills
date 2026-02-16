@@ -199,12 +199,27 @@ The validation set you pass in will directly be used for validation with no addi
         initial_global_config_dict=config["env"]["nemo_gym"],
     )
 
+    # Pass JUDGE_SERVER_ARGS and SLURM_MASTER_NODE_HET_GROUP_* into the NemoGym Ray actor
+    # so math_with_judge can use the separate judge vLLM (OpenAI path) instead of policy_model.
+    _ray_env_vars = {}
+    if os.environ.get("JUDGE_SERVER_ARGS"):
+        _ray_env_vars["JUDGE_SERVER_ARGS"] = os.environ["JUDGE_SERVER_ARGS"]
+    for _k, _v in os.environ.items():
+        if _k.startswith("SLURM_MASTER_NODE_HET_GROUP_"):
+            _ray_env_vars[_k] = _v
+    _n_het = sum(1 for _k in _ray_env_vars if _k.startswith("SLURM_MASTER_NODE_HET_GROUP_"))
+    print(
+        f"[NemoGym] Judge env in driver: JUDGE_SERVER_ARGS={'set' if _ray_env_vars.get('JUDGE_SERVER_ARGS') else 'not set'}, "
+        f"SLURM_MASTER_NODE_HET_GROUP_* count={_n_het}. Passing to actor: {bool(_ray_env_vars)}."
+    )
+    _runtime_env = {
+        "py_executable": get_actor_python_env("nemo_rl.environments.nemo_gym.NemoGym"),
+    }
+    if _ray_env_vars:
+        _runtime_env["env_vars"] = _ray_env_vars
+
     # Register NemoGym environment
-    nemo_gym = NemoGym.options(
-        runtime_env={
-            "py_executable": get_actor_python_env("nemo_rl.environments.nemo_gym.NemoGym"),
-        }
-    ).remote(nemo_gym_config)
+    nemo_gym = NemoGym.options(runtime_env=_runtime_env).remote(nemo_gym_config)
 
     # Blocking wait for NeMo-Gym to spin up
     ray.get(nemo_gym.health_check.remote())
