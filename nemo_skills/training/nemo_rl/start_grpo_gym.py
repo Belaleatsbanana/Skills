@@ -207,6 +207,8 @@ The validation set you pass in will directly be used for validation with no addi
     for _k, _v in os.environ.items():
         if _k.startswith("SLURM_MASTER_NODE_HET_GROUP_"):
             _ray_env_vars[_k] = _v
+    if os.environ.get("NEMO_SKILLS_SANDBOX_PORT"):
+        _ray_env_vars["NEMO_SKILLS_SANDBOX_PORT"] = os.environ["NEMO_SKILLS_SANDBOX_PORT"]
     _n_het = sum(1 for _k in _ray_env_vars if _k.startswith("SLURM_MASTER_NODE_HET_GROUP_"))
     print(
         f"[NemoGym] Judge env in driver: JUDGE_SERVER_ARGS={'set' if _ray_env_vars.get('JUDGE_SERVER_ARGS') else 'not set'}, "

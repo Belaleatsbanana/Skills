@@ -556,24 +556,40 @@ def add_task(
         if not is_mounted_filepath(cluster_config, env_vars["HF_HOME"]):
             raise RuntimeError(f"Invalid cluster_config: HF_HOME={env_vars['HF_HOME']} is not a mounted path.")
 
-    het_group = 0
-    het_group_indices = []
-    total_het_groups = (n_servers if server_config is not None else 0) + bool(cmd) + with_sandbox
-
-    LOG.info("Adding a task with commands:")
-
-    commands = []
-    executors = []
-
-    # For ray heterogenous jobs, nemo-run may assume the first het group is the main task.
-    # So we schedule server first only when the main task does not need GPUs (server gets GPU partition).
-    # Callers (e.g. grpo_gym) can pass server_goes_first_override=True so judge is up before training.
+    # Compute server_goes_first early — needed for het_group_num_nodes pre-computation below.
     server_needs_gpus = server_config is not None and int(server_config.get("num_gpus", 0)) > 0
     client_num_gpus = num_gpus or 0
     if server_goes_first_override is not None:
         server_goes_first = server_goes_first_override
     else:
         server_goes_first = server_needs_gpus and not client_num_gpus
+
+    het_group = 0
+    het_group_indices = []
+    het_group_num_nodes = {}  # het_group_index -> num_nodes for that group
+    if heterogeneous and with_sandbox:
+        # Sandbox overlaps each het group instead of getting its own, so don't count it
+        total_het_groups = (n_servers if server_config is not None else 0) + bool(cmd)
+        # Pre-compute het_group_num_nodes so sandbox helper can look up node counts
+        _hg = 0
+        if server_goes_first and server_config is not None:
+            for _ in range(n_servers):
+                het_group_num_nodes[_hg] = server_config["num_nodes"]
+                _hg += 1
+        if cmd:
+            het_group_num_nodes[_hg] = num_nodes
+            _hg += 1
+        if not server_goes_first and server_config is not None:
+            for _ in range(n_servers):
+                het_group_num_nodes[_hg] = server_config["num_nodes"]
+                _hg += 1
+    else:
+        total_het_groups = (n_servers if server_config is not None else 0) + bool(cmd) + with_sandbox
+
+    LOG.info("Adding a task with commands:")
+
+    commands = []
+    executors = []
 
     def add_server_tasks():
         nonlocal het_group
@@ -677,44 +693,49 @@ def add_task(
                     override = override[11:]
                 sandbox_env_updates["PYTHONPATH"] = override + ":/app"
 
-        with temporary_env_update(cluster_config, sandbox_env_updates):
-            commands.append(get_sandbox_command(cluster_config))
-            # In a het job with judge: use cpu_partition (0 GPU) when set, else request 1 GPU on
-            # batch so the cluster accepts (batch often rejects 0-GPU groups).
-            if heterogeneous and server_config is not None and cluster_config.get("cpu_partition"):
-                sandbox_partition = cluster_config["cpu_partition"]
-                sandbox_gpus = 0
-            elif heterogeneous and server_config is not None:
-                sandbox_partition = partition
-                sandbox_gpus = 1
-            else:
-                sandbox_partition = partition
-                sandbox_gpus = 0
-            sandbox_executor = get_executor(
-                cluster_config=cluster_config,
-                container=cluster_config["containers"]["sandbox"],
-                num_nodes=executors[0].nodes if cluster_config["executor"] == "slurm" else 1,
-                tasks_per_node=1,
-                gpus_per_node=sandbox_gpus,
-                partition=sandbox_partition,
-                mounts=None if keep_mounts_for_sandbox else [],
-                dependencies=dependencies,
-                job_name=task_name,
-                log_dir=log_dir,
-                log_prefix="sandbox",
-                extra_package_dirs=extra_package_dirs,
-                sbatch_kwargs=sbatch_kwargs,
-                heterogeneous=heterogeneous,
-                het_group=het_group,
-                total_het_groups=total_het_groups,
-                overlap=True,
-                with_ray=with_ray,
-                ray_template=ray_template,
-            )
-            executors.append(sandbox_executor)
-            het_group_indices.append(het_group)
-        het_group += 1
-        LOG.info("Sandbox command: %s", commands[-1])
+        def add_sandbox_for_group(target_hg, log_suffix=""):
+            """Add a sandbox command+executor overlapping the given het group."""
+            with temporary_env_update(cluster_config, sandbox_env_updates):
+                commands.append(get_sandbox_command(cluster_config))
+                if heterogeneous:
+                    # Overlapping sandbox shares the target group's node allocation, 0 GPUs
+                    sandbox_num_nodes = het_group_num_nodes[target_hg]
+                    sandbox_gpus = 0
+                else:
+                    sandbox_num_nodes = executors[0].nodes if cluster_config["executor"] == "slurm" else 1
+                    sandbox_gpus = 0
+                sandbox_executor = get_executor(
+                    cluster_config=cluster_config,
+                    container=cluster_config["containers"]["sandbox"],
+                    num_nodes=sandbox_num_nodes,
+                    tasks_per_node=1,
+                    gpus_per_node=sandbox_gpus,
+                    partition=partition,
+                    mounts=None if keep_mounts_for_sandbox else [],
+                    dependencies=dependencies,
+                    job_name=task_name,
+                    log_dir=log_dir,
+                    log_prefix=f"sandbox{log_suffix}",
+                    extra_package_dirs=extra_package_dirs,
+                    sbatch_kwargs=sbatch_kwargs,
+                    heterogeneous=heterogeneous,
+                    het_group=target_hg,
+                    total_het_groups=total_het_groups,
+                    overlap=True,
+                    with_ray=with_ray,
+                    ray_template=ray_template,
+                )
+                executors.append(sandbox_executor)
+                het_group_indices.append(target_hg)
+            LOG.info("Sandbox command (het_group=%s): %s", target_hg, commands[-1])
+
+        if heterogeneous:
+            # Overlap sandbox with each het group so every node has localhost sandbox access
+            for target_hg in sorted(het_group_num_nodes.keys()):
+                add_sandbox_for_group(target_hg, log_suffix=f"_hg{target_hg}")
+        else:
+            add_sandbox_for_group(het_group)
+            het_group += 1
 
     # If server was not added first (client needs GPUs or server does not need GPUs), add server(s) now.
     if server_config is not None and not server_goes_first:
