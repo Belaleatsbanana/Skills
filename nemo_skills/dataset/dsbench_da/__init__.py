@@ -27,7 +27,7 @@ GENERATION_ARGS = (
     '++eval_config.relaxed=true '
 )
 
-# # Always run LLM judge for DSBench (some answers hard to verify symbolically)
+# # Recommend running LLM judge to verify dicts and lists correctly 
 # JUDGE_PIPELINE_ARGS = {
 #     "generation_type": "math_judge",
 #     "model": "gpt-4.1",
