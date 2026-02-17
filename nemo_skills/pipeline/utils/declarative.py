@@ -277,7 +277,7 @@ class Command:
         if self.avoid_nemo_run_code:
             prelude_lines.append('if [ -n "${PYTHONPATH:-}" ]; then')
             prelude_lines.append(
-                "  export PYTHONPATH=\"$(echo \"$PYTHONPATH\" | tr ':' '\\n' | grep -v '^/nemo_run/code$' | paste -sd: -)\""
+                "  export PYTHONPATH=\"$(echo \"$PYTHONPATH\" | tr ':' '\\n' | grep -v '^/nemo_run/code' | paste -sd: -)\""
             )
             prelude_lines.append("fi")
 

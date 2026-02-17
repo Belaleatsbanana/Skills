@@ -604,6 +604,9 @@ while true; do
     sleep 10
 done
 
+# Re-enable pipefail for the actual rollout collection
+set -o pipefail
+
 echo "=== Running rollout collection ==="
 echo "Input file: {self.input_file}"
 echo "Output file: {self.output_file}"
@@ -930,9 +933,9 @@ done
 if [ "$BEST_COUNT" -lt "$NUM_NODES" ]; then
     echo "ERROR: Could not discover enough node hostnames for NUM_NODES=$NUM_NODES"
     echo "  Best candidate: ${{BEST_VAR_NAME:-<none>}} -> $BEST_COUNT nodes: '${{BEST_NODES_STR:-}}'"
-        echo "  SLURM_JOB_NODELIST='${{SLURM_JOB_NODELIST:-}}'"
-        echo "  SLURM_NODELIST='${{SLURM_NODELIST:-}}'"
-        echo "  SLURM_STEP_NODELIST='${{SLURM_STEP_NODELIST:-}}'"
+    echo "  SLURM_JOB_NODELIST='${{SLURM_JOB_NODELIST:-}}'"
+    echo "  SLURM_NODELIST='${{SLURM_NODELIST:-}}'"
+    echo "  SLURM_STEP_NODELIST='${{SLURM_STEP_NODELIST:-}}'"
     exit 1
 fi
 
@@ -961,7 +964,7 @@ for NODE_IDX in $(seq 0 $((NUM_NODES - 1))); do
             ATTEMPT=$((ATTEMPT + 1))
             if curl -s "${{URL}}/health" > /dev/null 2>&1; then
                 ELAPSED=$(($(date +%s) - START_TIME))
-                echo "  ✓ Server $GLOBAL_IDX is ready (after ${{ELAPSED}}s total)"
+                echo "  Server $GLOBAL_IDX is ready (after ${{ELAPSED}}s total)"
                 break
             fi
             # Log progress every 60 seconds
