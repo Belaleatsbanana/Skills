@@ -19,3 +19,8 @@ from nemo_skills.pipeline.app import app
 nemo_rl_app = Typer(help="nemo_rl training pipelines (run 'ns nemo_rl --help' for more information)")
 
 app.add_typer(nemo_rl_app, name="nemo_rl")
+
+# Shell snippet to detect the NeMo-RL install path at runtime.
+# Older images/mounts use /opt/NeMo-RL (uppercase), newer ones use /opt/nemo-rl (lowercase).
+# Check for uppercase first to preserve backward compatibility with user mounts.
+DETECT_NEMO_RL_DIR = "NEMO_RL_DIR=$([ -d /opt/NeMo-RL ] && echo /opt/NeMo-RL || echo /opt/nemo-rl)"
