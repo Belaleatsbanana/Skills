@@ -188,3 +188,63 @@ def test_grpo_nemo_rl(backend):
     )["_all_"]["pass@1"]
     # only checking the total, since model is tiny
     assert metrics["num_entries"] == 10
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("backend", ["fsdp"])
+def test_grpo_gym_nemo_rl(backend):
+    model_path = require_env_var("NEMO_SKILLS_TEST_HF_MODEL")
+    model_type = require_env_var("NEMO_SKILLS_TEST_MODEL_TYPE")
+
+    output_dir = f"/tmp/nemo-skills-tests/{model_type}/test-grpo-gym-nemo-rl/{backend}"
+    gym_data = "/nemo_run/code/tests/data/small-grpo-gym-data.test"
+
+    docker_rm(["/tmp/ray/ray_current_cluster", "/mnt/datadrive/nemo-skills-test-data/hf-cache/nemo_rl/", output_dir])
+
+    grpo_nemo_rl(
+        ctx=wrap_arguments(
+            "++grpo.num_prompts_per_step=2 "
+            "++policy.max_total_sequence_length=256 "
+            "++policy.dtensor_cfg.tensor_parallel_size=1 "
+            "++policy.generation.vllm_cfg.tensor_parallel_size=1 "
+            "++checkpointing.save_period=2 "
+            "++policy.train_global_batch_size=2 "
+            "++policy.train_micro_batch_size=1 "
+            "++env.nemo_gym.config_paths=["
+            "responses_api_models/vllm_model/configs/vllm_model_for_training.yaml,"
+            "resources_servers/math_with_judge/configs/math_with_judge.yaml] "
+        ),
+        cluster="test-local",
+        config_dir=Path(__file__).absolute().parent,
+        expname="test-grpo-gym-nemo-rl",
+        output_dir=output_dir,
+        hf_model=model_path,
+        num_nodes=1,
+        num_gpus=1,
+        training_data=gym_data,
+        validation_data=gym_data,
+        backend=backend,
+        use_gym=True,
+        disable_wandb=True,
+    )
+
+    # checking that the final model can be used for evaluation
+    eval(
+        ctx=wrap_arguments("++max_samples=10 ++inference.tokens_to_generate=10"),
+        cluster="test-local",
+        config_dir=Path(__file__).absolute().parent,
+        model=f"{output_dir}/final_hf_model",
+        server_type="vllm",
+        output_dir=f"{output_dir}/evaluation",
+        benchmarks="gsm8k",
+        server_gpus=1,
+        server_nodes=1,
+        num_jobs=1,
+        server_args="--enforce-eager",
+    )
+
+    metrics = ComputeMetrics(benchmark="gsm8k").compute_metrics(
+        [f"{output_dir}/evaluation/eval-results/gsm8k/output.jsonl"],
+    )["_all_"]["pass@1"]
+    # only checking the total, since model is tiny
+    assert metrics["num_entries"] == 10
