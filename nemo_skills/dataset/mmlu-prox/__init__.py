@@ -19,8 +19,9 @@ METRICS_TYPE = "multichoice"
 examples_type = "{examples_type}"
 
 # Which branch runs is determined by examples_type above (None → default, no few-shot).
+# Use {{ and }} so Hydra/OmegaConf treat them as literal braces; config value becomes {examples_type} for per-row format.
 GENERATION_ARGS = (
-    "++prompt_config=generic/general-boxed ++examples_type='{examples_type}' ++eval_type=multichoice"
+    "++prompt_config=generic/general-boxed ++examples_type='{{examples_type}}' ++eval_type=multichoice"
     if examples_type is not None
     else "++prompt_config=generic/default ++eval_type=multichoice"
 )
