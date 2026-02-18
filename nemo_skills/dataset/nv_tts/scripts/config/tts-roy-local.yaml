@@ -5,12 +5,14 @@ cluster: local
 container: nvcr.io/nvidia/nemo:25.11
 partition: non_applicable
 mount_paths: /home/rfejgin:/home/rfejgin,/home/rfejgin/workspace:/workspace,/datap/misc/Datasets:/Data,/datap:/datap
+# Will be combined with `expname` provided to `run_tts_eval.py` to form the final output directory
 output_dir: /workspace/nemo-skills/eval_results
 
-# NeMo code path for generation server (adds to PYTHONPATH)
+# NeMo code path (adds to PYTHONPATH).
+# Generation: generation_code_path OR generation_code_repo + generation_code_commit.
+# Scoring defaults to the generation code path; override with scoring_code_path / scoring_code_repo + scoring_code_commit.
 generation_code_path: /home/rfejgin/NeMo_LT/NeMo
-# NeMo code path for scoring (adds to PYTHONPATH)
-scoring_code_path: /home/rfejgin/NeMo_LT/NeMo
+#scoring_code_path: /home/rfejgin/NeMo_LT/NeMo
 # Generation settings (ns eval arguments)
 generation:
   benchmarks: nv_tts.libritts_seen #,nv_tts.libritts_test_clean #,nv_tts.riva_hard_digits,nv_tts.riva_hard_letters,nv_tts.riva_hard_money,nv_tts.riva_hard_short,nv_tts.vctk

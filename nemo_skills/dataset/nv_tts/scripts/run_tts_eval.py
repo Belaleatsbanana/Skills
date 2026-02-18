@@ -168,15 +168,34 @@ def main():
     hf_token = os.environ.get("HF_TOKEN", "")
     output_dir = os.path.join(cfg["output_dir"], args.expname)
 
-    # Resolve code_path: explicit path takes precedence, then repo+commit, then legacy fields
-    code_path = cfg.get("code_path") or cfg.get("nemo_code_path", "")
-    if not code_path and cfg.get("code_repo"):
-        cluster_config = get_cluster_config(cfg["cluster"])
-        tunnel = get_tunnel(cluster_config)
-        code_path = resolve_code_repo(
-            cfg["code_repo"], cfg["code_commit"], output_dir, tunnel,
-        )
-        print(f"  Resolved code path: {code_path}")
+    # Resolve code paths for generation and scoring.
+    # Generation: generation_code_path OR generation_code_repo + generation_code_commit.
+    # Scoring: scoring_code_path OR scoring_code_repo + scoring_code_commit (optional, defaults to generation).
+    cluster_config = None
+    tunnel = None
+
+    def _get_tunnel():
+        nonlocal cluster_config, tunnel
+        if tunnel is None:
+            cluster_config = get_cluster_config(cfg["cluster"])
+            tunnel = get_tunnel(cluster_config)
+        return tunnel
+
+    def _resolve_stage_code_path(stage_prefix: str) -> str:
+        """Resolve code_path for a stage (e.g. 'generation' or 'scoring')."""
+        path = cfg.get(f"{stage_prefix}_code_path", "")
+        if path:
+            return path
+        repo = cfg.get(f"{stage_prefix}_code_repo", "")
+        commit = cfg.get(f"{stage_prefix}_code_commit", "")
+        if repo:
+            resolved = resolve_code_repo(repo, commit, output_dir, _get_tunnel())
+            print(f"  Resolved {stage_prefix} code path: {resolved}")
+            return resolved
+        return ""
+
+    generation_code_path = _resolve_stage_code_path("generation")
+    scoring_code_path = _resolve_stage_code_path("scoring") or generation_code_path
 
     gen_exp_name = None
 
@@ -185,7 +204,7 @@ def main():
         print("\n" + "=" * 60)
         print("Stage 1: GENERATION")
         print("=" * 60)
-        gen_exp = run_generation(cfg, args.expname, output_dir, code_path=code_path)
+        gen_exp = run_generation(cfg, args.expname, output_dir, code_path=generation_code_path)
         # Extract experiment name/id for dependency tracking
         gen_exp_name = args.expname  # The expname we passed to ns_eval
         print(f"Generation submitted: {gen_exp}")
@@ -219,7 +238,7 @@ def main():
             # Base scoring command arguments (shared between chunked and non-chunked)
             base_scoring_args = (
                 f"HF_TOKEN={hf_token} "
-                f"PYTHONPATH={code_path}:$PYTHONPATH "
+                f"PYTHONPATH={scoring_code_path}:$PYTHONPATH "
                 f"python -m nemo_skills.dataset.nv_tts.scripts.score "
                 f"--results_dir {output_dir} "
                 f"--benchmark {benchmark_dir} "

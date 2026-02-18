@@ -3,19 +3,22 @@
 # Cluster and execution settings (shared across all stages)
 cluster: eos-roy
 container: /lustre/fsw/convai_convaird_nemo-speech/data/containers/nemo_25.11-260122.sqsh
-partition: batch # interactive
+partition: batch # batch # interactive
 mount_paths: /lustre:/lustre
-output_dir: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/skills/eval_results
+# Will be combined with `expname` provided to `run_tts_eval.py` to form the final output directory
+output_dir: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/skills/outputs
 
-# NeMo code path for generation server (adds to PYTHONPATH)
-generation_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/gitrepos/NeMo_rfejgin/NeMo
-
-# NeMo code path for scoring (adds to PYTHONPATH)
-scoring_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/rfejgin/gitrepos/NeMo_rfejgin/NeMo
+# NeMo code path (adds to PYTHONPATH).
+# Generation: generation_code_path OR generation_code_repo + generation_code_commit.
+# Scoring defaults to the generation code path; override with scoring_code_path / scoring_code_repo + scoring_code_commit.
+generation_code_repo: https://github.com/rfejgin/NeMo.git
+generation_code_commit: 0494d6284346ab5d8e12e7e0335789591cda5b9b
+#scoring_code_repo: https://github.com/rfejgin/NeMo.git
+#scoring_code_commit: <sha>
 
 # Generation settings (ns eval arguments)
 generation:
-  benchmarks: nv_tts.libritts_test_clean,nv_tts.libritts_seen,nv_tts.riva_hard_digits,nv_tts.riva_hard_letters,nv_tts.riva_hard_money,nv_tts.riva_hard_short,nv_tts.vctk
+  benchmarks: nv_tts.vctk # nv_tts.libritts_test_clean,nv_tts.libritts_seen,nv_tts.riva_hard_digits,nv_tts.riva_hard_letters,nv_tts.riva_hard_money,nv_tts.riva_hard_short,nv_tts.vctk
   model: my-checkpoint-symbolic-name # or HF path like nvidia/magpie_tts_multilingual_357m
   server_type: generic
   server_gpus: 1

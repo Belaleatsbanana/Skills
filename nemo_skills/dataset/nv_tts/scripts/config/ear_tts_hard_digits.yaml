@@ -4,15 +4,18 @@
 cluster: eos
 partition: batch
 mount_paths: /lustre:/lustre
+# Will be combined with `expname` provided to `run_tts_eval.py` to form the final output directory
 output_dir: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/tmp/nv_tts_eval_ear_tts_hard_digits_a2
 
 # === COPY THESE FROM OCI TO EOS ===
 # Container (copy from: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/nemo_duplex_november_eartts.sqsh)
 container: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/containters/nemo_duplex_november_eartts.sqsh
 
-# NeMo code paths (separate for generation and scoring)
-generation_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/code/NeMo-release_not_rebased
-scoring_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/experimenta/tts_eval/NeMo
+# NeMo code path (adds to PYTHONPATH).
+# Generation: generation_code_path OR generation_code_repo + generation_code_commit.
+# Scoring defaults to the generation code path; override with scoring_code_path / scoring_code_repo + scoring_code_commit.
+generation_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/experimenta/tts_eval/NeMo
+#scoring_code_path: /lustre/fsw/llmservice_nemo_speechlm/users/vmendelev/experimenta/tts_eval/NeMo
 
 # Generation settings
 generation:
