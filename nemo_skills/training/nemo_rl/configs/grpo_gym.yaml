@@ -1,3 +1,4 @@
+# copied and edited from https://github.com/NVIDIA-NeMo/RL/blob/nano-v3/examples/nemo_gym/grpo_nanov3.yaml
 grpo:
   num_prompts_per_step: 128
   num_generations_per_prompt: 16
