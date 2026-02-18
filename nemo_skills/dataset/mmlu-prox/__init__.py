@@ -17,4 +17,6 @@ METRICS_TYPE = "multichoice"
 
 # 5-shot only: resolve few-shot set per-row via `examples_type` field from dataset entries.
 # Escaped quotes keep `{examples_type}` as a string for Hydra parsing, then prompt code formats it per row.
-GENERATION_ARGS = "++prompt_config=generic/general-boxed ++eval_type=multichoice"
+GENERATION_ARGS = (
+    "++prompt_config=multilingual/mmlu-prox ++examples_type=\\'{examples_type}\\' ++eval_type=multichoice"
+)

@@ -42,12 +42,14 @@ def _format_validation_row_to_few_shot(entry, language, lang_libs) -> dict:
     """
     category = entry["category"].replace(" ", "_")
     ld = lang_libs[language]
-    # Problem: lang_dict[0]\n + question + \n + lang_dict[1]\n + "A. opt\n" ... (harness format)
+    # Problem text matches test rows from prepare.py:
+    # question marker + question + options marker + options + answer prompt.
     problem = f"{ld[0]}\n{entry['question']}\n{ld[1]}\n"
     for i in range(10):
         opt = entry.get(f"option_{i}")
         if opt is not None:
             problem += f"{chr(ord('A') + i)}. {opt}\n"
+    problem += f"{ld[2]}\n"
     # Solution: including_answer=True path — cot_content with [4] replaced by [2], then "\n\n"
     cot_content = entry.get("cot_content") or ""
     if cot_content:

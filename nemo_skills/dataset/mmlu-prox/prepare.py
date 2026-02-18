@@ -90,14 +90,12 @@ def format_entry(entry, language, lang_libs, lang_subjects):
         del entry[f"option_{i}"]
 
     subject = lang_subjects[language][category]
-    description = lang_libs[language][3].format(subject=subject, ans_suffix=lang_libs[language][5].format("X")) + "\n"
+    description = lang_libs[language][3].format(subject=subject, ans_suffix=lang_libs[language][5].format("X"))
 
     def get_mcq_fields(question, choices, language):
         options_dict = {chr(ord("A") + i): option for i, option in enumerate(choices)}
         options_text = "\n".join(f"{letter}. {option}" for letter, option in options_dict.items())
-        question_text = (
-            f"{description}{lang_libs[language][0]}\n{question}\n{lang_libs[language][1]}\n{options_text}\n"
-        )
+        question_text = f"{lang_libs[language][0]}\n{question}\n{lang_libs[language][1]}\n{options_text}\n{lang_libs[language][2]}\n"
         return {
             "question": question_text,
             "problem": question_text,  # alias for compatibility with generic/general-boxed few-shot prompt
@@ -114,6 +112,7 @@ def format_entry(entry, language, lang_libs, lang_subjects):
     return {
         "expected_answer": entry["answer"],
         "examples_type": f"mmlu_prox_few_shot_{language}",
+        "description": description,
         "extract_from_boxed": False,
         "extract_regex": extract_regex,
         "subset_for_metrics": language,
