@@ -2,12 +2,12 @@
 # One stage only: assess_problem_quality_with_solution — input = problem list.
 
 cluster: dfw
-base_output_dir: /workspace/rl-data-clean/proof
+base_output_dir: /workspace/rl-data-clean/non-proof
 model_name: DeepSeek-V3.2
 expname: solve-then-assess-${model_name}
 suffix: deepseek
 
-input_file: /lustre/fsw/portfolios/llmservice/projects/llmservice_nemo_reasoning/users/wedu/workspace/rl-data-clean/proof/check_contamination/dedup.jsonl
+input_file: /lustre/fsw/portfolios/llmservice/users/wedu/workspace/rl-data-clean/non-proof/check_contamination/dedup.jsonl
 
 generate_kwargs:
   model: /hf_models/${model_name}

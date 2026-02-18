@@ -72,7 +72,7 @@ def solve_proof_for_quality(cluster, expname, run_after, stage_config, **kwargs)
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
-        dependent_jobs=2,
+        dependent_jobs=4,
         **_deepseek_stage_kwargs(stage_config),
     )
 
@@ -109,7 +109,7 @@ def assess_problem_quality_with_solution(cluster, expname, run_after, stage_conf
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
-        dependent_jobs=2,
+        dependent_jobs=4,
         **_deepseek_stage_kwargs(stage_config),
     )
 
