@@ -50,10 +50,16 @@ def _format_validation_row_to_few_shot(entry, language, lang_libs) -> dict:
         if opt is not None:
             problem += f"{chr(ord('A') + i)}. {opt}\n"
     problem += f"{ld[2]}\n"
-    # Solution: including_answer=True path — cot_content with [4] replaced by [2], then "\n\n"
+    # Solution: keep exactly one answer-prefix line per few-shot example.
+    # The problem block already ends with ld[2], so strip any leading
+    # answer prefix from cot_content to avoid duplicates.
     cot_content = entry.get("cot_content") or ""
     if cot_content:
-        solution = cot_content.replace(ld[4], ld[2]) + "\n\n"
+        solution = cot_content.lstrip()
+        for prefix in (ld[4], ld[2]):
+            if solution.startswith(prefix):
+                solution = solution[len(prefix) :].lstrip()
+        solution = solution + "\n\n"
     else:
         solution = ld[5].format(entry["answer"])
     return {"problem": problem, "solution": solution, "topic": category}
