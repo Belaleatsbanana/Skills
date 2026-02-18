@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+# copied and edited from https://github.com/NVIDIA-NeMo/RL/blob/nano-v3/examples/nemo_gym/run_grpo_nemo_gym.py
 """
 GRPO training with NemoGym integration (no proxy server).
 Direct environment interaction for quick debugging and simple tasks.
