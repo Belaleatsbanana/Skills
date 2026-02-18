@@ -32,6 +32,19 @@ Usage:
         --codec_model /path/to/codec \\
         --port 8000
 
+Backend-specific options are passed as extra CLI flags and forwarded to the
+backend's config dataclass automatically. For example:
+
+    --server_args "--backend magpie_tts --codec_model /path --use_cfg --cfg_scale 2.5"
+
+Any flag not recognized by the server itself is parsed generically:
+    --flag           -> {"flag": True}
+    --key value      -> {"key": <auto-typed value>}
+    --key=value      -> {"key": <auto-typed value>}
+    --no_flag        -> {"flag": False}
+
+See each backend's config class for available options (e.g. MagpieTTSConfig).
+
 Example YAML config (backend_config.yaml):
     backend: magpie_tts
     model_path: /path/to/model
@@ -111,51 +124,63 @@ def load_yaml_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def build_config_from_args(args) -> dict:
-    """Build config dict from CLI arguments (backward-compatible mode)."""
-    config_dict = {
-        "model_path": args.model,
-        "device": args.device,
-        "dtype": args.dtype,
-        "max_new_tokens": args.max_new_tokens,
-        "temperature": args.temperature,
-        "top_p": args.top_p,
-    }
+def _coerce_value(value: str):
+    """Try to coerce a string value to int, float, or bool."""
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
+    return value
 
-    if args.codec_model:
-        config_dict["codec_model_path"] = args.codec_model
 
-    # Pass through any backend-specific args that were set
-    for key in [
-        "top_k",
-        "use_cfg",
-        "cfg_scale",
-        "decoder_only_model",
-        "phoneme_input_type",
-        "use_local_transformer",
-        "hparams_file",
-        "checkpoint_file",
-        "legacy_codebooks",
-        "legacy_text_conditioning",
-        "hparams_from_wandb",
-        "prompt_format",
-        "ignore_system_prompt",
-        "silence_padding_sec",
-        "config_path",
-        "llm_checkpoint_path",
-        "tts_checkpoint_path",
-        "speaker_reference",
-        "num_frames_per_inference",
-    ]:
-        val = getattr(args, key, None)
-        if val is not None:
-            config_dict[key] = val
+def parse_extra_args(extra_args: list) -> dict:
+    """Convert unknown CLI args to a config dict.
 
-    # Handle store_true flags
-    if getattr(args, "no_decode_audio", False):
-        config_dict["decode_audio"] = False
+    Handles these patterns:
+        --flag           -> {"flag": True}
+        --key value      -> {"key": <auto-typed value>}
+        --key=value      -> {"key": <auto-typed value>}
+        --no_flag        -> {"flag": False}  (strip no_ prefix)
+    """
+    result = {}
+    i = 0
+    while i < len(extra_args):
+        arg = extra_args[i]
+        if not arg.startswith("--"):
+            i += 1
+            continue
 
-    return config_dict
+        # Handle --key=value
+        if "=" in arg:
+            key, value = arg[2:].split("=", 1)
+            result[key] = _coerce_value(value)
+            i += 1
+            continue
+
+        key = arg[2:]
+
+        # Check if next token is a value (not another flag)
+        if i + 1 < len(extra_args) and not extra_args[i + 1].startswith("--"):
+            result[key] = _coerce_value(extra_args[i + 1])
+            i += 2
+            continue
+
+        # Bare flag: --no_X -> {X: False}, otherwise {key: True}
+        if key.startswith("no_"):
+            result[key[3:]] = False
+        else:
+            result[key] = True
+        i += 1
+
+    return result
 
 
 def main():
@@ -187,29 +212,6 @@ def main():
     parser.add_argument("--device", default="cuda", help="Device to use")
     parser.add_argument("--dtype", default="bfloat16", help="Model dtype")
 
-    # Backend-specific options (for CLI backward compatibility)
-    parser.add_argument("--codec_model", default=None, help="Path to codec model")
-    parser.add_argument("--prompt_format", default=None, help="Prompt format")
-    parser.add_argument("--phoneme_input_type", default=None, help="Phoneme input type")
-    parser.add_argument("--decoder_only_model", action="store_true", default=None, help="Decoder-only model")
-    parser.add_argument("--use_local_transformer", action="store_true", default=None, help="Local transformer")
-    parser.add_argument("--top_k", type=int, default=None, help="Top-k sampling")
-    parser.add_argument("--use_cfg", action="store_true", default=None, help="Classifier-free guidance")
-    parser.add_argument("--cfg_scale", type=float, default=None, help="CFG scale")
-    parser.add_argument("--hparams_file", default=None, help="Path to hparams.yaml")
-    parser.add_argument("--checkpoint_file", default=None, help="Path to .ckpt checkpoint")
-    parser.add_argument("--legacy_codebooks", action="store_true", default=None, help="Legacy codebook indices")
-    parser.add_argument("--legacy_text_conditioning", action="store_true", default=None, help="Legacy text conditioning")
-    parser.add_argument("--hparams_from_wandb", action="store_true", default=None, help="hparams from wandb")
-    parser.add_argument("--ignore_system_prompt", action="store_true", default=None, help="Ignore system prompts")
-    parser.add_argument("--silence_padding_sec", type=float, default=None, help="Silence padding seconds")
-    parser.add_argument("--config_path", default=None, help="Backend YAML config path")
-    parser.add_argument("--llm_checkpoint_path", default=None, help="LLM checkpoint path")
-    parser.add_argument("--tts_checkpoint_path", default=None, help="TTS checkpoint path")
-    parser.add_argument("--speaker_reference", default=None, help="Speaker reference audio path")
-    parser.add_argument("--num_frames_per_inference", type=int, default=None, help="Frames per inference")
-    parser.add_argument("--no_decode_audio", action="store_true", help="Disable audio output")
-
     # Environment setup
     parser.add_argument("--code_path", default=None, help="Path to add to PYTHONPATH")
     parser.add_argument("--hack_path", default=None, help="Path to safetensors patch")
@@ -217,7 +219,9 @@ def main():
     # Debug
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
 
-    args, extra_args = parser.parse_known_args()
+    # Parse known args; everything else is backend-specific
+    args, unknown = parser.parse_known_args()
+    extra_config = parse_extra_args(unknown)
 
     # Setup environment
     setup_pythonpath(args.code_path)
@@ -241,12 +245,23 @@ def main():
         # CLI overrides
         if args.model:
             config_dict["model_path"] = args.model
+        # Merge any extra CLI args into YAML config (CLI wins)
+        config_dict.update(extra_config)
     else:
         # CLI args mode (backward compatible)
         if not args.model:
             parser.error("--model is required when not using --config")
         backend_type = args.backend
-        config_dict = build_config_from_args(args)
+        config_dict = {
+            "model_path": args.model,
+            "device": args.device,
+            "dtype": args.dtype,
+            "max_new_tokens": args.max_new_tokens,
+            "temperature": args.temperature,
+            "top_p": args.top_p,
+        }
+        # Merge backend-specific args from extra CLI flags
+        config_dict.update(extra_config)
 
     # Print configuration
     print("=" * 60)
@@ -260,6 +275,8 @@ def main():
     print(f"  Batch Timeout: {args.batch_timeout}s")
     if args.config:
         print(f"  Config: {args.config}")
+    if extra_config:
+        print(f"  Extra CLI Config: {extra_config}")
     print("=" * 60)
 
     # Import and run
