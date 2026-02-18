@@ -15,13 +15,13 @@
 
 METRICS_TYPE = "multichoice"
 
-# Few-shot: set to "{examples_type}" to enable 5-shot; set to None to disable. Default: off (None).
-examples_type = "{examples_type}"
+# Few-shot toggle:
+# - False (default): 0-shot using generic/default
+# - True: 5-shot using per-row examples_type from dataset rows
+ENABLE_FEW_SHOT = True
 
-# Which branch runs is determined by examples_type above (None → default, no few-shot).
-# Use {{ and }} so Hydra/OmegaConf treat them as literal braces; config value becomes {examples_type} for per-row format.
 GENERATION_ARGS = (
-    "++prompt_config=generic/general-boxed ++examples_type='{{examples_type}}' ++eval_type=multichoice"
-    if examples_type is not None
+    "++prompt_config=generic/general-boxed ++examples_type='{examples_type}' ++eval_type=multichoice"
+    if ENABLE_FEW_SHOT
     else "++prompt_config=generic/default ++eval_type=multichoice"
 )
