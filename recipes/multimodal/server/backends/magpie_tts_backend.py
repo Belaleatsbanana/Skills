@@ -29,6 +29,8 @@ class MagpieTTSConfig(BackendConfig):
     max_decoder_steps: int = 440
     use_local_transformer: bool = False
     output_sample_rate: int = 22050
+    save_codes: bool = False  # Save codec codes for FCD scoring
+    longform_mode: str = "auto"  # "auto" | "always" | "never" - longform inference mode
     # Checkpoint loading options (alternative to model_path .nemo file)
     hparams_file: Optional[str] = None
     checkpoint_file: Optional[str] = None
@@ -52,6 +54,8 @@ class MagpieTTSConfig(BackendConfig):
             "max_decoder_steps",
             "use_local_transformer",
             "output_sample_rate",
+            "save_codes",
+            "longform_mode",
             "hparams_file",
             "checkpoint_file",
             "legacy_codebooks",
@@ -164,25 +168,28 @@ class MagpieTTSBackend(InferenceBackend):
             )
         self._model, self._checkpoint_name = load_magpie_model(cfg, device=self.config.device)
 
-        self._runner = MagpieInferenceRunner(
-            self._model,
-            InferenceConfig(
-                temperature=self.tts_config.temperature,
-                topk=self.tts_config.top_k,
-                max_decoder_steps=self.tts_config.max_decoder_steps,
-                use_cfg=self.tts_config.use_cfg,
-                cfg_scale=self.tts_config.cfg_scale,
-                use_local_transformer=self.tts_config.use_local_transformer,
-                batch_size=16,
-            ),
+        # Build InferenceConfig with nested ModelInferenceParameters
+        from nemo.collections.tts.models.magpietts import ModelInferenceParameters
+
+        model_params = ModelInferenceParameters(
+            temperature=self.tts_config.temperature,
+            topk=self.tts_config.top_k,
+            cfg_scale=self.tts_config.cfg_scale,
+            max_decoder_steps=self.tts_config.max_decoder_steps,
         )
+        inference_config = InferenceConfig(
+            batch_size=16,
+            use_cfg=self.tts_config.use_cfg,
+            use_local_transformer=self.tts_config.use_local_transformer,
+            model_inference_parameters=model_params,
+            longform_mode=self.tts_config.longform_mode,
+        )
+
+        self._runner = MagpieInferenceRunner(self._model, inference_config)
 
         self._temp_dir = tempfile.mkdtemp(prefix="magpie_tts_")
         self.tts_config.output_sample_rate = self._model.sample_rate
         self._is_loaded = True
-        print(
-            f"[MagpieTTSBackend] Loaded: {self._checkpoint_name}, sr={self._model.sample_rate}, cfg={self.tts_config.use_cfg}"
-        )
 
     def _extract_json(self, text: str) -> dict:
         """Extract JSON object from text, skipping non-JSON parts."""
@@ -262,8 +269,9 @@ class MagpieTTSBackend(InferenceBackend):
             from nemo.collections.tts.modules.magpietts_inference.evaluate_generated_audio import load_evalset_config
 
             dataset = self._runner.create_dataset(load_evalset_config(config_path))
-            rtf_list, _ = self._runner.run_inference_on_dataset(
-                dataset, output_dir, save_cross_attention_maps=False, save_context_audio=False
+            rtf_list, *_ = self._runner.run_inference_on_dataset(
+                dataset, output_dir, save_cross_attention_maps=False, save_context_audio=False,
+                save_predicted_codes=self.tts_config.save_codes,
             )
 
             gen_time = time.time() - start_time
@@ -283,6 +291,31 @@ class MagpieTTSBackend(InferenceBackend):
                     sf.write(buf, audio, sr, format="WAV")
                     buf.seek(0)
                     dur = len(audio) / sr
+
+                    debug_info = {
+                        "checkpoint": self._checkpoint_name,
+                        "audio_duration_sec": dur,
+                        "rtf": gen_time / len(requests) / dur if dur else 0,
+                        "config": {
+                            "temp": self.tts_config.temperature,
+                            "top_k": self.tts_config.top_k,
+                            "cfg": self.tts_config.use_cfg,
+                            "cfg_scale": self.tts_config.cfg_scale,
+                        },
+                        "batch_metrics": batch_metrics,
+                    }
+
+                    # Include codec data if save_codes is enabled (for FCD scoring)
+                    if self.tts_config.save_codes:
+                        codes_path = os.path.join(output_dir, f"predicted_codes_{i}.pt")
+                        if os.path.exists(codes_path):
+                            import base64
+                            import torch
+                            codes_buf = io.BytesIO()
+                            torch.save(torch.load(codes_path, map_location="cpu"), codes_buf)
+                            codes_buf.seek(0)
+                            debug_info["codec_data"] = base64.b64encode(codes_buf.read()).decode("utf-8")
+
                     results.append(
                         GenerationResult(
                             text=parsed[i].get("text", ""),
@@ -291,18 +324,7 @@ class MagpieTTSBackend(InferenceBackend):
                             audio_format="wav",
                             request_id=req.request_id,
                             generation_time_ms=gen_time * 1000 / len(requests),
-                            debug_info={
-                                "checkpoint": self._checkpoint_name,
-                                "audio_duration_sec": dur,
-                                "rtf": gen_time / len(requests) / dur if dur else 0,
-                                "config": {
-                                    "temp": self.tts_config.temperature,
-                                    "top_k": self.tts_config.top_k,
-                                    "cfg": self.tts_config.use_cfg,
-                                    "cfg_scale": self.tts_config.cfg_scale,
-                                },
-                                "batch_metrics": batch_metrics,
-                            },
+                            debug_info=debug_info,
                         )
                     )
                 else:

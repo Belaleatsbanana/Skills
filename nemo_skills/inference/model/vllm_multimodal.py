@@ -21,6 +21,7 @@ This module provides a multimodal model class that handles:
 
 import base64
 import copy
+import io
 import json
 import logging
 import os
@@ -99,6 +100,14 @@ class VLLMMultimodalModel(VLLMModel):
                     result["generation"] = DEBUG_INFO_PATTERN.sub("", result["generation"])
                 except json.JSONDecodeError:
                     LOG.warning("Failed to parse debug_info JSON from content")
+
+        # Save codec data if present in debug_info (for FCD scoring)
+        if "debug_info" in result and result["debug_info"].get("codec_data"):
+            codec_codes_path = self._save_codec_data(result["debug_info"]["codec_data"], response.id)
+            if codec_codes_path:
+                result["debug_info"]["codec_codes_path"] = codec_codes_path
+            # Remove base64 data to avoid duplication in output
+            del result["debug_info"]["codec_data"]
 
         choice = response.choices[0]
         if hasattr(choice.message, "audio") and choice.message.audio:
@@ -404,3 +413,23 @@ class VLLMMultimodalModel(VLLMModel):
         messages = [self.content_text_to_list(copy.deepcopy(msg)) for msg in messages]
         messages = self._preprocess_messages_for_model(messages)
         return super()._build_chat_request_params(messages=messages, **kwargs)
+
+    def _save_codec_data(self, codec_base64: str, response_id: str) -> str:
+        """Save codec data (.pt file) to disk and return the path."""
+        if not self.output_audio_dir:
+            return None
+
+        try:
+            import torch
+
+            codec_bytes = base64.b64decode(codec_base64)
+            buf = io.BytesIO(codec_bytes)
+            codes = torch.load(buf, map_location="cpu")
+
+            filename = f"{response_id}.pt"
+            filepath = os.path.join(self.output_audio_dir, filename)
+            torch.save(codes, filepath)
+            return filepath
+        except Exception as e:
+            LOG.warning(f"Failed to save codec data: {e}")
+            return None
