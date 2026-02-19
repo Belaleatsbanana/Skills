@@ -124,6 +124,13 @@ def get_server_command(
 ):
     num_tasks = num_gpus
 
+    if gpus_per_node > 1 and server_type != "generic":
+        raise ValueError(
+            f"Multi-instance mode (gpus_per_node={gpus_per_node}) is only supported for "
+            f"server_type='generic', but got server_type='{server_type}'. "
+            f"Use gpus_per_node=1 or switch to server_type='generic'."
+        )
+
     # check if the model path is mounted if not vllm, sglang, or trtllm;
     # vllm, sglang, trtllm can also pass model name as "model_path" so we need special processing
     if server_type not in ["vllm", "sglang", "trtllm", "generic"]:
