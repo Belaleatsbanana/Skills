@@ -75,6 +75,7 @@ def main():
 
             if solution:
                 item["extracted_solution"] = solution
+                item["expected_answer"] = solution  # alias for assess-problem-answer-quality prompt
                 item["solution_extraction_gen"] = generation
                 extracted.append(item)
             else:

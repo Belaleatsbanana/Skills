@@ -26,6 +26,7 @@ pipeline_stages:
   - solve_and_difficulty
   - classify_if_proof
   - extract_answer_non_proof
+  - assess_problem_answer_quality
 
 directories:
   step-1-extract: ${base_output_dir}/${model_name}/step-1-extract
@@ -37,6 +38,7 @@ directories:
   step-6-solve-difficulty: ${base_output_dir}/${model_name}/step-6-solve-difficulty
   step-7-classify-proof: ${base_output_dir}/${model_name}/step-7-classify-proof
   step-8-extract-answer: ${base_output_dir}/${model_name}/step-8-extract-answer
+  step-9-assess-problem-answer: ${base_output_dir}/${model_name}/step-9-assess-problem-answer
 
 stages:
   extract_problems:
@@ -104,4 +106,11 @@ stages:
     output_dir: ${directories.step-8-extract-answer}
     input_file: ${directories.step-7-classify-proof}/non_proof.jsonl
     dependencies: [classify_if_proof]
+    stage_kwargs: ${generate_kwargs}
+
+  assess_problem_answer_quality:
+    output_dir: ${directories.step-9-assess-problem-answer}
+    input_file: ${directories.step-8-extract-answer}/extracted-answers.jsonl
+    dependencies: [extract_answer_non_proof]
+    prompt_config: /nemo_run/code/recipes/rl-data-clean/prompts/non-proof/assess-problem-answer-quality.yaml
     stage_kwargs: ${generate_kwargs}

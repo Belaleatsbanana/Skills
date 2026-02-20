@@ -345,6 +345,36 @@ def extract_answer_non_proof(cluster, expname, run_after, stage_config, **kwargs
     )
 
 
+# ---------- 9. Assess problem+answer quality (non-proof only; keep good expected_answer) ----------
+def assess_problem_answer_quality(cluster, expname, run_after, stage_config, **kwargs):
+    output_dir = stage_config["output_dir"]
+    input_file = stage_config["input_file"]
+    postprocess_cmd = (
+        f"python /nemo_run/code/recipes/rl-data-clean/scripts/postprocess_quality_assessment.py "
+        f"    {output_dir}/output.jsonl "
+        f"    {output_dir}/accepted.jsonl "
+        f"    {output_dir}/rejected.jsonl "
+        f"    --stage problem_answer_quality "
+    )
+    generate(
+        ctx=wrap_arguments(
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/non-proof/assess-problem-answer-quality.yaml "
+            f"++inference.tokens_to_generate=16384 ++inference.temperature=1.0 ++inference.top_p=0.95 "
+            f"++max_concurrent_requests=1024 ++inference.endpoint_type=chat "
+            f"++chat_template_kwargs.thinking=true ++server.enable_soft_fail=True ++skip_filled=True "
+            f"{stage_config.get('inline_args', '')} "
+        ),
+        cluster=cluster,
+        input_file=input_file,
+        output_dir=output_dir,
+        postprocess_cmd=postprocess_cmd,
+        expname=expname,
+        run_after=run_after,
+        dependent_jobs=2,
+        **_deepseek_stage_kwargs(stage_config),
+    )
+
+
 stages_map = {
     "extract_problems": extract_problems,
     "filter_invalid_binary_mcq": filter_invalid_binary_mcq,
@@ -356,6 +386,7 @@ stages_map = {
     "solve_and_difficulty": solve_and_difficulty,
     "classify_if_proof": classify_if_proof,
     "extract_answer_non_proof": extract_answer_non_proof,
+    "assess_problem_answer_quality": assess_problem_answer_quality,
 }
 
 
