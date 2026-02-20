@@ -59,7 +59,7 @@ def extract_problems(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
-        dependent_jobs=2,
+        # dependent_jobs=2,
         **_gpt_oss_stage_kwargs(stage_config),
     )
 
@@ -94,7 +94,7 @@ def filter_invalid_binary_mcq(cluster, expname, run_after, stage_config, **kwarg
             postprocess_cmd=postprocess_cmd,
             expname=mode_expname,
             run_after=current_run_after,
-            dependent_jobs=2,
+            # dependent_jobs=2,
             **_gpt_oss_stage_kwargs(stage_config),
         )
         current_run_after = mode_expname
@@ -158,7 +158,7 @@ def check_contamination(cluster, expname, run_after, stage_config, **kwargs):
         log_dir=f"{output_dir}/logs",
         expname=expname,
         run_after=run_after,
-        dependent_jobs=2,
+        # dependent_jobs=2,
         **stage_config.get("stage_kwargs", {}),
     )
 
@@ -236,7 +236,7 @@ def solve_and_difficulty(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
-        dependent_jobs=2,
+        # dependent_jobs=2,
         **_gpt_oss_stage_kwargs(stage_config),
     )
 
@@ -265,7 +265,7 @@ def classify_if_proof(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
-        dependent_jobs=2,
+        # dependent_jobs=2,
         **_gpt_oss_stage_kwargs(stage_config),
     )
 
@@ -292,7 +292,7 @@ def extract_answer_non_proof(cluster, expname, run_after, stage_config, **kwargs
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
-        dependent_jobs=2,
+        # dependent_jobs=2,
         **_gpt_oss_stage_kwargs(stage_config),
     )
 
