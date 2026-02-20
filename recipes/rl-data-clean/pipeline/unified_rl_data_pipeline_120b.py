@@ -94,7 +94,7 @@ def filter_invalid_binary_mcq(cluster, expname, run_after, stage_config, **kwarg
             postprocess_cmd=postprocess_cmd,
             expname=mode_expname,
             run_after=current_run_after,
-            # dependent_jobs=2,
+            dependent_jobs=2,
             **_gpt_oss_stage_kwargs(stage_config),
         )
         current_run_after = mode_expname
