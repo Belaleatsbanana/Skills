@@ -19,12 +19,11 @@ with an OpenAI-compatible /v1/audio/transcriptions endpoint.
 """
 
 import argparse
-import asyncio
+import inspect
 import logging
 import os
 import tempfile
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import uvicorn
@@ -54,16 +53,13 @@ class NemoASRServer:
         try:
             import nemo.collections.asr as nemo_asr
         except ImportError:
-            raise ImportError(
-                "NeMo toolkit is not installed. Please install it with: "
-                "pip install nemo_toolkit[asr]"
-            )
+            raise ImportError("NeMo toolkit is not installed. Please install it with: pip install nemo_toolkit[asr]")
 
         LOG.info(f"Loading NeMo ASR model from: {self.model_path}")
         start_time = time.time()
 
         # Check if it's a local .nemo file or NGC model name
-        if os.path.exists(self.model_path) and self.model_path.endswith('.nemo'):
+        if os.path.exists(self.model_path) and self.model_path.endswith(".nemo"):
             LOG.info("Loading from local .nemo checkpoint")
             self.model = nemo_asr.models.ASRModel.restore_from(self.model_path)
         else:
@@ -78,19 +74,57 @@ class NemoASRServer:
         # Move model to GPU if available
         if self.num_gpus > 0:
             import torch
+
             if torch.cuda.is_available():
                 self.model = self.model.cuda()
-                LOG.info(f"Model moved to GPU")
+                LOG.info("Model moved to GPU")
 
         self.model.eval()
         load_time = time.time() - start_time
         LOG.info(f"Model loaded successfully in {load_time:.2f}s")
+
+    @staticmethod
+    def _extract_first_hypothesis(hypotheses):
+        """Extract first hypothesis from NeMo transcribe output with validation."""
+        if len(hypotheses) == 0:
+            raise RuntimeError("No transcription returned from model")
+        first_entry = hypotheses[0]
+
+        # Common NeMo shape: list[Hypothesis]
+        if hasattr(first_entry, "text"):
+            return first_entry
+
+        # N-best shape: list[list[Hypothesis]]
+        if len(first_entry) == 0:
+            raise RuntimeError("Model returned empty transcription hypotheses")
+        if hasattr(first_entry[0], "text"):
+            return first_entry[0]
+
+        raise RuntimeError(f"Unexpected hypothesis structure: {type(first_entry)}")
+
+    def _transcribe_single(self, audio_paths: list[str], enable_timestamps: bool, language: Optional[str] = None):
+        """Transcribe helper with optional language passthrough when supported by model API."""
+        transcribe_kwargs = {
+            "batch_size": 1,
+            "return_hypotheses": True,
+            "timestamps": enable_timestamps,
+        }
+        if language:
+            signature = inspect.signature(self.model.transcribe)
+            if "language_id" in signature.parameters:
+                transcribe_kwargs["language_id"] = language
+            else:
+                LOG.warning(
+                    f"language='{language}' requested but model.transcribe does not support language_id parameter"
+                )
+        return self.model.transcribe(audio_paths, **transcribe_kwargs)
 
     async def _transcribe_with_chunking(
         self,
         audio_path: str,
         chunk_duration_sec: float,
         enable_timestamps: bool = False,
+        language: Optional[str] = None,
     ) -> tuple[str, float]:
         """Transcribe long audio by chunking it into smaller segments.
 
@@ -103,15 +137,15 @@ class NemoASRServer:
             Tuple of (transcribed_text, total_inference_time)
         """
         try:
-            import soundfile as sf
             import numpy as np
+            import soundfile as sf
         except ImportError:
             raise ImportError("soundfile and numpy are required for audio chunking")
 
         # Load audio file
         audio_array, sampling_rate = sf.read(audio_path)
         duration = len(audio_array) / sampling_rate
-        
+
         LOG.info(f"Chunking audio ({duration:.1f}s) into segments of {chunk_duration_sec}s")
 
         # Calculate chunks
@@ -123,7 +157,7 @@ class NemoASRServer:
             start = i * chunk_samples
             end = min((i + 1) * chunk_samples, len(audio_array))
             chunk = audio_array[start:end]
-            
+
             # Merge tiny trailing chunks
             min_chunk_samples = int(0.5 * sampling_rate)  # 0.5 second minimum
             if len(chunk) < min_chunk_samples and chunks:
@@ -145,19 +179,14 @@ class NemoASRServer:
 
                 # Transcribe chunk
                 start_time = time.time()
-                hypotheses = self.model.transcribe(
-                    [chunk_path],
-                    batch_size=1,
-                    return_hypotheses=True,
-                    timestamps=enable_timestamps
-                )
+                hypotheses = self._transcribe_single([chunk_path], enable_timestamps, language)
                 chunk_time = time.time() - start_time
                 total_time += chunk_time
 
-                if len(hypotheses) > 0:
-                    text = hypotheses[0][0].text
-                    chunk_texts.append(text.strip())
-                    LOG.debug(f"Chunk {chunk_idx + 1}/{len(chunks)}: {text[:50]}...")
+                hypothesis = self._extract_first_hypothesis(hypotheses)
+                text = hypothesis.text
+                chunk_texts.append(text.strip())
+                LOG.debug(f"Chunk {chunk_idx + 1}/{len(chunks)}: {text[:50]}...")
 
             finally:
                 # Clean up chunk file
@@ -166,7 +195,7 @@ class NemoASRServer:
 
         # Concatenate all chunk transcriptions
         full_text = " ".join(chunk_texts)
-        
+
         return full_text, total_time
 
     async def transcribe(
@@ -190,7 +219,7 @@ class NemoASRServer:
             Transcription result in OpenAI-compatible format
         """
         # Save uploaded file to temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
             content = await audio_file.read()
             tmp_file.write(content)
             tmp_path = tmp_file.name
@@ -198,32 +227,27 @@ class NemoASRServer:
         try:
             # Determine if timestamps are needed
             enable_timestamps = (
-                timestamp_granularities is not None 
+                timestamp_granularities is not None
                 and len(timestamp_granularities) > 0
                 and response_format == "verbose_json"
             )
+            hypothesis = None
 
             # Handle chunking if requested
             if chunk_duration_sec is not None and chunk_duration_sec > 0:
                 text, inference_time = await self._transcribe_with_chunking(
-                    tmp_path, chunk_duration_sec, enable_timestamps
+                    tmp_path, chunk_duration_sec, enable_timestamps, language
                 )
+                if enable_timestamps:
+                    LOG.warning("Word-level timestamps are not available when chunk_duration_sec is enabled.")
             else:
                 # Transcribe using NeMo
                 start_time = time.time()
-                hypotheses = self.model.transcribe(
-                    [tmp_path],
-                    batch_size=1,
-                    return_hypotheses=True,
-                    timestamps=enable_timestamps
-                )
+                hypotheses = self._transcribe_single([tmp_path], enable_timestamps, language)
                 inference_time = time.time() - start_time
 
                 # Extract transcription
-                if len(hypotheses) == 0:
-                    raise RuntimeError("No transcription returned from model")
-
-                hypothesis = hypotheses[0][0]  # [batch_idx][hypothesis_idx]
+                hypothesis = self._extract_first_hypothesis(hypotheses)  # [batch_idx][hypothesis_idx]
                 text = hypothesis.text
 
             # Build response based on format
@@ -232,25 +256,27 @@ class NemoASRServer:
             if response_format == "verbose_json":
                 result["task"] = "transcribe"
                 result["duration"] = None  # Could compute from audio file if needed
-                
+
                 # Add language if detected/specified
                 if language:
                     result["language"] = language
 
                 # Add timestamps if requested
-                if enable_timestamps and hasattr(hypothesis, 'timestep'):
+                if enable_timestamps and hypothesis is not None and hasattr(hypothesis, "timestep"):
                     words = []
-                    
+
                     # Extract word-level timestamps
-                    if 'word' in timestamp_granularities:
-                        word_timestamps = getattr(hypothesis.timestep, 'word', [])
+                    if "word" in timestamp_granularities:
+                        word_timestamps = getattr(hypothesis.timestep, "word", [])
                         for word_info in word_timestamps:
-                            words.append({
-                                "word": word_info['word'],
-                                "start": word_info['start_offset'],
-                                "end": word_info['end_offset']
-                            })
-                    
+                            words.append(
+                                {
+                                    "word": word_info["word"],
+                                    "start": word_info["start_offset"],
+                                    "end": word_info["end_offset"],
+                                }
+                            )
+
                     if words:
                         result["words"] = words
 
@@ -276,9 +302,7 @@ def create_app(model_path: str, num_gpus: int = 1) -> FastAPI:
         FastAPI application
     """
     app = FastAPI(
-        title="NeMo ASR Server",
-        description="OpenAI-compatible ASR server using NeMo models",
-        version="1.0.0"
+        title="NeMo ASR Server", description="OpenAI-compatible ASR server using NeMo models", version="1.0.0"
     )
 
     # Initialize server
@@ -295,13 +319,9 @@ def create_app(model_path: str, num_gpus: int = 1) -> FastAPI:
         model: str = Form(default="nemo-asr", description="Model to use (ignored, using server model)"),
         language: Optional[str] = Form(default=None, description="Language code"),
         response_format: str = Form(default="json", description="Response format: json or verbose_json"),
-        timestamp_granularities: Optional[str] = Form(
-            default=None, 
-            description="Comma-separated list: word,segment"
-        ),
+        timestamp_granularities: Optional[str] = Form(default=None, description="Comma-separated list: word,segment"),
         chunk_duration_sec: Optional[float] = Form(
-            default=None,
-            description="If specified, chunk audio into segments of this duration (in seconds)"
+            default=None, description="If specified, chunk audio into segments of this duration (in seconds)"
         ),
     ):
         """Transcribe audio file.
@@ -309,17 +329,19 @@ def create_app(model_path: str, num_gpus: int = 1) -> FastAPI:
         OpenAI-compatible endpoint for audio transcription.
         """
         try:
+            if model != "nemo-asr":
+                LOG.debug(f"Ignoring request model='{model}', serving with loaded model='{model_path}'")
             # Parse timestamp granularities
             granularities = None
             if timestamp_granularities:
-                granularities = [g.strip() for g in timestamp_granularities.split(',')]
+                granularities = [g.strip() for g in timestamp_granularities.split(",")]
 
             result = await server.transcribe(
                 audio_file=file,
                 language=language,
                 response_format=response_format,
                 timestamp_granularities=granularities,
-                chunk_duration_sec=chunk_duration_sec
+                chunk_duration_sec=chunk_duration_sec,
             )
 
             return JSONResponse(content=result)
@@ -342,14 +364,11 @@ def main():
     args = parser.parse_args()
 
     # Setup logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     # Create and run app
     app = create_app(args.model, args.num_gpus)
-    
+
     LOG.info(f"Starting NeMo ASR server on {args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

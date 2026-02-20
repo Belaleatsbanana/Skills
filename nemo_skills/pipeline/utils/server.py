@@ -35,6 +35,7 @@ class SupportedServers(str, Enum):
     vllm = "vllm"
     sglang = "sglang"
     megatron = "megatron"
+    nemo_asr = "nemo_asr"
     openai = "openai"
     azureopenai = "azureopenai"
     gemini = "gemini"
@@ -126,7 +127,7 @@ def get_server_command(
 
     # check if the model path is mounted if not vllm, sglang, or trtllm;
     # vllm, sglang, trtllm can also pass model name as "model_path" so we need special processing
-    if server_type not in ["vllm", "sglang", "trtllm", "generic"]:
+    if server_type not in ["vllm", "sglang", "trtllm", "nemo_asr", "generic"]:
         check_if_mounted(cluster_config, model_path)
 
     # the model path will be mounted, so generally it will start with /
