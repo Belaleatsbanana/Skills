@@ -15,10 +15,57 @@ def parse_field(text: str, field_name: str) -> Optional[str]:
     """Extract a field value from model output"""
     if not text or not isinstance(text, str):
         return None
-    pattern = rf"{field_name}:\s*(.+?)(?=\n[A-Z_]+:|$)"
+    pattern = rf"{re.escape(field_name)}:\s*(.+?)(?=\n[A-Z_][A-Z_\s]*:|$)"
     match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
     if match:
         return match.group(1).strip()
+    return None
+
+
+# Valid difficulty values from solve-and-difficulty-combined prompt (order: longer first for TOO_SIMPLE/UNCLEAR)
+DIFFICULTY_VALUES = ("TOO_SIMPLE", "UNCLEAR", "P1", "P2", "P3", "P4", "P5", "P6")
+
+
+def parse_difficulty(generation: str) -> Optional[str]:
+    """Extract difficulty from generation. Only returns a single token (P1-P6, TOO_SIMPLE, UNCLEAR)."""
+    if not generation or not isinstance(generation, str):
+        return None
+    # Prefer patterns that capture only the first token after the label (avoid capturing trailing paragraphs)
+    for pat in (
+        r"DIFFICULTY_ESTIMATE\s*:\s*\*?\*?\s*(\w+)",
+        r"DIFFICULTY\s+ESTIMATE\s*\*?\*?\s*:\s*(\w+)",
+        r"\*\*DIFFICULTY\s+ESTIMATE\*\*:\s*(\w+)",
+        r"DIFFICULTY\s+ESTIMATE\*\*:\s*(\w+)",
+    ):
+        m = re.search(pat, generation, re.IGNORECASE)
+        if m:
+            v = _normalize_difficulty(m.group(1))
+            if v:
+                return v
+    # Fallback: take first line after label and extract first valid token (handles "** P5  \n...")
+    for label in ("DIFFICULTY_ESTIMATE", "DIFFICULTY ESTIMATE"):
+        pattern = rf"{re.escape(label)}\s*:\s*\*?\*?\s*([^\n]+)"
+        m = re.search(pattern, generation, re.IGNORECASE)
+        if m:
+            first_line = m.group(1).strip()
+            v = _normalize_difficulty(first_line)
+            if v:
+                return v
+    return None
+
+
+def _normalize_difficulty(s: str) -> Optional[str]:
+    """Return exactly one of P1-P6, TOO_SIMPLE, UNCLEAR; never return a paragraph."""
+    if not s:
+        return None
+    s = s.strip().upper()
+    # Exact match
+    if s in DIFFICULTY_VALUES:
+        return s
+    # First token that is a valid difficulty (e.g. "** P5  \\n..." -> take "P5")
+    for token in re.split(r"[\s*]+", s):
+        if token in DIFFICULTY_VALUES:
+            return token
     return None
 
 
@@ -35,13 +82,13 @@ def parse_decision(generation: str) -> str:
 
 
 def parse_problem_quality(generation: str) -> Dict[str, Any]:
-    """Parse problem quality assessment output"""
+    """Parse problem quality assessment output (solve-and-difficulty-combined)."""
     return {
         "decision": parse_decision(generation),
         "clarity_analysis": parse_field(generation, "CLARITY_ANALYSIS"),
         "completeness_analysis": parse_field(generation, "COMPLETENESS_ANALYSIS"),
         "rigor_analysis": parse_field(generation, "MATHEMATICAL_RIGOR_ANALYSIS"),
-        "difficulty": parse_field(generation, "DIFFICULTY_ESTIMATE"),
+        "difficulty": parse_difficulty(generation),
         "critical_issues": parse_field(generation, "CRITICAL_ISSUES"),
         "decision_reasoning": parse_field(generation, "DECISION_REASONING"),
     }
