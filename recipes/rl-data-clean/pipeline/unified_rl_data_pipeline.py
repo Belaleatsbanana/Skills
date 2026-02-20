@@ -147,7 +147,7 @@ def retrieve_similar(cluster, expname, run_after, stage_config, **kwargs):
         run_after=run_after,
         installation_command="pip install sentence-transformers",
         num_nodes=1,
-        num_gpus=stage_config.get("num_gpus", 0),
+        num_gpus=8,
         **stage_config.get("run_cmd_kwargs", {}),
     )
 
