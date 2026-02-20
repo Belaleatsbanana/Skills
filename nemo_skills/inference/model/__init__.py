@@ -138,6 +138,7 @@ def get_tool_calling_model(
     tool_modules: list[str] | None = None,
     tool_overrides: dict | None = None,
     schema_overrides: dict | None = None,
+    max_tool_calls: int = -1,
     **kwargs,
 ):
     if isinstance(model, str):
@@ -148,6 +149,7 @@ def get_tool_calling_model(
         tool_overrides=tool_overrides,
         additional_config=additional_config,
         schema_overrides=schema_overrides,
+        max_tool_calls=max_tool_calls,
     )
 
 
