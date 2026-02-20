@@ -1,0 +1,36 @@
+# Generic solve + difficulty (all math problems). Input: {problem}. Output: SOLUTION then assessment (same keys as problem_quality postprocess).
+user: |-
+  You are an expert at solving and evaluating mathematical problems (proofs, computations, or short-answer).
+
+  Step 1 — Solve: Attempt a complete solution. If the problem is ambiguous or you cannot finish, explain what is missing or where you are stuck.
+
+  Step 2 — Assess: Using your solution attempt as evidence, judge whether this problem is good for training. Output the assessment in the exact format below.
+
+  ---
+  Problem:
+  {problem}
+  ---
+
+  First provide your solution, then your assessment.
+
+  SOLUTION:
+  <your step-by-step solution here>
+
+  ---
+  ASSESSMENT:
+
+  CLARITY_ANALYSIS:
+  <Was the problem clear? Any ambiguities?>
+
+  MATHEMATICAL_RIGOR_ANALYSIS:
+  <Statement valid? Conditions sufficient?>
+
+  DIFFICULTY_ESTIMATE: <exactly one of: P1, P2, P3, P4, P5, P6, TOO_SIMPLE, UNCLEAR>
+
+  CRITICAL_ISSUES:
+  <Serious issues or "None">
+
+  DECISION: <ACCEPT or REJECT>
+  DECISION_REASONING: <Why accept/reject.>
+
+  Output:

@@ -1,0 +1,98 @@
+# Unified RL data pipeline (GPT-OSS 120b / vLLM): same flow as unified-rl-deepseek
+
+cluster: dfw
+base_output_dir: /workspace/rl-data-clean/unified
+model_name: gpt-oss-120b
+expname: unified-rl-${model_name}
+suffix: 120b
+
+input_file: ${base_output_dir}/raw_aops_data.jsonl
+
+generate_kwargs:
+  model: /hf_models/${model_name}
+  server_type: vllm
+  server_gpus: 8
+  server_nodes: 1
+  num_chunks: 1
+
+pipeline_stages:
+  - extract_problems
+  - filter_invalid_binary_mcq
+  - retrieve_similar
+  - check_contamination
+  - cluster_dedup
+  - merge_dedup_metadata
+  - solve_and_difficulty
+  - classify_if_proof
+  - extract_answer_non_proof
+
+directories:
+  step-1-extract: ${base_output_dir}/${model_name}/step-1-extract
+  step-2-filter: ${base_output_dir}/${model_name}/step-2-filter
+  step-3-retrieve: ${base_output_dir}/${model_name}/step-3-retrieve
+  step-4-check-contamination: ${base_output_dir}/${model_name}/step-4-check-contamination
+  step-5-cluster-dedup: ${base_output_dir}/${model_name}/step-5-cluster-dedup
+  step-6-solve-difficulty: ${base_output_dir}/${model_name}/step-6-solve-difficulty
+  step-7-classify-proof: ${base_output_dir}/${model_name}/step-7-classify-proof
+  step-8-extract-answer: ${base_output_dir}/${model_name}/step-8-extract-answer
+
+stages:
+  extract_problems:
+    output_dir: ${directories.step-1-extract}
+    input_file: ${input_file}
+    dependencies: null
+    stage_kwargs: ${generate_kwargs}
+
+  filter_invalid_binary_mcq:
+    output_dir: ${directories.step-2-filter}
+    input_file: ${directories.step-1-extract}/extracted-problems.jsonl
+    dependencies: [extract_problems]
+    modes: [invalid, binary, mcq]
+    stage_kwargs: ${generate_kwargs}
+
+  retrieve_similar:
+    output_dir: ${directories.step-3-retrieve}
+    input_file: ${directories.step-2-filter}/filtered.jsonl
+    retrieve_from: ${directories.step-2-filter}/filtered.jsonl
+    top_k: 20
+    retrieve_key: problem
+    dependencies: [filter_invalid_binary_mcq]
+    run_cmd_kwargs: {}
+
+  check_contamination:
+    output_dir: ${directories.step-4-check-contamination}
+    input_file: ${directories.step-3-retrieve}/retrieved.jsonl
+    dependencies: [retrieve_similar]
+    stage_kwargs: ${generate_kwargs}
+
+  cluster_dedup:
+    output_dir: ${directories.step-5-cluster-dedup}
+    input_file: ${directories.step-4-check-contamination}/output.jsonl
+    cluster_script: /nemo_run/code/recipes/rl-data-clean/scripts/cluster_by_contamination.py
+    dependencies: [check_contamination]
+
+  merge_dedup_metadata:
+    output_dir: ${directories.step-5-cluster-dedup}
+    source_file: ${directories.step-2-filter}/filtered.jsonl
+    dedup_file: ${directories.step-5-cluster-dedup}/dedup.jsonl
+    output_file: ${directories.step-5-cluster-dedup}/dedup_with_metadata.jsonl
+    dependencies: [cluster_dedup]
+
+  solve_and_difficulty:
+    output_dir: ${directories.step-6-solve-difficulty}
+    input_file: ${directories.step-5-cluster-dedup}/dedup_with_metadata.jsonl
+    dependencies: [merge_dedup_metadata]
+    prompt_config: /nemo_run/code/recipes/rl-data-clean/prompts/common/solve-and-difficulty-combined.yaml
+    stage_kwargs: ${generate_kwargs}
+
+  classify_if_proof:
+    output_dir: ${directories.step-7-classify-proof}
+    input_file: ${directories.step-6-solve-difficulty}/accepted.jsonl
+    dependencies: [solve_and_difficulty]
+    stage_kwargs: ${generate_kwargs}
+
+  extract_answer_non_proof:
+    output_dir: ${directories.step-8-extract-answer}
+    input_file: ${directories.step-7-classify-proof}/non_proof.jsonl
+    dependencies: [classify_if_proof]
+    stage_kwargs: ${generate_kwargs}
