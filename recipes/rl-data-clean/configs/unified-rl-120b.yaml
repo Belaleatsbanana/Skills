@@ -18,6 +18,7 @@ generate_kwargs:
 pipeline_stages:
   - extract_problems
   - filter_invalid_binary_mcq
+  - problem_quality
   - retrieve_similar
   - check_contamination
   - cluster_dedup
@@ -29,6 +30,7 @@ pipeline_stages:
 directories:
   step-1-extract: ${base_output_dir}/${model_name}/step-1-extract
   step-2-filter: ${base_output_dir}/${model_name}/step-2-filter
+  step-2b-problem-quality: ${base_output_dir}/${model_name}/step-2b-problem-quality
   step-3-retrieve: ${base_output_dir}/${model_name}/step-3-retrieve
   step-4-check-contamination: ${base_output_dir}/${model_name}/step-4-check-contamination
   step-5-cluster-dedup: ${base_output_dir}/${model_name}/step-5-cluster-dedup
@@ -50,13 +52,20 @@ stages:
     modes: [invalid, binary, mcq]
     stage_kwargs: ${generate_kwargs}
 
+  problem_quality:
+    output_dir: ${directories.step-2b-problem-quality}
+    input_file: ${directories.step-2-filter}/filtered.jsonl
+    dependencies: [filter_invalid_binary_mcq]
+    prompt_config: /nemo_run/code/recipes/rl-data-clean/prompts/common/assess-problem-quality-only.yaml
+    stage_kwargs: ${generate_kwargs}
+
   retrieve_similar:
     output_dir: ${directories.step-3-retrieve}
-    input_file: ${directories.step-2-filter}/filtered.jsonl
-    retrieve_from: ${directories.step-2-filter}/filtered.jsonl
+    input_file: ${directories.step-2b-problem-quality}/accepted.jsonl
+    retrieve_from: ${directories.step-2b-problem-quality}/accepted.jsonl
     top_k: 20
     retrieve_key: problem
-    dependencies: [filter_invalid_binary_mcq]
+    dependencies: [problem_quality]
     run_cmd_kwargs: {}
 
   check_contamination:
@@ -73,7 +82,7 @@ stages:
 
   merge_dedup_metadata:
     output_dir: ${directories.step-5-cluster-dedup}
-    source_file: ${directories.step-2-filter}/filtered.jsonl
+    source_file: ${directories.step-2b-problem-quality}/accepted.jsonl
     dedup_file: ${directories.step-5-cluster-dedup}/dedup.jsonl
     output_file: ${directories.step-5-cluster-dedup}/dedup_with_metadata.jsonl
     dependencies: [cluster_dedup]

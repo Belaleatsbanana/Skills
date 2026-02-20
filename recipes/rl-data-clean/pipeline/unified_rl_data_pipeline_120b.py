@@ -112,6 +112,39 @@ def filter_invalid_binary_mcq(cluster, expname, run_after, stage_config, **kwarg
     )
 
 
+# ---------- 2b. Problem quality (assessment only, no solution; before retrieve) ----------
+def problem_quality(cluster, expname, run_after, stage_config, **kwargs):
+    output_dir = stage_config["output_dir"]
+    input_file = stage_config["input_file"]
+    prompt = stage_config.get(
+        "prompt_config",
+        "/nemo_run/code/recipes/rl-data-clean/prompts/common/assess-problem-quality-only.yaml",
+    )
+    postprocess_cmd = (
+        f"python /nemo_run/code/recipes/rl-data-clean/scripts/postprocess_quality_assessment.py "
+        f"    {output_dir}/output.jsonl "
+        f"    {output_dir}/accepted.jsonl "
+        f"    {output_dir}/rejected.jsonl "
+        f"    --stage problem_quality "
+    )
+    generate(
+        ctx=wrap_arguments(
+            f"++prompt_config={prompt} "
+            f"++inference.tokens_to_generate=8192 ++inference.temperature=1.0 ++inference.top_p=1.0 "
+            f"++server.enable_soft_fail=True ++skip_filled=True ++chat_template_kwargs.reasoning_effort=high "
+            f"{stage_config.get('inline_args', '')} "
+        ),
+        cluster=cluster,
+        input_file=input_file,
+        output_dir=output_dir,
+        postprocess_cmd=postprocess_cmd,
+        expname=expname,
+        run_after=run_after,
+        dependent_jobs=2,
+        **_gpt_oss_stage_kwargs(stage_config),
+    )
+
+
 # ---------- 3. Retrieve similar (self-vs-self, top_k=20) ----------
 def retrieve_similar(cluster, expname, run_after, stage_config, **kwargs):
     output_dir = stage_config["output_dir"]
@@ -300,6 +333,7 @@ def extract_answer_non_proof(cluster, expname, run_after, stage_config, **kwargs
 stages_map = {
     "extract_problems": extract_problems,
     "filter_invalid_binary_mcq": filter_invalid_binary_mcq,
+    "problem_quality": problem_quality,
     "retrieve_similar": retrieve_similar,
     "check_contamination": check_contamination,
     "cluster_dedup": cluster_dedup,

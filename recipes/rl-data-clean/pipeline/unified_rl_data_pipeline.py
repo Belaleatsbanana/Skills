@@ -122,6 +122,40 @@ def filter_invalid_binary_mcq(cluster, expname, run_after, stage_config, **kwarg
     )
 
 
+# ---------- 2b. Problem quality (assessment only, no solution; before retrieve) ----------
+def problem_quality(cluster, expname, run_after, stage_config, **kwargs):
+    output_dir = stage_config["output_dir"]
+    input_file = stage_config["input_file"]
+    prompt = stage_config.get(
+        "prompt_config",
+        "/nemo_run/code/recipes/rl-data-clean/prompts/common/assess-problem-quality-only.yaml",
+    )
+    postprocess_cmd = (
+        f"python /nemo_run/code/recipes/rl-data-clean/scripts/postprocess_quality_assessment.py "
+        f"    {output_dir}/output.jsonl "
+        f"    {output_dir}/accepted.jsonl "
+        f"    {output_dir}/rejected.jsonl "
+        f"    --stage problem_quality "
+    )
+    generate(
+        ctx=wrap_arguments(
+            f"++prompt_config={prompt} "
+            f"++inference.tokens_to_generate=8192 ++inference.temperature=1.0 ++inference.top_p=0.95 "
+            f"++max_concurrent_requests=1024 ++inference.endpoint_type=chat "
+            f"++chat_template_kwargs.thinking=true ++server.enable_soft_fail=True ++skip_filled=True "
+            f"{stage_config.get('inline_args', '')} "
+        ),
+        cluster=cluster,
+        input_file=input_file,
+        output_dir=output_dir,
+        postprocess_cmd=postprocess_cmd,
+        expname=expname,
+        run_after=run_after,
+        dependent_jobs=2,
+        **_deepseek_stage_kwargs(stage_config),
+    )
+
+
 # ---------- 3. Retrieve similar (self-vs-self, top_k=20) ----------
 def retrieve_similar(cluster, expname, run_after, stage_config, **kwargs):
     output_dir = stage_config["output_dir"]
@@ -195,9 +229,9 @@ def cluster_dedup(cluster, expname, run_after, stage_config, **kwargs):
     )
 
 
-# ---------- 5b. Merge metadata back into dedup (source = filtered.jsonl full rows) ----------
+# ---------- 5b. Merge metadata back into dedup (source = step-2b accepted full rows) ----------
 def merge_dedup_metadata(cluster, expname, run_after, stage_config, **kwargs):
-    """After cluster_dedup, attach full-row metadata from source (e.g. filtered.jsonl) to dedup.jsonl."""
+    """After cluster_dedup, attach full-row metadata from source (step-2b-problem-quality/accepted.jsonl) to dedup.jsonl."""
     output_dir = stage_config["output_dir"]
     source_file = stage_config["source_file"]
     dedup_file = stage_config["dedup_file"]
@@ -314,6 +348,7 @@ def extract_answer_non_proof(cluster, expname, run_after, stage_config, **kwargs
 stages_map = {
     "extract_problems": extract_problems,
     "filter_invalid_binary_mcq": filter_invalid_binary_mcq,
+    "problem_quality": problem_quality,
     "retrieve_similar": retrieve_similar,
     "check_contamination": check_contamination,
     "cluster_dedup": cluster_dedup,

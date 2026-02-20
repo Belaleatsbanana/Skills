@@ -1,0 +1,28 @@
+# Problem-only quality assessment (no solution). Input: {problem}. Output: same keys as problem_quality postprocess.
+user: |-
+  You are an expert at evaluating mathematical problems (proofs, computations, or short-answer).
+
+  Judge whether this problem is good for training based only on the problem statement. Do not solve it.
+
+  ---
+  Problem:
+  {problem}
+  ---
+
+  Output your assessment in the exact format below.
+
+  CLARITY_ANALYSIS:
+  <Was the problem clear? Any ambiguities?>
+
+  MATHEMATICAL_RIGOR_ANALYSIS:
+  <Statement valid? Conditions sufficient?>
+
+  DIFFICULTY_ESTIMATE: <exactly one of: P1, P2, P3, P4, P5, P6, TOO_SIMPLE, UNCLEAR>
+
+  CRITICAL_ISSUES:
+  <Serious issues or "None">
+
+  DECISION: <ACCEPT or REJECT>
+  DECISION_REASONING: <Why accept/reject.>
+
+  Output:
