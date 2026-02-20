@@ -328,7 +328,7 @@ def extract_answer_non_proof(cluster, expname, run_after, stage_config, **kwargs
     )
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/common/extract-expected-answer.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/non-proof/extract-answers.yaml "
             f"++inference.top_p=0.95 ++inference.temperature=1.0 ++inference.tokens_to_generate=8192 "
             f"++max_concurrent_requests=1024 ++inference.endpoint_type=chat "
             f"++chat_template_kwargs.thinking=true ++server.enable_soft_fail=True ++skip_filled=True "

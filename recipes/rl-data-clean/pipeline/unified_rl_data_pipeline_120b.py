@@ -314,7 +314,7 @@ def extract_answer_non_proof(cluster, expname, run_after, stage_config, **kwargs
     )
     generate(
         ctx=wrap_arguments(
-            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/common/extract-expected-answer.yaml "
+            f"++prompt_config=/nemo_run/code/recipes/rl-data-clean/prompts/non-proof/extract-answers.yaml "
             f"++inference.tokens_to_generate=8192 ++inference.temperature=1.0 ++inference.top_p=1.0 "
             f"++server.enable_soft_fail=True ++skip_filled=True ++chat_template_kwargs.reasoning_effort=high "
             f"{stage_config.get('inline_args', '')} "
