@@ -6,7 +6,7 @@ model_name: gpt-oss-120b
 expname: unified-rl-${model_name}
 suffix: 120b
 
-input_file: ${base_output_dir}/raw_aops_data.jsonl
+input_file: ${base_output_dir}/raw_aops_data_sample_5000.jsonl
 
 generate_kwargs:
   model: /hf_models/${model_name}
