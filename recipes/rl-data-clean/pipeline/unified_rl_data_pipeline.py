@@ -145,7 +145,7 @@ def retrieve_similar(cluster, expname, run_after, stage_config, **kwargs):
         log_dir=f"{output_dir}/logs",
         expname=expname,
         run_after=run_after,
-        installation_command="pip install sentence-transformers",
+        installation_command="uv pip install sentence-transformers",
         num_nodes=1,
         num_gpus=8,
         **stage_config.get("run_cmd_kwargs", {}),
