@@ -17,8 +17,8 @@
 Unified RL data pipeline: extract -> filter (invalid/binary/mcq) -> dedup (retrieve_similar + check_contamination + cluster) -> solve+difficulty -> classify proof vs non-proof -> non-proof: extract answer.
 
 Run from repo root:
-  python recipes/rl-data-clean/pipeline/unified_rl_data_pipeline.py --config unified-rl-deepseek
-  python recipes/rl-data-clean/pipeline/unified_rl_data_pipeline.py --config unified-rl-deepseek --stages solve_and_difficulty,classify_if_proof
+  python recipes/rl-data-clean/pipeline/unified_rl_data_pipeline_deepseek.py --config unified-rl-deepseek
+  python recipes/rl-data-clean/pipeline/unified_rl_data_pipeline_deepseek.py --config unified-rl-deepseek --stages solve_and_difficulty,classify_if_proof
 """
 
 import argparse

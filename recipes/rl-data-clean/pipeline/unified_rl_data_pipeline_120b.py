@@ -14,7 +14,7 @@
 # limitations under the License.
 
 """
-Unified RL data pipeline (GPT-OSS 120b / vLLM): same flow as unified_rl_data_pipeline.py but with vLLM + reasoning_effort=high.
+Unified RL data pipeline (GPT-OSS 120b / vLLM): same flow as unified_rl_data_pipeline_deepseek.py but with vLLM + reasoning_effort=high.
 
 Run from repo root:
   python recipes/rl-data-clean/pipeline/unified_rl_data_pipeline_120b.py --config unified-rl-120b
