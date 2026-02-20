@@ -212,6 +212,8 @@ class SweBenchGenerationTask(GenerationTask):
                 # If repo is local, we need to mount it inside of Apptainer
                 apptainer_args += f" --mount type=bind,src={repo_url_or_path},dst=/instance_repo,ro "
                 repo_url_or_path = "/instance_repo"
+                # Prevent "dubious ownership" errors
+                container_commands.append("git config --global --add safe.directory /instance_repo")
 
             # Clone the repo.
             # This follows the procedure used for the SWE-bench environments:
