@@ -59,10 +59,9 @@ try:
         subprocess.run(["cat"] + input_files, stdout=out_f, check=True)
     print(f"Successfully concatenated {len(input_files)} files to {output_file}")
 
-    # Create .done file and delete input files
+    # Create .done file; keep chunk files so partial runs can be recovered without re-running
     open(f"{output_file}.done", "w").close()
-    for file_ in input_files:
-        os.remove(file_)
+    # Chunk files are no longer deleted after merge (previously: os.remove(file_) for each)
 
     # Execute the post-merge command, if provided
     if post_merge_command:
