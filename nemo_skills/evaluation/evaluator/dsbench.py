@@ -14,10 +14,10 @@
 
 import json
 import logging
+import re
 from typing import Any
 
 from math_verify import StringExtractionConfig, parse, verify
-import re
 
 from nemo_skills.evaluation.evaluator.math import MathEvaluator
 from nemo_skills.evaluation.math_grader import math_equal
@@ -37,27 +37,45 @@ def relaxed_equal(gt_answer: Any, predicted_answer: Any) -> bool:
 
     try:
         predicted_answer = json.loads(predicted_answer)
+    except Exception:
+        pass  # keep original string form
+    try:
         gt_answer = json.loads(gt_answer)
     except Exception:
-        predicted_answer = predicted_answer
-        gt_answer = gt_answer
+        pass  # keep original string form
 
     if isinstance(predicted_answer, dict):
-        return all(relaxed_equal(gt_answer[k], predicted_answer.get(k)) for k in gt_answer.keys()) 
+        if not isinstance(gt_answer, dict):
+            # check if any of the values in predicted_answer are equal to gt_answer
+            return any(relaxed_equal(gt_answer, p) for p in predicted_answer.values())
+
+        # check if all the keys in gt_answer are in predicted_answer and if the values are equal; ok for predicted_answer to have more keys
+        return all(
+            k in predicted_answer and relaxed_equal(gt_answer[k], predicted_answer[k]) for k in gt_answer.keys()
+        )
 
     if isinstance(predicted_answer, list):
-        return len(gt_answer) == len(predicted_answer) and all(relaxed_equal(e, p) for e, p in zip(gt_answer, predicted_answer))
-
+        if not isinstance(gt_answer, list):
+            # check if any of the values in predicted_answer are equal to gt_answer
+            return any(relaxed_equal(gt_answer, p) for p in predicted_answer)
+        # check if the lengths are equal and if all the values are equal
+        return len(gt_answer) == len(predicted_answer) and all(
+            relaxed_equal(e, p) for e, p in zip(gt_answer, predicted_answer)
+        )
 
     # Try case-insensitive MCQ matching
-    mcq_options = "ABCDEFGHIJKLMNabcdefghijklmn"
-    norm_gt_mcq = str(gt_answer).strip()
+    # TODO: add support for numeric and roman numeral MCQs (i.e. "1", "I", "2", "II", etc.)
+    mcq_options = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    norm_gt_mcq = str(gt_answer).strip().upper()
+    norm_pred_mcq = str(predicted_answer).strip().upper()
     is_mcq = re.fullmatch("|".join(mcq_options), norm_gt_mcq)
-    parsed_gt = parse(gt_answer, [StringExtractionConfig(strings=tuple(mcq_options))])
-    parsed_pred = parse(predicted_answer, [StringExtractionConfig(strings=tuple(mcq_options))])
-    if is_mcq and verify(parsed_gt, parsed_pred):
-        return verify(parsed_gt, parsed_pred)
-    
+    if is_mcq:
+        parsed_gt = parse(norm_gt_mcq, [StringExtractionConfig(strings=tuple(mcq_options))])
+        parsed_pred = parse(norm_pred_mcq, [StringExtractionConfig(strings=tuple(mcq_options))])
+        mcq_result = verify(parsed_gt, parsed_pred)
+        if mcq_result:
+            return mcq_result
+
     return math_equal(str(gt_answer), str(predicted_answer))
 
 
@@ -72,9 +90,9 @@ class DSBenchEvaluator(MathEvaluator):
         data_point = await super().eval_single(data_point)
 
         # If symbolic_correct is False, try relaxed_equal
-        if not data_point.get("symbolic_correct", False):
+        if not data_point["symbolic_correct"]:
             expected_answer = data_point["expected_answer"]
-            predicted_answer = data_point.get("predicted_answer")
+            predicted_answer = data_point["predicted_answer"]
 
             if relaxed_equal(expected_answer, predicted_answer):
                 data_point["symbolic_correct"] = True
