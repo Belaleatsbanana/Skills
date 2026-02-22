@@ -22,7 +22,7 @@ containers:
   nemo-skills: dockerfile:dockerfiles/Dockerfile.nemo-skills
   megatron: dockerfile:dockerfiles/Dockerfile.megatron
   verl: dockerfile:dockerfiles/Dockerfile.verl
-  nemo-rl: igitman/nemo-skills-nemo-rl:latest
+  nemo-rl: gitlab-master.nvidia.com/dl/ai-services/docker-images/igitman/nemo-skills-nemo-rl:latest
 
 mounts:
   - /tmp:/tmp
