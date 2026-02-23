@@ -302,19 +302,28 @@ def prepare_fdb_dir(
             if not copied:
                 print(f"Warning: interrupt.json/metadata.json not found for {entry_id} (tried {vers}, {folder_v1_5}/{folder_v1_0})")
 
-    # Behavior eval (background_speech, talking_to_other, v1.5 backchannel) needs: input.json, clean_input.json, output.json, clean_output.json
+    # Behavior eval (background_speech, talking_to_other, v1.5 backchannel, v1.5 interruption) needs:
+    # input.json, clean_input.json, output.json, clean_output.json
     # Copy input.wav and clean_input.wav from FDB v1.5 data; write placeholder clean_output.json; ASR will fill input.json and clean_input.json
     _behavior_subtests = ("background_speech", "talking_to_other")
     _is_v1_5_backchannel = subtest == "backchannel" and fdb_version == "v1.5"
-    if (subtest in _behavior_subtests or _is_v1_5_backchannel) and fdb_data_path and fdb_data_path.exists():
+    _is_v1_5_interruption = subtest == "interruption" and fdb_version == "v1.5"
+    if (subtest in _behavior_subtests or _is_v1_5_backchannel or _is_v1_5_interruption) and fdb_data_path and fdb_data_path.exists():
         # Map subtest to v1.5 source folder name
-        _src_folder = "user_backchannel" if _is_v1_5_backchannel else subtest
+        if _is_v1_5_backchannel:
+            _src_folder = "user_backchannel"
+        elif _is_v1_5_interruption:
+            _src_folder = "user_interruption"
+        else:
+            _src_folder = subtest
         _prefixes = {
             "background_speech": "background_speech_",
             "talking_to_other": "talking_to_other_",
         }
         if _is_v1_5_backchannel:
             _prefixes["backchannel"] = "user_backchannel_"
+        if _is_v1_5_interruption:
+            _prefixes["interruption"] = "user_interruption_"
         for entry_id, _ in entries_with_audio:
             entry_id = str(entry_id)
             sample_id = None
@@ -351,7 +360,12 @@ def prepare_fdb_dir(
         if stereo:
             cmd.append("--stereo")
         subprocess.run(cmd, cwd=str(fdb_repo), check=False)
-        if subtest in ("background_speech", "talking_to_other") or (subtest == "backchannel" and fdb_version == "v1.5"):
+        _needs_inputs_asr = (
+            subtest in ("background_speech", "talking_to_other")
+            or (subtest == "backchannel" and fdb_version == "v1.5")
+            or (subtest == "interruption" and fdb_version == "v1.5")
+        )
+        if _needs_inputs_asr:
             subprocess.run(
                 [sys.executable, str(asr_script), "--root_dir", str(fdb_prepared), "--task", "inputs_only"],
                 cwd=str(fdb_repo),

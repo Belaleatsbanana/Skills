@@ -46,12 +46,37 @@ FDB_TASK_MAP = {
     "background_speech": "behavior",
     "talking_to_other": "behavior",
 }
-# v1.5 uses behavior eval for backchannel (not the v1.0 JSD-based eval_backchannel)
+# v1.5 uses behavior eval for backchannel and interruption (not the v1.0 JSD/TOR-based evals)
 FDB_TASK_MAP_V1_5 = {
     **FDB_TASK_MAP,
     "backchannel": "behavior",
-    "interruption": "user_interruption",
+    "interruption": "behavior",
 }
+# v1.5 interruption needs full ASR (not user_interruption which crops to post-interrupt)
+ASR_TASK_MAP_V1_5 = {
+    **ASR_TASK_MAP,
+    "interruption": "full",
+}
+
+
+def _convert_stereo_to_mono(fdb_prepared: Path):
+    """Convert stereo output.wav files to mono (model channel) for Silero-VAD compatibility."""
+    try:
+        import soundfile as sf_mod
+    except ImportError:
+        print("Warning: soundfile not available, skipping stereo→mono conversion for timing.")
+        return
+    for sample_dir in sorted(fdb_prepared.iterdir()):
+        out_wav = sample_dir / "output.wav"
+        if not out_wav.exists():
+            continue
+        try:
+            data, sr = sf_mod.read(str(out_wav))
+            if data.ndim == 2 and data.shape[1] >= 2:
+                mono = data[:, 1]  # ch1 = model channel
+                sf_mod.write(str(out_wav), mono, sr)
+        except Exception as e:
+            print(f"Warning: could not convert {out_wav} to mono: {e}")
 
 
 def main():
@@ -83,7 +108,8 @@ def main():
         )
         sys.exit(1)
 
-    asr_task = ASR_TASK_MAP[args.subtest]
+    asr_map = ASR_TASK_MAP_V1_5 if args.fdb_version == "v1.5" else ASR_TASK_MAP
+    asr_task = asr_map[args.subtest]
     task_map = FDB_TASK_MAP_V1_5 if args.fdb_version == "v1.5" else FDB_TASK_MAP
     fdb_task = task_map[args.subtest]
     prep_script = Path(__file__).resolve().parent / "prepare_fdb_eval_dir.py"
@@ -165,6 +191,44 @@ def main():
                         metrics[f"behavior_{key}"] = 0.0
         except (ValueError, SyntaxError):
             pass
+    # --- Timing metrics (Stop Latency & Response Latency) for v1.5 ---
+    # get_timing.py uses Silero-VAD on input.wav / output.wav to compute overlap and gap intervals.
+    # Silero-VAD expects mono; output.wav may be stereo (ch0=user, ch1=model) so convert to mono first.
+    if args.fdb_version == "v1.5":
+        timing_script = fdb_repo / "evaluation" / "get_timing.py"
+        if timing_script.exists():
+            _convert_stereo_to_mono(fdb_prepared)
+            print(f"Running timing analysis (get_timing.py) on {fdb_prepared} ...")
+            timing_result = subprocess.run(
+                [sys.executable, str(timing_script), "--root_dir", str(fdb_prepared)],
+                cwd=str(fdb_repo / "evaluation"), capture_output=True, text=True,
+            )
+            print(timing_result.stdout)
+            if timing_result.stderr:
+                print(timing_result.stderr, file=sys.stderr)
+
+            stop_durations = []
+            resp_durations = []
+            for sample_dir in sorted(fdb_prepared.iterdir()):
+                lat_file = sample_dir / "latency_intervals.json"
+                if not lat_file.exists():
+                    continue
+                with open(lat_file, "r") as lf:
+                    lat_data = json.load(lf)
+                for s, e in lat_data.get("latency_stop_list", []):
+                    stop_durations.append(e - s)
+                for s, e in lat_data.get("latency_resp_list", []):
+                    resp_durations.append(e - s)
+
+            if stop_durations:
+                metrics["stop_latency"] = round(sum(stop_durations) / len(stop_durations), 4)
+                metrics["stop_latency_ms"] = round(metrics["stop_latency"] * 1000, 2)
+            if resp_durations:
+                metrics["response_latency"] = round(sum(resp_durations) / len(resp_durations), 4)
+                metrics["response_latency_ms"] = round(metrics["response_latency"] * 1000, 2)
+        else:
+            print(f"Warning: {timing_script} not found, skipping timing metrics.")
+
     if not metrics:
         metrics["status"] = "no_metrics_found"
 

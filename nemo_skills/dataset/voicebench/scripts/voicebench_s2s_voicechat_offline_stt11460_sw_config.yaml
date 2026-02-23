@@ -1,0 +1,72 @@
+# VoiceBench evaluation configuration for NemotronVoiceChat offline inference (s2s_voicechat backend).
+# STT ckpt: checkpoints_hf_11460 (fix_seq_mask variant)
+# S2S ckpt: /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Nemotron-VoiceChat-november/duplex-eartts-2mim_sw_et_eos_dp_eos_dup_fp32_1delay_main_branch-stt-AS7.8_11460_old_branch_generated_fixed/
+# TTS ckpt: sliding window checkpoint (delay_1, step_24011)
+# Ref: https://docs.google.com/document/d/1tLJlb5Fi8ECdoLwbnjQ2lM5JIj8OeVo_2PeoDzK9jQE/edit?tab=t.0#heading=h.d57shsy818cf
+#
+# Run:
+#   python nemo_skills/dataset/voicebench/scripts/generate_from_api_and_score_official.py \
+#     --config nemo_skills/dataset/voicebench/scripts/voicebench_s2s_voicechat_offline_stt11460_sw_config.yaml
+
+# Cluster settings
+cluster: s2s_eval_oci_iad
+partition: batch_block1,batch_block3,batch_block4
+cpu_partition: cpu
+
+# Model checkpoint (HF-format ckpt). Passed as --model to serve_unified and used as pretrained_s2s_model override.
+model: /lustre/fsw/portfolios/llmservice/users/apasad/projects/nemo_s2s_merged_dec/exp_SFT-nano9b/IAD_nano9b_parakeet600m_from_PT_32k_64gpu_5e-5_PT0.5_SFT0.15_QA0.02_TEXT0.1_loss0.5_MCQ0.03_prompt2_ASR0.01_fillerlong_offset2_sysp0.05_NoiseDefault_asr_dtc2_dst15_lossDefault_ei0.033_ot8_TN_all_data_v3.2_ir_fix_seq_mask/checkpoints_hf_11460
+
+server_type: vllm
+server_gpus: 1
+num_chunks: 48
+
+server_entrypoint: "-m nemo_skills.inference.server.serve_unified"
+server_args: >-
+  --backend s2s_voicechat
+  --config_path /lustre/fsw/portfolios/llmservice/users/kevinhu/projects/duplex-stt/config/inference/infer_nano_eartts_Voicebench_Jan22_2026.yaml
+  --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/S2S-full-duplex/inference_references/Emma_S3_A1_SC7_singleturntarget_21_channel_1_audio_in.wav
+  --tts_ckpt_path /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Duplex_EARTTS/eartts_rvq_cont_task_nanov2_tts_pretraining_wordlist_duplex_data_new_branch_new_tok_4nodes_duplex_eartts_nemo_main_delay_1_step_24011-last.ckpt
+  --extra_decoding_seconds 20
+  --inference_pad_boost -0.5
+  --inference_bos_boost 0.5
+  --inference_eos_boost 0
+  --ignore_system_prompt
+  --dtype float32
+  --code_path /lustre/fsw/portfolios/convai/users/kevinhu/S2S-Duplex-new-codebase/branches/NeMo-release_not_rebased
+  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/voicebench_stt11460_sw_voicechat_offline
+  --save_artifacts
+  --decode_audio
+  --batch_size 2
+
+server_container: /lustre/fsw/portfolios/convai/users/ecasanova/docker_images/nemo_duplex_november_eartts.sqsh
+server_server_type: vllm_multimodal
+
+# Paths
+data_dir: /lustre/fsw/portfolios/llmservice/users/vmendelev/experiments/voicebench_test/data_dir
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/voicebench_stt11460_sw_voicechat_offline
+voicebench_repo_path: /lustre/fsw/portfolios/llmservice/users/vmendelev/code/VoiceBench
+
+subtests:
+  - openbookqa
+  # - bbh
+  # - alpacaeval
+  # - alpacaeval_full
+  # - ifeval
+  # - advbench
+  # - commoneval
+  # - wildvoice
+  # - mmsu
+  # - sd_qa
+  # - alpacaeval_speaker
+
+# Scoring settings
+api_type: nvidia
+nvidia_model: azure/openai/gpt-4o-mini
+
+installation_command: ""
+scoring_installation_command: "pip install sacrebleu qa_metrics"
+
+expname: voicebench_stt11460_sw_s2s_voicechat_offline
+generation_only: false
+scoring_only: false
+dry_run: false

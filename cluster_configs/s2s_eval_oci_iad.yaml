@@ -11,8 +11,8 @@ ssh_tunnel:
 # if you're running directly from cluster, you only need to define job_dir and shouldn't use ssh_tunnel
 # job_dir: <some location on slurm cluster to keep job metadata, uploaded code and generated sbatch files>
 
-# account: llmservice_nemo_speechlm
-account: llmservice_nemo_reasoning
+account: llmservice_nemo_speechlm
+# account: llmservice_nemo_reasoning
 partition: batch_block1,batch_block3,batch_block4
 cpu_partition: cpu
 job_name_prefix: ""
