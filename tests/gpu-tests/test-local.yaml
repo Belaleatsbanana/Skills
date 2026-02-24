@@ -22,14 +22,13 @@ containers:
   nemo-skills: dockerfile:dockerfiles/Dockerfile.nemo-skills
   megatron: dockerfile:dockerfiles/Dockerfile.megatron
   verl: dockerfile:dockerfiles/Dockerfile.verl
-  nemo-rl: gitlab-master.nvidia.com/dl/ai-services/docker-images/igitman/nemo-skills-nemo-rl:latest
+  nemo-rl: dockerfile:dockerfiles/Dockerfile.nemo-rl
 
 mounts:
   - /tmp:/tmp
   # change this if the models are located in a different place
   # TODO: can we make it simpler?
   - /mnt/datadrive/nemo-skills-test-data:/mnt/datadrive/nemo-skills-test-data
-  - /home/wedu:/home/wedu
 
 env_vars:
   - HF_HOME=/mnt/datadrive/nemo-skills-test-data/hf-cache
