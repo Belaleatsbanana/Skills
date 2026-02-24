@@ -13,7 +13,7 @@ generate_kwargs:
   server_type: vllm
   server_gpus: 8
   server_nodes: 1
-  num_chunks: 1
+  num_chunks: 10
 
 pipeline_stages:
   - extract_problems

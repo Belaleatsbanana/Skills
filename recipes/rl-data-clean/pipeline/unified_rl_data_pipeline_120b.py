@@ -298,7 +298,7 @@ def classify_if_proof(cluster, expname, run_after, stage_config, **kwargs):
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
-        # dependent_jobs=2,
+        dependent_jobs=1,
         **_gpt_oss_stage_kwargs(stage_config),
     )
 
@@ -325,7 +325,7 @@ def extract_answer_non_proof(cluster, expname, run_after, stage_config, **kwargs
         postprocess_cmd=postprocess_cmd,
         expname=expname,
         run_after=run_after,
-        # dependent_jobs=2,
+        dependent_jobs=1,
         **_gpt_oss_stage_kwargs(stage_config),
     )
 
