@@ -119,6 +119,12 @@ class SweBenchGenerationConfig:
     # For SWE-agent, this changes the default config to multilingual.yaml, which uses language-specific prompting.
     multilingual: bool = False
 
+    # If specified, enables SWE-Zero (execution-free) mode.
+    # This will override container_formatter during inference and run all instances in this container instead,
+    # cloning the repo to /testbed before running the agent.
+    # This does not affect evaluation, which still runs in the container_formatter containers.
+    swe_zero_container: str | None = None
+
     # URL of the evaluation harness repo to pass to git clone. Defaults to our fork of SWE-bench with local evaluation
     eval_harness_repo: str = "https://github.com/Kipok/SWE-bench.git"
     eval_harness_commit: str = "HEAD"  # Which commit to use when cloning the eval harness repo
@@ -397,16 +403,68 @@ class SweBenchGenerationTask(GenerationTask):
 
     async def _execute_container_command(self, data_point, command, expected_file_pattern, mode, timeout=100000):
         """Execute a command in an Apptainer container with retry logic."""
-        container_name = data_point["container_formatter"].format(
-            instance_id=data_point["instance_id"].replace("__", "_1776_")
-        )
-
-        # Create logs directory if it doesn't exist
-        logs_dir = self.output_dir / "apptainer_logs"
-        logs_dir.mkdir(exist_ok=True)
+        # List of commands to execute in the container in order
+        container_commands = []
 
         # Fix localhost URLs not working sometimes
-        command = f"echo '127.0.0.1 localhost' >/etc/hosts && {command}"
+        container_commands.append("echo '127.0.0.1 localhost' >/etc/hosts")
+
+        extra_apptainer_args = ""
+
+        if self.cfg.swe_zero_container is not None and mode == "agent":
+            container_name = self.cfg.swe_zero_container
+
+            # In SWE-Zero mode, we have to clone the repo inside of the container before running the agent.
+
+            # repo_formatter tells us where to get the repo from: either from a URL or from a local mirror.
+            # If repo_formatter is not set, we try to fetch it from GitHub using the "repo" column of the dataset.
+            repo_formatter = data_point.get("repo_formatter", "https://github.com/{repo}")
+            repo_url_or_path = repo_formatter.format(repo=data_point["repo"])
+            if repo_url_or_path.startswith("/"):
+                # If the repo is local, we need to mount it inside of Apptainer
+                extra_apptainer_args += f" --mount type=bind,src={repo_url_or_path},dst=/instance_repo,ro "
+                repo_url_or_path = "/instance_repo"
+                # Prevent "dubious ownership" errors
+                container_commands.append("git config --global --add safe.directory /instance_repo")
+
+            # Clone the repo.
+            # This follows the procedure used for the official SWE-bench environments:
+            # https://github.com/SWE-bench/SWE-bench/blob/7a6b44e4a82eece60ac06afd3042a76d8a95eec3/swebench/harness/test_spec/python.py#L274
+            # with the following differences:
+            #     1. we clone all branches because we can't always know which branch the commit is on,
+            #     2. we compare commit times using Unix timestamps (%ct instead of %ci) to fix timezone issues.
+            container_commands.append(
+                # Remove existing repo if present
+                "rm -rf /testbed && "
+                # Clone the repo we need
+                f"git clone -o origin {repo_url_or_path} /testbed && "
+                "chmod -R 777 /testbed && "
+                "cd /testbed && "
+                f"git reset --hard {data_point['base_commit']} && "
+                # Remove the remote and tags so the agent won't see newer commits
+                "git remote remove origin && "
+                # Remove only tags pointing to commits after target timestamp
+                f"TARGET_TIMESTAMP=$(git show -s --format=%ct {data_point['base_commit']}) && "
+                'git tag -l | while read tag; do TAG_COMMIT=$(git rev-list -n 1 "$tag"); TAG_TIME=$(git show -s --format=%ct "$TAG_COMMIT"); if [[ "$TAG_TIME" -gt "$TARGET_TIMESTAMP" ]]; then git tag -d "$tag"; fi; done && '
+                "git reflog expire --expire=now --all && "
+                "git gc --prune=now --aggressive && "
+                # Verify future logs aren't available
+                "AFTER_TIMESTAMP=$(($TARGET_TIMESTAMP + 1)) && "
+                'COMMIT_COUNT=$(git log --oneline --all --since="$AFTER_TIMESTAMP" | wc -l) && '
+                'if [ "$COMMIT_COUNT" -ne 0 ]; then '
+                "    echo 'Exiting because future logs are visible after resetting the repo to the base commit.' && "
+                "    echo 'This means something went wrong during the setup procedure.' && "
+                "    exit 1; "
+                "fi"
+            )
+        else:
+            # In the general case, we expect that the repo will already be cloned in /testbed in the container
+            container_name = data_point["container_formatter"].format(
+                instance_id=data_point["instance_id"].replace("__", "_1776_")
+            )
+
+        container_commands.append(command)
+        combined_command = " && ".join(container_commands)
 
         # Launch Apptainer container and execute the command
         apptainer_cmd = (
@@ -414,8 +472,13 @@ class SweBenchGenerationTask(GenerationTask):
             f"--mount type=bind,src=/nemo_run/code,dst=/nemo_run/code "
             f"--mount type=bind,src=/root,dst=/root_mount,ro "
             f"--mount type=bind,src={self.output_dir},dst=/trajectories_mount "
-            f" {container_name} bash -c {shlex.quote(command)}"
+            f"{extra_apptainer_args} "
+            f"{container_name} bash -c {shlex.quote(combined_command)}"
         )
+
+        # Create logs directory if it doesn't exist
+        logs_dir = self.output_dir / "apptainer_logs"
+        logs_dir.mkdir(exist_ok=True)
 
         # Retry apptainer command up to max_retries times
         for attempt in range(self.cfg.max_retries):
