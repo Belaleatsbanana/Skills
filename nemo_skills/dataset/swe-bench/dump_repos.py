@@ -85,7 +85,7 @@ def main():
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    # Read container names from JSONL
+    # Read repos from JSONL
     if not os.path.exists(jsonl_path):
         print(f"Error: {jsonl_path} not found!")
         sys.exit(1)
