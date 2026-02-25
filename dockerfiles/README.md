@@ -33,3 +33,11 @@ We directly use official `nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc1` image.
 ## Building sglang image
 
 We directly use official `lmsysorg/sglang:v0.5.8` image.
+
+## Building vllm image
+
+We use official `vllm/vllm-openai:v0.10.2` image with the additional `vllm[audio]` dependencies.
+
+## nemo-rl image
+
+We do not ship a Dockerfile for nemo-rl. Use NVIDIA's pre-built image from NGC with a commit-based tag, e.g. `nvcr.io/nvidian/nemo-rl:9148186-44694499`. Set this in your cluster config under `containers.nemo-rl` (see `cluster_configs/example-local.yaml`). Replace the tag with the desired commit/build id.

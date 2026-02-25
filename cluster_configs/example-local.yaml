@@ -23,7 +23,8 @@ containers:
   sandbox: dockerfile:dockerfiles/Dockerfile.sandbox
   nemo-skills: dockerfile:dockerfiles/Dockerfile.nemo-skills
   verl: dockerfile:dockerfiles/Dockerfile.verl
-  nemo-rl: dockerfile:dockerfiles/Dockerfile.nemo-rl
+  # nemo-rl: use NGC image with commit-based tag; replace with desired tag e.g. nvcr.io/nvidian/nemo-rl:<commit-id>
+  nemo-rl: nvcr.io/nvidian/nemo-rl:9148186-44694499
 
 # add required mounts for models/data here
 # the code is mounted automatically inside /nemo_run/code

@@ -23,5 +23,6 @@ _containers = {
     "sandbox": "dockerfile:dockerfiles/Dockerfile.sandbox",
     "nemo-skills": "dockerfile:dockerfiles/Dockerfile.nemo-skills",
     "verl": "dockerfile:dockerfiles/Dockerfile.verl",
-    "nemo-rl": "dockerfile:dockerfiles/Dockerfile.nemo-rl",
+    # Use NGC image with commit-based tag (e.g. 9148186-44694499). No local Dockerfile needed.
+    "nemo-rl": "nvcr.io/nvidian/nemo-rl:9148186-44694499",
 }
