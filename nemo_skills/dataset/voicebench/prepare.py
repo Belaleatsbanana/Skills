@@ -193,8 +193,13 @@ def format_entry(entry, subtest_name, config, audio_dir, entry_idx, split_name=N
     if split_name and len(config["splits"]) > 1:
         formatted["subset_for_metrics"] = split_name
 
-    # System message (shared across all variants)
-    system_message = {"role": "system", "content": "You are a helpful assistant."}
+    # System message - use MCQ-specific prompt for multiple-choice subtests
+    MCQ_SUBTESTS = {"mmsu", "openbookqa", "bbh"}
+    if subtest_name in MCQ_SUBTESTS:
+        system_content = "Answer the following multiple choice question with an explanation for the answer."
+    else:
+        system_content = "You are a helpful assistant."
+    system_message = {"role": "system", "content": system_content}
 
     # Text content (already extracted as prompt_text above)
     content = prompt_text
