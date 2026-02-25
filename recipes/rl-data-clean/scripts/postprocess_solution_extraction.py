@@ -9,10 +9,41 @@ import json
 import re
 
 
+def extract_final_answer(text: str):
+    """
+    Extract only the final answer (e.g. "18", "41", "\\sqrt{2}") from solution text.
+    Prefers **Answer:** or Answer: or \\boxed{...}; returns last occurrence so we get the final answer.
+    """
+    if not text or not text.strip():
+        return None
+    text = text.strip()
+    candidates = []
+
+    # Last **Answer:** ... (capture until next ** or double newline or end)
+    for m in re.finditer(r"\*\*Answer:\*\*\s*(.+?)(?=\n\n|\*\*|$)", text, re.DOTALL | re.IGNORECASE):
+        candidates.append(m.group(1).strip())
+    # Last Answer: ... (same)
+    for m in re.finditer(r"(?<!\*)\bAnswer:\s*(.+?)(?=\n\n|\*\*|$)", text, re.DOTALL | re.IGNORECASE):
+        candidates.append(m.group(1).strip())
+    # Last \boxed{...}
+    for m in re.finditer(r"\\boxed\{([^}]*(?:\{[^}]*\}[^}]*)*)\}", text):
+        candidates.append(m.group(1).strip())
+
+    if candidates:
+        # Take last (final) answer, clean to one line if possible
+        ans = candidates[-1]
+        ans = re.sub(r"\s+", " ", ans).strip()
+        ans = re.sub(r"\*+\.?\s*$", "", ans).strip()  # trailing ** or .**
+        if len(ans) > 500:
+            ans = ans[:500] + "…"  # cap very long answers
+        return ans if ans else None
+    return None
+
+
 def extract_solution(generation: str) -> str:
     """
     Extract solution from model generation.
-    Returns None if solution not found.
+    Returns full solution text; use extract_final_answer() for expected_answer.
     """
     if not generation:
         return None
@@ -70,12 +101,13 @@ def main():
                 if serialized and len(serialized) > 0:
                     generation = serialized[0].get("content", "")
 
-            # Extract solution
+            # Extract solution (full text) and expected_answer (final answer only)
             solution = extract_solution(generation)
-
             if solution:
+                # Prefer short final answer for expected_answer; fallback to full solution
+                expected = extract_final_answer(generation) or extract_final_answer(solution) or solution
                 item["extracted_solution"] = solution
-                item["expected_answer"] = solution  # alias for assess-problem-answer-quality prompt
+                item["expected_answer"] = expected
                 item["solution_extraction_gen"] = generation
                 extracted.append(item)
             else:
