@@ -148,7 +148,7 @@ class NemoRLTask:
             f"{nsight_cmd}"
             f"echo 'Starting training' && "
             f"uv run --active python /nemo_run/code/nemo_skills/training/nemo_rl/{start_script} "
-            f"  {config_arg}"
+            f"  {config_arg} "
             f"  {self.format_train_args()} "
             f"  {self.format_data_args()} "
             f"  {self.logging_params} "
@@ -346,7 +346,7 @@ def grpo_nemo_rl(
     ),
     use_gym: bool = typer.Option(
         False,
-        help="If True, uses NeMo Gym for environment interaction instead of NeMo Skills prompt templating. "
+        help="If True, uses NeMo Gym for environment interaction instead of native NeMo RL logic. "
         "Requires both --training-data and --validation-data.",
     ),
     training_config: str = typer.Option(
@@ -379,7 +379,7 @@ def grpo_nemo_rl(
 
     if use_gym:
         if training_data is None or validation_data is None:
-            raise typer.BadParameter("--use-gym requires both --training-data and --validation-data to be specified.")
+            raise typer.BadParameter("--use_gym requires both --training_data and --validation_data to be specified.")
 
     cluster_config = get_cluster_config(cluster, config_dir)
     cluster_config = resolve_mount_paths(cluster_config, mount_paths)
