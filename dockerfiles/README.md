@@ -36,7 +36,7 @@ We directly use official `lmsysorg/sglang:v0.5.8` image.
 
 ## Building vllm image
 
-We use official `vllm/vllm-openai:v0.10.2` image with the additional `vllm[audio]` dependencies.
+We use official `vllm/vllm-openai:v0.14.1` image with the additional `vllm[audio]` dependencies.
 
 ## nemo-rl image
 
