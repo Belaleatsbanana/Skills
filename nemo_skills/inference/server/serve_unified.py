@@ -138,8 +138,8 @@ def main():
     parser.add_argument(
         "--backend",
         default="salm",
-        choices=["salm", "tts", "s2s", "s2s_voicechat", "s2s_incremental", "s2s_session"],
-        help="Backend type: salm (speech-augmented LM), tts (text-to-speech), s2s (speech-to-speech offline), s2s_voicechat (NemotronVoiceChat offline, YAML-driven), s2s_incremental (frame-by-frame processing), s2s_session (session-aware multi-turn)",
+        choices=["salm", "tts", "s2s", "s2s_voicechat", "s2s_incremental", "s2s_incremental_v2", "s2s_session"],
+        help="Backend type: salm (speech-augmented LM), tts (text-to-speech), s2s (speech-to-speech offline), s2s_voicechat (NemotronVoiceChat offline, YAML-driven), s2s_incremental (frame-by-frame processing), s2s_incremental_v2 (V2 frame-by-frame with NeMo wrapper, vLLM, caches), s2s_session (session-aware multi-turn)",
     )
 
     # Backend-specific model paths
@@ -297,6 +297,106 @@ def main():
         help="Number of consecutive PAD tokens to detect end of response (used when mode=eos)",
     )
 
+    # S2S Incremental V2 backend options
+    parser.add_argument(
+        "--engine_type",
+        type=str,
+        default="native",
+        choices=["native", "vllm_llm", "vllm_eartts", "vllm_llm_vllm_eartts"],
+        help="Inference engine type (s2s_incremental_v2 backend)",
+    )
+    parser.add_argument(
+        "--use_perception_cache",
+        action="store_true",
+        help="Enable cache-aware streaming for perception encoder (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--use_perception_cudagraph",
+        action="store_true",
+        help="Enable CUDA graph-accelerated perception encoder (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--use_codec_cache",
+        action="store_true",
+        help="Incremental codec decode to remove clicking (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--buffer_size_frames",
+        type=int,
+        default=None,
+        help="Number of frames in audio buffer (s2s_incremental_v2, default: 20 w/ perception cache, 71 without)",
+    )
+    parser.add_argument(
+        "--codec_token_history_size",
+        type=int,
+        default=60,
+        help="Sliding-window buffer size; ignored when use_codec_cache is on (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--pad_to_duration_secs",
+        type=float,
+        default=None,
+        help="Pad input audio to this duration in seconds (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--system_prompt",
+        type=str,
+        default=None,
+        help="System prompt for the model (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--tts_system_prompt",
+        type=str,
+        default=None,
+        help="TTS system prompt to condition generation style (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--repetition_penalty",
+        type=float,
+        default=1.0,
+        help="Repetition penalty (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--force_turn_taking",
+        action="store_true",
+        help="Enable forced turn-taking (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--force_turn_taking_threshold",
+        type=int,
+        default=40,
+        help="Threshold for forced turn-taking (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--force_turn_taking_pad_window",
+        type=int,
+        default=25,
+        help="Pad window for forced turn-taking (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--matmul_precision",
+        type=str,
+        default="medium",
+        help="torch float32 matmul precision (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--vllm_gpu_memory_utilization",
+        type=float,
+        default=0.35,
+        help="GPU memory utilization for vLLM engines (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--vllm_max_model_len",
+        type=int,
+        default=8192,
+        help="Max model sequence length for vLLM engines (s2s_incremental_v2)",
+    )
+    parser.add_argument(
+        "--merge_user_channel_v2",
+        action="store_true",
+        help="Return dual-channel (user+agent) WAV in response (s2s_incremental_v2, for FDB)",
+    )
+
     # Session management options (s2s_session backend)
     parser.add_argument(
         "--session_ttl",
@@ -330,8 +430,29 @@ def main():
     # Debug
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
 
+    # Pre-server pip install (runs inside the server process before model loading)
+    parser.add_argument(
+        "--pip_install",
+        type=str,
+        default=None,
+        help="Space-separated pip packages to install before starting the server "
+        "(e.g. 'lhotse==1.32.2 transformers==4.56.0')",
+    )
+
     # Parse known args, allowing extra args to be passed through
     args, extra_args = parser.parse_known_args()
+
+    # Run pre-server pip install if requested
+    if args.pip_install:
+        import subprocess
+
+        pip_cmd = f"pip install {args.pip_install}"
+        print(f"[serve_unified] Running: {pip_cmd}")
+        result = subprocess.run(pip_cmd, shell=True)
+        if result.returncode != 0:
+            print("[serve_unified] pip install failed, exiting.")
+            sys.exit(1)
+        print("[serve_unified] pip install completed.")
 
     # Setup environment
     setup_pythonpath(args.code_path)
@@ -371,7 +492,7 @@ def main():
             extra_config["top_k"] = args.top_k
 
     # S2S backend options
-    if args.backend in ("s2s", "s2s_voicechat", "s2s_incremental", "s2s_session"):
+    if args.backend in ("s2s", "s2s_voicechat", "s2s_incremental", "s2s_incremental_v2", "s2s_session"):
         extra_config["ignore_system_prompt"] = args.ignore_system_prompt
         if args.silence_padding_sec != 5.0:
             extra_config["silence_padding_sec"] = args.silence_padding_sec
@@ -449,6 +570,69 @@ def main():
         extra_config["save_session_artifacts"] = not args.no_save_session_artifacts
         extra_config["output_frame_alignment"] = args.output_frame_alignment
 
+    # S2S Incremental V2 backend options
+    if args.backend == "s2s_incremental_v2":
+        if args.llm_checkpoint_path:
+            extra_config["llm_checkpoint_path"] = args.llm_checkpoint_path
+        if args.tts_checkpoint_path:
+            extra_config["tts_checkpoint_path"] = args.tts_checkpoint_path
+        if args.speaker_reference:
+            extra_config["speaker_reference"] = args.speaker_reference
+        extra_config["num_frames_per_inference"] = args.num_frames_per_inference if args.num_frames_per_inference != 1 else 3
+        extra_config["engine_type"] = args.engine_type
+        extra_config["use_perception_cache"] = args.use_perception_cache
+        extra_config["use_perception_cudagraph"] = args.use_perception_cudagraph
+        extra_config["use_codec_cache"] = args.use_codec_cache
+        extra_config["codec_token_history_size"] = args.codec_token_history_size
+        extra_config["repetition_penalty"] = args.repetition_penalty
+        extra_config["force_turn_taking"] = args.force_turn_taking
+        extra_config["force_turn_taking_threshold"] = args.force_turn_taking_threshold
+        extra_config["force_turn_taking_pad_window"] = args.force_turn_taking_pad_window
+        extra_config["matmul_precision"] = args.matmul_precision
+        if args.buffer_size_frames is not None:
+            extra_config["buffer_size_frames"] = args.buffer_size_frames
+        else:
+            extra_config["buffer_size_frames"] = 20 if args.use_perception_cache else 71
+        if args.pad_to_duration_secs is not None:
+            extra_config["pad_to_duration_secs"] = args.pad_to_duration_secs
+            extra_config["silence_padding_sec"] = 0.0
+        if args.system_prompt:
+            extra_config["system_prompt"] = args.system_prompt
+        if args.tts_system_prompt:
+            extra_config["tts_system_prompt"] = args.tts_system_prompt
+        if args.decode_audio:
+            extra_config["decode_audio"] = True
+        if args.no_decode_audio:
+            extra_config["decode_audio"] = False
+        if args.output_dir:
+            extra_config["session_artifacts_dir"] = args.output_dir
+        elif args.session_artifacts_dir:
+            extra_config["session_artifacts_dir"] = args.session_artifacts_dir
+        extra_config["save_session_artifacts"] = not args.no_save_session_artifacts
+        if args.merge_user_channel_v2:
+            extra_config["merge_user_channel"] = True
+        # Build vLLM configs when using a vLLM engine
+        if "vllm" in args.engine_type:
+            model_path = args.model
+            llm_path = args.llm_checkpoint_path or args.model
+            extra_config["vllm_llm_config"] = {
+                "model_path": model_path,
+                "max_model_len": args.vllm_max_model_len,
+                "gpu_memory_utilization": args.vllm_gpu_memory_utilization,
+                "dtype": "bfloat16",
+                "engine_path": None,
+                "pretrained_llm": llm_path,
+            }
+            extra_config["vllm_tts_config"] = {
+                "model_path": model_path,
+                "max_model_len": args.vllm_max_model_len,
+                "gpu_memory_utilization": args.vllm_gpu_memory_utilization,
+                "dtype": "float32",
+                "engine_path": None,
+                "pretrained_llm": None,
+                "skip_tokenizer_init": True,
+            }
+
     # S2S Session backend options
     if args.backend == "s2s_session":
         extra_config["session_ttl"] = args.session_ttl
@@ -495,6 +679,24 @@ def main():
         else:
             print("  Artifacts Dir: /tmp/s2s_sessions (default)")
         print(f"  Output Frame Alignment: {args.output_frame_alignment}")
+    if args.backend == "s2s_incremental_v2":
+        print(f"  Engine Type: {args.engine_type}")
+        print(f"  Perception Cache: {args.use_perception_cache}")
+        print(f"  Perception CUDAGraph: {args.use_perception_cudagraph}")
+        print(f"  Codec Cache: {args.use_codec_cache}")
+        print(f"  Buffer Size Frames: {extra_config.get('buffer_size_frames')}")
+        print(f"  Frames per Inference: {extra_config.get('num_frames_per_inference')}")
+        print(f"  Decode Audio: {extra_config.get('decode_audio', True)}")
+        if args.llm_checkpoint_path:
+            print(f"  LLM Checkpoint: {args.llm_checkpoint_path}")
+        if args.speaker_reference:
+            print(f"  Speaker Reference: {args.speaker_reference}")
+        if args.pad_to_duration_secs:
+            print(f"  Pad to Duration: {args.pad_to_duration_secs}s")
+        if args.system_prompt:
+            print(f"  System Prompt: {args.system_prompt[:80]}...")
+        print(f"  Force Turn Taking: {args.force_turn_taking}")
+        print(f"  Save Artifacts: {not args.no_save_session_artifacts}")
     if args.backend == "s2s_session":
         print(f"  Session TTL: {args.session_ttl}s")
         print(f"  Max Sessions: {args.max_sessions}")

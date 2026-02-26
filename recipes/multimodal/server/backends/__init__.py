@@ -42,6 +42,7 @@ BACKEND_REGISTRY = {
     "s2s": ("s2s_backend", "S2SBackend"),
     "s2s_voicechat": ("s2s_voicechat_infer_backend", "S2SVoiceChatInferBackend"),
     "s2s_incremental": ("s2s_incremental_backend", "S2SIncrementalBackend"),
+    "s2s_incremental_v2": ("s2s_incremental_backend_v2", "S2SIncrementalBackendV2"),
     "s2s_session": ("s2s_session_backend", "S2SSessionBackend"),
 }
 
