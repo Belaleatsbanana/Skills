@@ -763,7 +763,7 @@ class SweBenchGenerationTask(GenerationTask):
 
         # The final 2 arguments are different between the swe_bench and multi_swe_bench scripts.
         # We handle that with extra_args.
-        if self.cfg.multilingual:
+        if self.cfg.multilingual and self.cfg.swe_zero_container is None:
             benchmark_name = "multi_swe_bench"
             extra_args = (
                 f" {data_dir}/dataset.jsonl "  # dataset file
