@@ -125,6 +125,9 @@ class SweBenchGenerationConfig:
     # This does not affect evaluation, which still runs in the container_formatter containers.
     swe_zero_container: str | None = None
 
+    # Whether to run evaluation. If False, will only run inference (trajectory/patch generation).
+    evaluate: bool = True
+
     # URL of the evaluation harness repo to pass to git clone. Defaults to our fork of SWE-bench with local evaluation
     eval_harness_repo: str = "https://github.com/Kipok/SWE-bench.git"
     eval_harness_commit: str = "HEAD"  # Which commit to use when cloning the eval harness repo
@@ -331,18 +334,19 @@ class SweBenchGenerationTask(GenerationTask):
                 f"Supported frameworks: {', '.join(SupportedAgentFrameworks)}."
             )
 
-        # Install the SWE-bench evaluation harness.
-        setup_commands.append(
-            # clone the swe-bench repo
-            "rm -rf /root/SWE-bench && "
-            f"git clone {self.cfg.eval_harness_repo} /root/SWE-bench && "
-            "cd /root/SWE-bench && "
-            f"git checkout {self.cfg.eval_harness_commit} && "
-            # make venv & install swe-bench dependencies
-            "uv venv --python 3.12 --managed-python venv && "
-            "source venv/bin/activate && "
-            "uv pip install -e ."
-        )
+        if self.cfg.evaluate:
+            # Install the SWE-bench evaluation harness.
+            setup_commands.append(
+                # clone the swe-bench repo
+                "rm -rf /root/SWE-bench && "
+                f"git clone {self.cfg.eval_harness_repo} /root/SWE-bench && "
+                "cd /root/SWE-bench && "
+                f"git checkout {self.cfg.eval_harness_commit} && "
+                # make venv & install swe-bench dependencies
+                "uv venv --python 3.12 --managed-python venv && "
+                "source venv/bin/activate && "
+                "uv pip install -e ."
+            )
 
         # Run all commands with retries and timeout
         combined_setup_command = " && ".join(setup_commands)
@@ -893,6 +897,14 @@ class SweBenchGenerationTask(GenerationTask):
                     "resolved": False,
                     "patch_exists": False,
                     "patch_successfully_applied": False,
+                }
+            }
+        elif not self.cfg.evaluate:
+            report_json = {
+                data_point["instance_id"]: {
+                    "resolved": None,
+                    "patch_exists": True,
+                    "patch_successfully_applied": None,
                 }
             }
         else:
