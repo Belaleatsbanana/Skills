@@ -287,7 +287,12 @@ class SweBenchGenerationTask(GenerationTask):
             )
 
         elif self.cfg.agent_framework == SupportedAgentFrameworks.openhands:
-            if self.cfg.multilingual:
+            if self.cfg.swe_zero_container is not None:
+                if self.cfg.agent_framework_repo is None:
+                    self.cfg.agent_framework_repo = "https://github.com/ludwig-n/OpenHands.git"
+                if self.cfg.agent_framework_commit is None:
+                    self.cfg.agent_framework_commit = "noexec-prompting-multilingual"
+            elif self.cfg.multilingual:
                 if self.cfg.agent_framework_repo is None:
                     self.cfg.agent_framework_repo = "https://github.com/ludwig-n/OpenHands.git"
                 if self.cfg.agent_framework_commit is None:
