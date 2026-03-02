@@ -114,7 +114,7 @@ BACKEND_REGISTRY = {
 }
 ```
 
-## Running Slurm Tests (ASR and TTS)
+## Running Slurm Tests (Unified ASR and Unified TTS)
 
 Activate env first:
 
@@ -123,27 +123,28 @@ source .venv/bin/activate
 source ~/.env
 ```
 
-Run ASR backend slurm test:
+Run unified ASR backend slurm test:
 
 ```bash
-./p.sh tests/slurm-tests/asr_nim/run_test.py \
-  --workspace /lustre/fsw/portfolios/convai/users/$USER/experiments/slurm-tests/asr_nim \
+python tests/slurm-tests/unified_asr/run_test.py \
+  --workspace /lustre/fsw/portfolios/convai/users/$USER/experiments/slurm-tests/unified_asr \
   --cluster dfw \
-  --expname_prefix asr_nim_unified_test \
-  --mode full
+  --expname_prefix unified_asr_test \
+  --server_container /lustre/fsw/portfolios/convai/users/$USER/workspace/images/nemo-25.11.sqsh
 ```
 
-Run TTS backend slurm test:
+Run unified TTS backend slurm test:
 
 ```bash
-./p.sh tests/slurm-tests/tts_nim/run_test.py \
-  --workspace /lustre/fsw/portfolios/convai/users/$USER/experiments/slurm-tests/tts_nim \
+python tests/slurm-tests/unified_tts/run_test.py \
+  --workspace /lustre/fsw/portfolios/convai/users/$USER/experiments/slurm-tests/unified_tts \
   --cluster dfw \
-  --expname_prefix tts_nim_unified_test \
-  --mode full
+  --expname_prefix unified_tts_test \
+  --server_container /lustre/fsw/portfolios/convai/users/$USER/workspace/images/nemo-25.11.sqsh \
+  --code_path /lustre/fsw/portfolios/convai/users/$USER/workspace/code/NeMo_tts
 ```
 
 Optional flags for both:
 
 - `--skip_check` to skip checker job
-- `--config_file` and `--config_key` to select a different NIM config entry
+- `--config_dir` to select a different cluster config directory
