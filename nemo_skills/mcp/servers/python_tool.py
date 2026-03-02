@@ -150,16 +150,23 @@ class DirectPythonTool(Tool):
     overhead (subprocess spawning, MCP session initialization, JSON-RPC serialization)
     by calling sandbox.execute_code() directly via HTTP.
 
+    Shared config keys with PythonTool (so switching is just changing the module spec):
+        - hide_args: controls which args are stripped from schemas and sanitized at runtime
+        - exec_timeout_s: default execution timeout
+
     Usage:
         tool_modules=["nemo_skills.mcp.servers.python_tool::DirectPythonTool"]
     """
 
     def __init__(self) -> None:
         self._config: Dict[str, Any] = {
+            # Same keys/defaults as PythonTool (minus MCP-specific: client, client_params, init_hook)
+            "hide_args": {"stateful_python_code_exec": ["session_id", "timeout"]},
             "exec_timeout_s": 10,
             "sandbox": {},
         }
         self._sandbox = None
+        self._sanitize_keys: Dict[str, set] = {}
         self.requests_to_sessions: Dict[str, Any] = defaultdict(lambda: None)
 
     def default_config(self) -> Dict[str, Any]:
@@ -168,6 +175,11 @@ class DirectPythonTool(Tool):
     def configure(self, overrides: Dict[str, Any] | None = None, context: Dict[str, Any] | None = None) -> None:
         if overrides:
             self._config.update(overrides)
+
+        # Build sanitize sets from hide_args (same source of truth as MCP path)
+        hide_args = self._config.get("hide_args", {})
+        self._sanitize_keys = {tool: set(keys) for tool, keys in hide_args.items()}
+
         # Build sandbox config from context (same source as the MCP server's main())
         sandbox_cfg = dict((context or {}).get("sandbox", {}))
         sandbox_cfg.update(self._config.get("sandbox", {}))
@@ -191,14 +203,12 @@ class DirectPythonTool(Tool):
             }
         ]
 
-    # Keys the model must never control — equivalent to hide_args in the MCP path.
-    _SANITIZE_KEYS = {"session_id", "timeout"}
-
     async def execute(
         self, tool_name: str, arguments: Dict[str, Any], extra_args: Dict[str, Any] | None = None
     ) -> str:
-        # Strip any model-supplied hidden args so they can't override our values
-        arguments = {k: v for k, v in arguments.items() if k not in self._SANITIZE_KEYS}
+        # Strip model-supplied hidden args using hide_args config (same source as MCP sanitize())
+        hidden = self._sanitize_keys.get(tool_name, set())
+        arguments = {k: v for k, v in arguments.items() if k not in hidden}
 
         extra_args = dict(extra_args or {})
         request_id = extra_args.pop("request_id", None)
