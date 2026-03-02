@@ -242,15 +242,11 @@ class NeMoASRBackend(InferenceBackend):
             if len(request.audio_bytes_list) > 1:
                 raise ValueError("nemo_asr backend currently supports one audio input per request.")
             return request.audio_bytes_list[0]
-        if request.audio_path:
-            return Path(request.audio_path).read_bytes()
-        raise ValueError("Request must contain audio_bytes/audio_bytes_list/audio_path")
+        raise ValueError("Request must contain audio_bytes/audio_bytes_list")
 
     def validate_request(self, request: GenerationRequest) -> Optional[str]:
-        has_audio = (
-            request.audio_bytes is not None
-            or request.audio_path is not None
-            or (request.audio_bytes_list is not None and len(request.audio_bytes_list) > 0)
+        has_audio = request.audio_bytes is not None or (
+            request.audio_bytes_list is not None and len(request.audio_bytes_list) > 0
         )
         if not has_audio:
             return "nemo_asr backend requires audio input"

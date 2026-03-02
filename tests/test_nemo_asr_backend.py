@@ -49,6 +49,19 @@ def test_nemo_asr_backend_validate_request_requires_audio():
     assert err is not None
 
 
+def test_generation_params_preserve_explicit_zero_values():
+    backend = NeMoASRBackend(
+        NeMoASRConfig(model_path="dummy", max_new_tokens=128, temperature=0.8, top_p=0.95, top_k=40)
+    )
+
+    params = backend.get_generation_params(GenerationRequest(temperature=0.0, top_p=0.0, top_k=0))
+
+    assert params["max_new_tokens"] == 128
+    assert params["temperature"] == 0.0
+    assert params["top_p"] == 0.0
+    assert params["top_k"] == 0
+
+
 def test_nemo_asr_backend_generate_batched_with_words():
     backend = NeMoASRBackend(NeMoASRConfig(model_path="dummy", batch_size=4))
     backend._model = _FakeASRModel()

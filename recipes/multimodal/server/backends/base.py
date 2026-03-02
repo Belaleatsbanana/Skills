@@ -75,14 +75,12 @@ class GenerationRequest:
     system_prompt: Optional[str] = None
     user_prompt: Optional[str] = None
 
-    # Audio input (raw bytes or file path)
+    # Audio input (raw bytes)
     audio_bytes: Optional[bytes] = None
-    audio_path: Optional[str] = None
     sample_rate: int = 16000
 
-    # Multi-turn audio inputs (list of audio bytes or paths)
+    # Multi-turn audio inputs (list of raw audio bytes)
     audio_bytes_list: Optional[List[bytes]] = None
-    audio_paths: Optional[List[str]] = None
 
     # Generation parameters (override backend defaults)
     max_new_tokens: Optional[int] = None
@@ -220,10 +218,12 @@ class InferenceBackend(ABC):
     def get_generation_params(self, request: GenerationRequest) -> Dict[str, Any]:
         """Get effective generation parameters, merging request with config defaults."""
         return {
-            "max_new_tokens": request.max_new_tokens or self.config.max_new_tokens,
-            "temperature": request.temperature or self.config.temperature,
-            "top_p": request.top_p or self.config.top_p,
-            "top_k": request.top_k or self.config.top_k,
+            "max_new_tokens": request.max_new_tokens
+            if request.max_new_tokens is not None
+            else self.config.max_new_tokens,
+            "temperature": request.temperature if request.temperature is not None else self.config.temperature,
+            "top_p": request.top_p if request.top_p is not None else self.config.top_p,
+            "top_k": request.top_k if request.top_k is not None else self.config.top_k,
         }
 
     def validate_request(self, request: GenerationRequest) -> Optional[str]:
@@ -235,7 +235,9 @@ class InferenceBackend(ABC):
         modalities = self.supported_modalities
 
         has_text_input = request.text is not None
-        has_audio_input = request.audio_bytes is not None or request.audio_path is not None
+        has_audio_input = request.audio_bytes is not None or (
+            request.audio_bytes_list is not None and len(request.audio_bytes_list) > 0
+        )
 
         if has_audio_input and Modality.AUDIO_IN not in modalities:
             return f"Backend '{self.name}' does not support audio input"
