@@ -103,8 +103,11 @@ class GenerationResult:
     Contains text output and optionally audio output, plus metadata.
     """
 
-    # Text output
+    # Text output (agent response)
     text: str = ""
+
+    # ASR text output (user speech transcription from ASR channel)
+    asr_text: Optional[str] = None
 
     # Audio output (raw bytes, can be encoded to base64 for JSON)
     audio_bytes: Optional[bytes] = None

@@ -31,6 +31,7 @@ server interface around it.
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -395,7 +396,20 @@ class S2SIncrementalBackendV2(InferenceBackend):
 
                 elapsed_ms = (time.time() - start_time) * 1000
                 output_text = output["text"][0] if output.get("text") else ""
+                asr_text = output["asr_text"][0] if output.get("asr_text") else None
                 debug_info = output.get("debug_info", {})
+
+                # In no-decode-audio (text-only) mode the agent text channel
+                # typically contains only turn-taking timestamps (e.g. "<$0.72$>")
+                # rather than a real transcription.  When ASR text is available
+                # it is much more useful as the primary response.
+                if not self.v2_config.decode_audio and asr_text:
+                    cleaned = asr_text
+                    # Strip turn-taking markers: <$ts$>, <|ts|>, ^ (user BOS)
+                    cleaned = re.sub(r"<[\$|][^>]*[\$|]>", "", cleaned)
+                    cleaned = cleaned.replace("^", "")
+                    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+                    output_text = cleaned
 
                 request_id_key = req.request_id or datetime.now().strftime("%Y%m%d_%H%M%S")
                 artifacts_dir = self._get_artifacts_dir(request_id_key)
@@ -414,6 +428,7 @@ class S2SIncrementalBackendV2(InferenceBackend):
                 results.append(
                     GenerationResult(
                         text=output_text,
+                        asr_text=asr_text,
                         audio_bytes=response_audio_bytes,
                         audio_sample_rate=response_sample_rate,
                         request_id=req.request_id,

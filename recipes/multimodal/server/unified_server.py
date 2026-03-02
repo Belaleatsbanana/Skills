@@ -602,6 +602,7 @@ def create_app(
                     "response_id": response_id,
                     "timestamp": timestamp,
                     "text": message_content,
+                    "asr_text": result.asr_text,
                     "debug_info": result.debug_info,
                     "generation_time_ms": result.generation_time_ms,
                     "num_tokens_generated": result.num_tokens_generated,
@@ -662,6 +663,10 @@ def create_app(
             # Add audio to response if available
             if audio_output:
                 response["choices"][0]["message"]["audio"] = audio_output
+
+            # Add ASR text (user speech transcription) if available
+            if result.asr_text is not None:
+                response["choices"][0]["message"]["asr_text"] = result.asr_text
 
             # Add debug info at top level too (for non-litellm clients)
             if result.debug_info and INCLUDE_DEBUG_INFO:

@@ -25,10 +25,10 @@ Prepare data first:
     ns prepare_data asr-leaderboard
 
 Usage:
-    python run_eval.py --config asr_leaderboard_s2s_incremental_v2_config.yaml
-    python run_eval.py --config asr_leaderboard_s2s_incremental_v2_config.yaml --dry_run
-    python run_eval.py --config asr_leaderboard_s2s_incremental_v2_config.yaml --generation_only
-    python run_eval.py --config asr_leaderboard_s2s_incremental_v2_config.yaml --scoring_only
+    python run_eval.py --config asr_leaderboard_s2s_incremental_v2_02mar_config.yaml
+    python run_eval.py --config asr_leaderboard_s2s_incremental_v2_02mar_config.yaml --dry_run
+    python run_eval.py --config asr_leaderboard_s2s_incremental_v2_02mar_config.yaml --generation_only
+    python run_eval.py --config asr_leaderboard_s2s_incremental_v2_02mar_config.yaml --scoring_only
 """
 
 import argparse

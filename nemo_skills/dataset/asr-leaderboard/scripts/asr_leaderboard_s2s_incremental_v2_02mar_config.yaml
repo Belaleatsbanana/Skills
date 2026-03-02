@@ -1,21 +1,18 @@
 # HF Open ASR Leaderboard evaluation - S2S incremental V2 backend, TEXT output only.
 # Evaluates WER on 8 ASR datasets: librispeech_clean, librispeech_other, voxpopuli,
 # tedlium, gigaspeech, spgispeech, earnings22, ami.
-# Checkpoint: Feb 26 2026 (legally friendly personaplex dataset)
-#
-# Prepare data first:
-#   ns prepare_data asr-leaderboard
+# Checkpoint: Mar 2 2026 (Feb 26 STT + Mar 3 TTS, Megan speaker, force_turn_taking OFF)
 #
 # Run:
 #   python nemo_skills/dataset/asr-leaderboard/scripts/run_eval.py \
-#     --config nemo_skills/dataset/asr-leaderboard/scripts/asr_leaderboard_s2s_incremental_v2_config.yaml
+#     --config nemo_skills/dataset/asr-leaderboard/scripts/asr_leaderboard_s2s_incremental_v2_02mar_config.yaml
 
 # Cluster settings
 cluster: s2s_eval_oci_iad
 partition: batch_block1,batch_block3,batch_block4
 cpu_partition: cpu
 
-model: /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Nemotron-VoiceChat-november/duplex-eartts-10min_sw_et_eos_dp_eos_dup_fp32_1delay_26_Feb_exp_13_afg_14k_steps-stt-AS9.1_11002_new_branch_load_fixed
+model: /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Nemotron-VoiceChat-november/duplex-eartts-10min_sw_et_eos_dp_eos_dup_fp32_1delay_02_March_exp_17_afg_long_FT_Megan_msr_34k_steps-stt-AS9.1_11002_new_branch_load_fixed
 
 server_type: vllm
 server_gpus: 1
@@ -33,17 +30,14 @@ server_args: >-
   --buffer_size_frames 20
   --codec_token_history_size 60
   --repetition_penalty 1.0
-  --force_turn_taking
-  --force_turn_taking_threshold 40
-  --force_turn_taking_pad_window 25
   --matmul_precision medium
   --vllm_gpu_memory_utilization 0.35
   --vllm_max_model_len 8192
   --system_prompt "You are a helpful assistant. /no_think"
-  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/FEB_26/asr_leaderboard_incremental_v2_26feb_artifacts
+  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_artifacts_tr
   --batch_size 2
   --code_path /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/NeMo
-  --pip_install "hf-xet==1.1.9 huggingface-hub==0.34.4 nvidia-modelopt==0.33.1 nvidia-modelopt-core==0.33.1 tokenizers==0.22.0 transformers==4.56.0 lhotse==1.32.2 nv-one-logger-core==2.1.0 nv-one-logger-pytorch-lightning-integration==2.1.0 nv-one-logger-training-telemetry==2.1.0 kaldialign==0.9.1 jiwer whisper-normalizer"
+  --pip_install "hf-xet==1.1.9 huggingface-hub==0.34.4 nvidia-modelopt==0.33.1 nvidia-modelopt-core==0.33.1 tokenizers==0.22.0 transformers==4.56.0 lhotse==1.32.2 nv-one-logger-core==2.1.0 nv-one-logger-pytorch-lightning-integration==2.1.0 nv-one-logger-training-telemetry==2.1.0 kaldialign==0.9.1 jiwer whisper-normalizer sacrebleu"
 
 server_container: /lustre/fsw/portfolios/llmservice/users/erastorgueva/code/containers/triton25.05_s2svllm26.02.12.sqsh
 server_server_type: vllm_multimodal
@@ -54,12 +48,12 @@ benchmark: asr-leaderboard
 # Paths -- data_dir must match the container mount in cluster config
 # (cluster mounts /lustre/fs12/.../nemo_skills/dataset -> /dataset)
 data_dir: /dataset
-output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/FEB_26/asr_leaderboard_incremental_v2_26feb_1chunk
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_tr
 
 installation_command: "pip install jiwer whisper-normalizer sacrebleu"
-max_samples: 5
-expname: asr_leaderboard_s2s_incremental_v2_26feb_1chunk
 
+expname: asr_leaderboard_s2s_incremental_v2_02mar
+max_samples: 10
 generation_only: false
 scoring_only: false
 dry_run: false
