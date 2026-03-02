@@ -30,6 +30,7 @@ containers:
 
 mounts:
   - /lustre:/lustre
+  - /lustre/fs12/portfolios/llmservice/projects/llmservice_nemo_speechlm/data/nemo_skills/dataset:/dataset
 
 required_env_vars:
   - NV_INFERENCE_KEY
