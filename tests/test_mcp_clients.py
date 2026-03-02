@@ -706,6 +706,34 @@ async def test_direct_python_tool_session_persistence():
 
 
 @pytest.mark.asyncio
+async def test_direct_python_tool_sanitizes_hidden_args():
+    """Model-supplied session_id/timeout in arguments are stripped and cannot override internal values."""
+    from nemo_skills.mcp.servers.python_tool import DirectPythonTool
+
+    tool = DirectPythonTool()
+    tool.configure(context={"sandbox": {"sandbox_type": "local"}})
+
+    # First call establishes a session
+    await tool.execute(
+        "stateful_python_code_exec",
+        {"code": "x = 99"},
+        extra_args={"request_id": "sanitize-test"},
+    )
+
+    # Second call: model tries to inject a bogus session_id to hijack/reset the session
+    # If sanitization fails, this would either error or lose the variable 'x'
+    result = await tool.execute(
+        "stateful_python_code_exec",
+        {"code": "print(x)", "session_id": "bogus-session-id", "timeout": 0.001},
+        extra_args={"request_id": "sanitize-test"},
+    )
+    # x should still be accessible (session_id was not overridden)
+    # and the call should not have timed out (timeout was not overridden)
+    assert result == "99"
+    await tool.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_direct_python_tool_separate_sessions():
     """Different request_ids get independent sessions."""
     from nemo_skills.mcp.servers.python_tool import DirectPythonTool

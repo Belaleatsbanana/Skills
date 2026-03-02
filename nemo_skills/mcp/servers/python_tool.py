@@ -191,9 +191,15 @@ class DirectPythonTool(Tool):
             }
         ]
 
+    # Keys the model must never control — equivalent to hide_args in the MCP path.
+    _SANITIZE_KEYS = {"session_id", "timeout"}
+
     async def execute(
         self, tool_name: str, arguments: Dict[str, Any], extra_args: Dict[str, Any] | None = None
     ) -> str:
+        # Strip any model-supplied hidden args so they can't override our values
+        arguments = {k: v for k, v in arguments.items() if k not in self._SANITIZE_KEYS}
+
         extra_args = dict(extra_args or {})
         request_id = extra_args.pop("request_id", None)
         timeout = extra_args.get("timeout", self._config.get("exec_timeout_s", 10))
