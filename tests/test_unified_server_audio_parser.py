@@ -25,6 +25,9 @@ pytest.importorskip("uvicorn")
 extract_audio_from_messages = importlib.import_module(
     "recipes.multimodal.server.unified_server"
 ).extract_audio_from_messages
+extract_text_from_messages = importlib.import_module(
+    "recipes.multimodal.server.unified_server"
+).extract_text_from_messages
 
 
 def _b64(data: bytes) -> str:
@@ -105,3 +108,13 @@ def test_extract_audio_from_messages_skips_non_audio_or_malformed_blocks():
     ]
 
     assert extract_audio_from_messages(messages) == [valid]
+
+
+def test_extract_text_from_messages_ignores_system_role():
+    messages = [
+        {"role": "system", "content": "You are a strict assistant."},
+        {"role": "user", "content": "Say hello."},
+        {"role": "assistant", "content": "Hello."},
+    ]
+
+    assert extract_text_from_messages(messages) == "Say hello. Hello."

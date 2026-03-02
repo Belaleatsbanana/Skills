@@ -22,6 +22,8 @@ Available backends:
 Backends are lazily loaded to avoid importing heavy dependencies upfront.
 """
 
+import importlib
+
 from .base import BackendConfig, GenerationRequest, GenerationResult, InferenceBackend, Modality
 
 __all__ = [
@@ -64,8 +66,6 @@ def get_backend(backend_name: str) -> type:
         raise ValueError(f"Unknown backend: '{backend_name}'. Available backends: {available}")
 
     module_name, class_name = BACKEND_REGISTRY[backend_name]
-
-    import importlib
 
     try:
         module = importlib.import_module(f".{module_name}", package=__name__)

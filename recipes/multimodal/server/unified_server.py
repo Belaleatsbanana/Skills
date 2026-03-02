@@ -28,6 +28,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -42,6 +43,7 @@ from .backends import GenerationRequest, GenerationResult, get_backend
 
 # Debug flag
 DEBUG = os.getenv("DEBUG", "").lower() in ("true", "1", "yes", "on")
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -71,7 +73,7 @@ class RequestBatcher:
 
     async def add_request(self, request: GenerationRequest) -> GenerationResult:
         """Add a request and wait for result."""
-        future = asyncio.Future()
+        future = asyncio.get_running_loop().create_future()
         pending = PendingRequest(request=request, future=future, timestamp=time.time())
 
         async with self.lock:
@@ -113,10 +115,13 @@ class RequestBatcher:
             if DEBUG:
                 print(f"[Batcher] Processing batch of {len(requests)} requests")
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             results = await loop.run_in_executor(None, self.backend.generate, requests)
 
-            for pending, result in zip(batch, results):
+            if len(results) != len(batch):
+                raise RuntimeError(f"Backend returned {len(results)} results for {len(batch)} requests")
+
+            for pending, result in zip(batch, results, strict=True):
                 if not pending.future.done():
                     pending.future.set_result(result)
 
@@ -182,6 +187,8 @@ def extract_text_from_messages(messages: List[Dict[str, Any]]) -> str:
     """Extract text content from OpenAI-format messages."""
     texts = []
     for message in messages:
+        if message.get("role") == "system":
+            continue
         content = message.get("content")
         if isinstance(content, str):
             if content:
@@ -360,7 +367,14 @@ def create_app(
             result = await request_batcher.add_request(gen_request)
 
             if not result.is_success():
-                raise HTTPException(status_code=500, detail=result.error)
+                error_id = hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:8]
+                logger.error(
+                    "Backend generation failed [error_id=%s, request_id=%s]: %s",
+                    error_id,
+                    gen_request.request_id,
+                    result.error,
+                )
+                raise HTTPException(status_code=500, detail=f"Internal server error (error_id={error_id})")
 
             # Build OpenAI-compatible response
             response_id = f"chatcmpl-{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
@@ -371,9 +385,17 @@ def create_app(
             if save_dir:
                 try:
                     os.makedirs(save_dir, exist_ok=True)
-                except PermissionError:
-                    save_dir = ""
+                except Exception as e:
+                    error_id = hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:8]
+                    logger.error(
+                        "Failed to prepare AUDIO_SAVE_DIR [error_id=%s, save_dir=%s]: %s",
+                        error_id,
+                        save_dir,
+                        e,
+                    )
+                    raise HTTPException(status_code=500, detail=f"Internal server error (error_id={error_id})")
             saved_audio_path = None
+            save_failures = []
 
             if save_dir:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -392,7 +414,7 @@ def create_app(
                     with open(saved_json_path, "w") as f:
                         json.dump(json_output, f, indent=2)
                 except Exception as e:
-                    print(f"[Server] Warning: Failed to save JSON: {e}")
+                    save_failures.append(f"json:{type(e).__name__}:{e}")
 
                 if result.audio_bytes:
                     try:
@@ -400,7 +422,19 @@ def create_app(
                         with open(saved_audio_path, "wb") as f:
                             f.write(result.audio_bytes)
                     except Exception as e:
-                        print(f"[Server] Warning: Failed to save audio: {e}")
+                        save_failures.append(f"audio:{type(e).__name__}:{e}")
+
+                if save_failures:
+                    error_id = hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:8]
+                    logger.error(
+                        "Failed to save response artifacts [error_id=%s, request_id=%s, response_id=%s, save_dir=%s, failures=%s]",
+                        error_id,
+                        gen_request.request_id,
+                        response_id,
+                        save_dir,
+                        save_failures,
+                    )
+                    raise HTTPException(status_code=500, detail=f"Internal server error (error_id={error_id})")
 
             # Build audio output if available
             audio_output = None
@@ -453,10 +487,9 @@ def create_app(
 
         except HTTPException:
             raise
-        except Exception as e:
-            import traceback
-
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception:
+            error_id = hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:8]
+            logger.exception("Unhandled chat completion error [error_id=%s]", error_id)
+            raise HTTPException(status_code=500, detail=f"Internal server error (error_id={error_id})")
 
     return app

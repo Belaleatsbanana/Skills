@@ -12,6 +12,7 @@ in debug_info for downstream mapping.
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 import time
@@ -21,6 +22,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from .base import BackendConfig, GenerationRequest, GenerationResult, InferenceBackend, Modality
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -97,18 +100,21 @@ class NeMoASRBackend(InferenceBackend):
         else:
             self._model = ASRModel.from_pretrained(model_name=model_ref, map_location=map_location)
 
+        if not hasattr(self._model, "to"):
+            raise RuntimeError(f"Loaded ASR model '{self._model_name}' does not support `.to(device)` placement.")
         try:
             self._model.to(self.config.device)
-        except Exception:
-            # Some NeMo wrappers may already be on the correct device.
-            pass
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to move ASR model '{self._model_name}' to device '{self.config.device}'."
+            ) from e
         self._model.eval()
 
         if self.asr_config.warmup:
             self._run_warmup()
 
         self._is_loaded = True
-        print(f"[NeMoASRBackend] Loaded model: {self._model_name} on {self.config.device}")
+        logger.info("Loaded NeMo ASR model=%s on device=%s", self._model_name, self.config.device)
 
     def _run_warmup(self) -> None:
         """Run one short warmup call so runtime init happens before traffic."""
@@ -122,7 +128,7 @@ class NeMoASRBackend(InferenceBackend):
                 wavf.writeframes(b"\x00\x00" * 1600)  # 0.1 sec silence
             self._transcribe_paths([path], return_hypotheses=False, batch_size=1)
         except Exception as e:
-            print(f"[NeMoASRBackend] Warmup skipped due to error: {e}")
+            logger.warning("ASR warmup skipped due to error: %s", e)
         finally:
             Path(path).unlink(missing_ok=True)
 
