@@ -12,10 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# copied and edited from https://github.com/NVIDIA-NeMo/RL/blob/nano-v3/examples/nemo_gym/run_grpo_nemo_gym.py
-"""
-GRPO training with NemoGym integration (no proxy server).
-Direct environment interaction for quick debugging and simple tasks.
+
+"""GRPO training with NemoGym integration.
+
+Copied and edited from https://github.com/NVIDIA-NeMo/RL/blob/e95efb912a6909b5da91ffeb197debe91fd480d8/examples/run_grpo_math_gym.py
 """
 
 import argparse
@@ -27,7 +27,6 @@ from math import lcm
 from typing import Optional
 
 import ray
-from datasets import Dataset
 from nemo_rl.algorithms.grpo import MasterConfig, grpo_train, setup
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data.datasets import AllTaskProcessedDataset
@@ -73,23 +72,10 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     return args, overrides
 
 
-def load_jsonl_dataset(filepath: str) -> Dataset:
-    """Load JSONL file as HuggingFace Dataset."""
-    records = []
-    with open(filepath, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            obj = json.loads(line)
-            records.append(obj)
-    return Dataset.from_list(records)
-
-
 def setup_single_nemo_gym_dataset(jsonl_fpath: str, tokenizer, num_repeats: Optional[int] = None):
     """Setup NemoGym dataset from JSONL file."""
     with open(jsonl_fpath) as f:
-        nemo_gym_examples = list(map(json.loads, f))
+        nemo_gym_examples = [json.loads(line) for line in f if line.strip()]
 
     print(f"Loaded data at {jsonl_fpath}. Found {len(nemo_gym_examples)} examples")
 
@@ -135,8 +121,10 @@ def main() -> None:
 
     # Setup make_sequence_length_divisible_by
     if config["policy"]["make_sequence_length_divisible_by"] is None:
-        tp = config["policy"]["tensor_model_parallel_size"]
-        cp = config["policy"]["context_parallel_size"]
+        tp = config["policy"].get(
+            "tensor_model_parallel_size", config["policy"]["megatron_cfg"]["tensor_model_parallel_size"]
+        )
+        cp = config["policy"].get("context_parallel_size", config["policy"]["megatron_cfg"]["context_parallel_size"])
         config["policy"]["make_sequence_length_divisible_by"] = setup_make_sequence_length_divisible_by(tp, cp)
 
     config: MasterConfig = OmegaConf.to_container(config, resolve=True)
