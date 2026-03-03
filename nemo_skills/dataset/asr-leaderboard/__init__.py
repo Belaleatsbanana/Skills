@@ -17,7 +17,7 @@
 # Uses the audio evaluator which computes WER with Whisper-style text normalization
 # Data samples should have task_type="ASR" for proper WER calculation
 
-DATASET_GROUP = "speechlm"
+REQUIRES_DATA_DIR = True
 METRICS_TYPE = "audio"
 EVAL_ARGS = "++eval_type=audio"
 GENERATION_ARGS = "++prompt_format=openai"

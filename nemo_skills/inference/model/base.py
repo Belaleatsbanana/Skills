@@ -242,6 +242,7 @@ class BaseModel:
         tools: list[dict] | None = None,
         include_response: bool = False,
         extra_body: dict = None,
+        response_format=None,
     ) -> dict:
         if endpoint_type is None:
             # Infering completion type from prompt
@@ -267,6 +268,7 @@ class BaseModel:
             "reasoning_effort": reasoning_effort,
             "tools": tools,
             "extra_body": extra_body,
+            "response_format": response_format,
         }
 
         # TODO: remove this after we no longer use gpt-oss or it's fixed in vllm
@@ -446,7 +448,7 @@ class BaseModel:
             reasoning_delta = None
 
         finish_reason = getattr(chunk.choices[0], "finish_reason", None)
-        result = {"generation": cur_delta}
+        result = {"generation": cur_delta or ""}
 
         # Add reasoning_content to result if available
         if reasoning_delta:
