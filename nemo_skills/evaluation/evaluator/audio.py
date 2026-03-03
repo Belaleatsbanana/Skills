@@ -144,10 +144,24 @@ def preprocess_hf_leaderboard(text: str) -> str:
     return text
 
 
-def evaluate_asr(reference: str, hypothesis: str, apply_normalization: bool = True) -> dict[str, Any]:
-    """Evaluate ASR: computes WER with optional Whisper normalization."""
+def _wer_with_counts(ref: str, hyp: str) -> dict[str, Any]:
+    """Compute WER and return both the score and raw error/reference counts for corpus-level aggregation."""
     import jiwer
 
+    wer_score = jiwer.wer(ref, hyp)
+    measures = jiwer.process_words(ref, hyp)
+    wer_errors = measures.substitutions + measures.deletions + measures.insertions
+    wer_ref_words = measures.substitutions + measures.deletions + measures.hits
+
+    return {
+        "wer": wer_score,
+        "wer_errors": wer_errors,
+        "wer_ref_words": wer_ref_words,
+    }
+
+
+def evaluate_asr(reference: str, hypothesis: str, apply_normalization: bool = True) -> dict[str, Any]:
+    """Evaluate ASR: computes WER with optional Whisper normalization."""
     if apply_normalization:
         ref = preprocess_asr_text(reference)
         hyp = preprocess_asr_text(hypothesis)
@@ -160,18 +174,13 @@ def evaluate_asr(reference: str, hypothesis: str, apply_normalization: bool = Tr
     if not hyp:
         hyp = "empty"
 
-    wer_score = jiwer.wer(ref, hyp)
-
-    return {
-        "wer": wer_score,
-        "is_correct": wer_score < 0.5,
-    }
+    result = _wer_with_counts(ref, hyp)
+    result["is_correct"] = result["wer"] < 0.5
+    return result
 
 
 def evaluate_asr_leaderboard(reference: str, hypothesis: str) -> dict[str, Any]:
     """Evaluate ASR with HuggingFace leaderboard preprocessing for direct comparison."""
-    import jiwer
-
     ref = preprocess_hf_leaderboard(reference)
     hyp = preprocess_hf_leaderboard(hypothesis)
 
@@ -180,12 +189,9 @@ def evaluate_asr_leaderboard(reference: str, hypothesis: str) -> dict[str, Any]:
     if not hyp:
         hyp = "empty"
 
-    wer_score = jiwer.wer(ref, hyp)
-
-    return {
-        "wer": wer_score,
-        "is_correct": wer_score < 0.5,
-    }
+    result = _wer_with_counts(ref, hyp)
+    result["is_correct"] = result["wer"] < 0.5
+    return result
 
 
 def evaluate_translation(reference: str, hypothesis: str) -> dict[str, Any]:

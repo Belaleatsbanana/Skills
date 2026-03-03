@@ -66,6 +66,10 @@ class AudioMetrics(BaseMetrics):
         self.per_scores = []
         self.bleu_scores = []
 
+        # Corpus-level WER accumulators (total errors / total ref words)
+        self.wer_total_errors = 0
+        self.wer_total_ref_words = 0
+
         # Extended metrics
         self.cer_scores = []
         self.hallucination_scores = []
@@ -190,6 +194,9 @@ class AudioMetrics(BaseMetrics):
         for pred in predictions:
             if "wer" in pred and pred["wer"] is not None:
                 self.wer_scores.append(pred["wer"])
+                if "wer_errors" in pred and "wer_ref_words" in pred:
+                    self.wer_total_errors += pred["wer_errors"]
+                    self.wer_total_ref_words += pred["wer_ref_words"]
             if "wer_c" in pred and pred["wer_c"] is not None:
                 self.wer_c_scores.append(pred["wer_c"])
             if "wer_pc" in pred and pred["wer_pc"] is not None:
@@ -252,6 +259,10 @@ class AudioMetrics(BaseMetrics):
             # Add existing metrics: WER, PnC, and BLEU if available (convert to percentages and round to 2 decimals)
             if self.wer_scores:
                 agg_metrics["wer"] = round(100.0 * sum(self.wer_scores) / len(self.wer_scores), 2)
+            if self.wer_total_ref_words > 0:
+                agg_metrics["corpus_wer"] = round(
+                    100.0 * self.wer_total_errors / self.wer_total_ref_words, 2
+                )
             if self.wer_c_scores:
                 agg_metrics["wer_c"] = round(100.0 * sum(self.wer_c_scores) / len(self.wer_c_scores), 2)
             if self.wer_pc_scores:
@@ -317,6 +328,8 @@ class AudioMetrics(BaseMetrics):
         # Add existing metrics if they were computed
         if self.wer_scores:
             base_metrics["wer"] = as_percentage
+        if self.wer_total_ref_words > 0:
+            base_metrics["corpus_wer"] = as_percentage
         if self.wer_c_scores:
             base_metrics["wer_c"] = as_percentage
         if self.wer_pc_scores:

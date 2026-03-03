@@ -30,7 +30,6 @@ server_args: >-
   --use_codec_cache
   --buffer_size_frames 20
   --codec_token_history_size 60
-  --pad_to_duration_secs 40
   --repetition_penalty 1.0
   --matmul_precision medium
   --vllm_gpu_memory_utilization 0.35
@@ -51,16 +50,16 @@ voicebench_repo_path: /lustre/fsw/portfolios/llmservice/users/vmendelev/code/Voi
 
 subtests:
   - openbookqa
-  # - sd_qa
-  # - mmsu
-  # - alpacaeval_full
-  # - alpacaeval
-  # - ifeval
-  # - advbench
-  # - commoneval
-  # - wildvoice
-  # - alpacaeval_speaker
-  # - bbh
+  - sd_qa
+  - mmsu
+  - alpacaeval_full
+  - alpacaeval
+  - ifeval
+  - advbench
+  - commoneval
+  - wildvoice
+  - alpacaeval_speaker
+  - bbh
 
 # Scoring settings
 api_type: nvidia

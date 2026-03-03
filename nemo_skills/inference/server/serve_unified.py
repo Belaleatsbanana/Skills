@@ -396,6 +396,11 @@ def main():
         action="store_true",
         help="Return dual-channel (user+agent) WAV in response (s2s_incremental_v2, for FDB)",
     )
+    parser.add_argument(
+        "--use_asr_as_response",
+        action="store_true",
+        help="Use ASR channel (user transcription) as primary response text instead of agent text (for ASR evaluation)",
+    )
 
     # Session management options (s2s_session backend)
     parser.add_argument(
@@ -611,6 +616,8 @@ def main():
         extra_config["save_session_artifacts"] = not args.no_save_session_artifacts
         if args.merge_user_channel_v2:
             extra_config["merge_user_channel"] = True
+        if args.use_asr_as_response:
+            extra_config["use_asr_as_response"] = True
         # Build vLLM configs when using a vLLM engine
         if "vllm" in args.engine_type:
             model_path = args.model

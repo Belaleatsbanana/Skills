@@ -16,12 +16,13 @@ model: /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Nemotron-VoiceC
 
 server_type: vllm
 server_gpus: 1
-num_chunks: 1
+num_chunks: 144
 
 server_entrypoint: "-m nemo_skills.inference.server.serve_unified"
 server_args: >-
   --backend s2s_incremental_v2
   --no_decode_audio
+  --use_asr_as_response
   --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Mg_a_00759.wav
   --num_frames_per_inference 3
   --engine_type vllm_llm_vllm_eartts
@@ -34,7 +35,7 @@ server_args: >-
   --vllm_gpu_memory_utilization 0.35
   --vllm_max_model_len 8192
   --system_prompt "You are a helpful assistant. /no_think"
-  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_artifacts_tr
+  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_artifacts_full
   --batch_size 2
   --code_path /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/NeMo
   --pip_install "hf-xet==1.1.9 huggingface-hub==0.34.4 nvidia-modelopt==0.33.1 nvidia-modelopt-core==0.33.1 tokenizers==0.22.0 transformers==4.56.0 lhotse==1.32.2 nv-one-logger-core==2.1.0 nv-one-logger-pytorch-lightning-integration==2.1.0 nv-one-logger-training-telemetry==2.1.0 kaldialign==0.9.1 jiwer whisper-normalizer sacrebleu"
@@ -48,12 +49,11 @@ benchmark: asr-leaderboard
 # Paths -- data_dir must match the container mount in cluster config
 # (cluster mounts /lustre/fs12/.../nemo_skills/dataset -> /dataset)
 data_dir: /dataset
-output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_tr
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_full
 
 installation_command: "pip install jiwer whisper-normalizer sacrebleu"
 
 expname: asr_leaderboard_s2s_incremental_v2_02mar
-max_samples: 10
 generation_only: false
 scoring_only: false
 dry_run: false

@@ -31,6 +31,7 @@ server_args: >-
   --codec_token_history_size 60
   --pad_to_duration_secs 40
   --repetition_penalty 1.0
+  --force_turn_taking
   --matmul_precision medium
   --vllm_gpu_memory_utilization 0.35
   --vllm_max_model_len 8192

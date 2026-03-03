@@ -89,6 +89,7 @@ class S2SIncrementalV2Config(BackendConfig):
     force_turn_taking_pad_window: int = 25
 
     decode_audio: bool = True
+    use_asr_as_response: bool = False
 
     save_session_artifacts: bool = True
     session_artifacts_dir: str = "/tmp/s2s_sessions"
@@ -399,11 +400,11 @@ class S2SIncrementalBackendV2(InferenceBackend):
                 asr_text = output["asr_text"][0] if output.get("asr_text") else None
                 debug_info = output.get("debug_info", {})
 
-                # In no-decode-audio (text-only) mode the agent text channel
-                # typically contains only turn-taking timestamps (e.g. "<$0.72$>")
-                # rather than a real transcription.  When ASR text is available
-                # it is much more useful as the primary response.
-                if not self.v2_config.decode_audio and asr_text:
+                # For ASR evaluation: use the ASR channel (user speech transcription)
+                # as the primary response instead of the agent text channel.
+                # Only enabled with --use_asr_as_response (not for VoiceBench etc.
+                # where the agent's response is what matters).
+                if self.v2_config.use_asr_as_response and asr_text:
                     cleaned = asr_text
                     # Strip turn-taking markers: <$ts$>, <|ts|>, ^ (user BOS)
                     cleaned = re.sub(r"<[\$|][^>]*[\$|]>", "", cleaned)
