@@ -35,12 +35,19 @@ from nemo_rl.distributed.ray_actor_environment_registry import (
     get_actor_python_env,
 )
 from nemo_rl.distributed.virtual_cluster import init_ray
-from nemo_rl.environments.nemo_gym import (
-    NemoGym,
-    NemoGymConfig,
-    nemo_gym_example_to_nemo_rl_datum_spec,
-    setup_nemo_gym_config,
-)
+
+try:
+    from nemo_rl.environments.nemo_gym import (
+        NemoGym,
+        NemoGymConfig,
+        nemo_gym_example_to_nemo_rl_datum_spec,
+        setup_nemo_gym_config,
+    )
+except ImportError:
+    raise RuntimeError(
+        "NemoGym is not available in this NeMo-RL installation. "
+        "Gym GRPO training requires a NeMo-RL container that includes the Gym submodule."
+    )
 from nemo_rl.models.generation import configure_generation_config
 from nemo_rl.utils.config import load_config, parse_hydra_overrides
 from nemo_rl.utils.logger import get_next_experiment_dir
