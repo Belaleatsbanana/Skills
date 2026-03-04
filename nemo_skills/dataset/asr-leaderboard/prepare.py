@@ -14,7 +14,11 @@
 
 """Prepare ASR Leaderboard datasets for evaluation.
 
-Downloads and formats datasets from the HuggingFace Open ASR Leaderboard.
+Downloads and formats datasets from the official HF Open ASR Leaderboard ESB
+test-only sorted dataset (hf-audio/esb-datasets-test-only-sorted). This is the
+same data source used by the official leaderboard and the offline NeMo eval
+pipeline, ensuring apples-to-apples WER comparison.
+
 Audio paths in JSONL: /dataset/asr-leaderboard/data/{dataset}/{sample_id}.flac
 
 Usage:
@@ -34,29 +38,25 @@ from tqdm import tqdm
 SYSTEM_MESSAGE = "You are a helpful assistant. /no_think"
 MIN_AUDIO_DURATION = 0.1  # Skip audio shorter than this (causes mel spectrogram errors)
 
-# (hf_dataset, hf_config, hf_split, streaming)
+ESB_DATASET = "hf-audio/esb-datasets-test-only-sorted"
+
+# (esb_config, esb_split)
+# All use the unified ESB format: fields are "text", "audio", "id", "dataset".
 DATASET_CONFIGS = {
-    "librispeech_clean": ("librispeech_asr", "clean", "test", False),
-    "librispeech_other": ("librispeech_asr", "other", "test", False),
-    "voxpopuli": ("facebook/voxpopuli", "en", "test", False),
-    "tedlium": ("LIUM/tedlium", "release3", "test", False),
-    "gigaspeech": ("speechcolab/gigaspeech", "xs", "test", False),
-    "spgispeech": ("kensho/spgispeech", "test", "test", True),  # streaming to avoid timeout due to large metadata
-    "earnings22": ("distil-whisper/earnings22", "chunked", "test", False),
-    "ami": ("edinburghcstr/ami", "ihm", "test", False),
+    "librispeech_clean": ("librispeech", "test.clean"),
+    "librispeech_other": ("librispeech", "test.other"),
+    "voxpopuli": ("voxpopuli", "test"),
+    "tedlium": ("tedlium", "test"),
+    "gigaspeech": ("gigaspeech", "test"),
+    "spgispeech": ("spgispeech", "test"),
+    "earnings22": ("earnings22", "test"),
+    "ami": ("ami", "test"),
 }
 
 
 def save_audio_and_format_entry(entry, dataset_name, audio_dir, sample_idx, with_audio=True):
     """Format a dataset entry and optionally save audio file."""
-    # Different datasets use different field names for transcription
-    text = (
-        entry.get("text", "")  # ami, LS, gigaspeech, tedlium
-        or entry.get("normalized_text", "")  # voxpopuli
-        or entry.get("transcript", "")  # spgispeech
-        or entry.get("transcription", "")  # earnings22
-    )
-    text = text.strip() if text else ""
+    text = entry.get("text", "").strip()
 
     system_message = {"role": "system", "content": SYSTEM_MESSAGE}
     user_message = {"role": "user", "content": "Transcribe the following audio."}
@@ -101,14 +101,11 @@ def prepare_dataset(dataset_name, output_dir, with_audio=True):
     if dataset_name not in DATASET_CONFIGS:
         raise ValueError(f"Unknown dataset: {dataset_name}. Available: {list(DATASET_CONFIGS.keys())}")
 
-    hf_dataset, hf_config, hf_split, streaming = DATASET_CONFIGS[dataset_name]
+    esb_config, esb_split = DATASET_CONFIGS[dataset_name]
 
-    print(f"Loading {dataset_name} from {hf_dataset} (streaming={streaming})...")
+    print(f"Loading {dataset_name} from {ESB_DATASET} (config={esb_config}, split={esb_split})...")
     try:
-        if hf_config:
-            dataset = load_dataset(hf_dataset, hf_config, split=hf_split, trust_remote_code=True, streaming=streaming)
-        else:
-            dataset = load_dataset(hf_dataset, split=hf_split, trust_remote_code=True, streaming=streaming)
+        dataset = load_dataset(ESB_DATASET, esb_config, split=esb_split, trust_remote_code=True)
     except Exception as e:
         print(f"Warning: Failed to load {dataset_name}: {e}")
         return 0
@@ -120,10 +117,7 @@ def prepare_dataset(dataset_name, output_dir, with_audio=True):
         audio_dir.mkdir(parents=True, exist_ok=True)
         print(f"Saving audio files to {audio_dir}")
 
-    if streaming:
-        print(f"Processing {dataset_name} (streaming)...")
-    else:
-        print(f"Processing {len(dataset)} samples from {dataset_name}...")
+    print(f"Processing {len(dataset)} samples from {dataset_name}...")
 
     count = 0
     skipped = 0

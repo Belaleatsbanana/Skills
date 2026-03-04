@@ -134,12 +134,14 @@ def preprocess_asr_text(text: str) -> str:
 
 
 def preprocess_hf_leaderboard(text: str) -> str:
-    """Apply HuggingFace leaderboard normalization: lowercase, remove punctuation, normalize unicode."""
-    import unicodedata
+    """Apply HuggingFace Open ASR Leaderboard normalization using Whisper's EnglishTextNormalizer.
 
-    text = unicodedata.normalize("NFC", text)
-    text = text.lower()
-    text = re.sub(r"[^\w\s]", "", text)
+    This matches the official HF leaderboard (github.com/huggingface/open_asr_leaderboard)
+    which uses whisper_normalizer.english.EnglishTextNormalizer for both references and hypotheses.
+    """
+    from whisper_normalizer.english import EnglishTextNormalizer
+
+    text = EnglishTextNormalizer()(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 

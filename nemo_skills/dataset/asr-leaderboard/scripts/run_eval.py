@@ -55,9 +55,13 @@ def run_asr_leaderboard_eval(config: dict):
     print(f"{'=' * 60}")
     print("HF Open ASR Leaderboard Evaluation")
     print(f"{'=' * 60}")
+    split = config.get("split")
+
     print(f"Benchmark: {benchmark}")
     print(f"Model: {config['model']}")
     print(f"Output: {config['output_dir']}")
+    if split:
+        print(f"Split: {split} (single subset)")
 
     extra_args = []
     if config.get("max_samples"):
@@ -66,51 +70,36 @@ def run_asr_leaderboard_eval(config: dict):
         extra_args.append(f"++server.server_type={config['server_server_type']}")
     extra_args_str = " ".join(extra_args)
 
+    eval_kwargs = dict(
+        ctx=wrap_arguments(extra_args_str),
+        cluster=config["cluster"],
+        output_dir=config["output_dir"],
+        data_dir=config.get("data_dir"),
+        benchmarks=benchmark,
+        model=config["model"],
+        server_type=config.get("server_type", "vllm"),
+        server_gpus=config.get("server_gpus", 1),
+        server_nodes=config.get("server_nodes", 1),
+        server_args=config.get("server_args", ""),
+        server_entrypoint=config.get("server_entrypoint"),
+        server_container=config.get("server_container"),
+        partition=config.get("partition"),
+        num_chunks=config.get("num_chunks", 1),
+        installation_command=config.get("installation_command"),
+        expname=expname,
+        auto_summarize_results=True,
+        dry_run=dry_run,
+    )
+    if split:
+        eval_kwargs["split"] = split
+
     if not scoring_only:
         print("\n--- Running generation + scoring ---")
-        nemo_eval(
-            ctx=wrap_arguments(extra_args_str),
-            cluster=config["cluster"],
-            output_dir=config["output_dir"],
-            data_dir=config.get("data_dir"),
-            benchmarks=benchmark,
-            model=config["model"],
-            server_type=config.get("server_type", "vllm"),
-            server_gpus=config.get("server_gpus", 1),
-            server_nodes=config.get("server_nodes", 1),
-            server_args=config.get("server_args", ""),
-            server_entrypoint=config.get("server_entrypoint"),
-            server_container=config.get("server_container"),
-            partition=config.get("partition"),
-            num_chunks=config.get("num_chunks", 1),
-            installation_command=config.get("installation_command"),
-            expname=expname,
-            auto_summarize_results=True,
-            dry_run=dry_run,
-        )
+        nemo_eval(**eval_kwargs)
 
     if scoring_only:
         print("\n--- Running scoring only ---")
-        nemo_eval(
-            ctx=wrap_arguments(extra_args_str),
-            cluster=config["cluster"],
-            output_dir=config["output_dir"],
-            data_dir=config.get("data_dir"),
-            benchmarks=benchmark,
-            model=config["model"],
-            server_type=config.get("server_type", "vllm"),
-            server_gpus=config.get("server_gpus", 1),
-            server_nodes=config.get("server_nodes", 1),
-            server_args=config.get("server_args", ""),
-            server_entrypoint=config.get("server_entrypoint"),
-            server_container=config.get("server_container"),
-            partition=config.get("partition"),
-            num_chunks=config.get("num_chunks", 1),
-            installation_command=config.get("installation_command"),
-            expname=expname,
-            auto_summarize_results=True,
-            dry_run=dry_run,
-        )
+        nemo_eval(**eval_kwargs)
 
     print(f"\n{'=' * 60}")
     print("Done!")
@@ -127,6 +116,11 @@ def main():
     parser.add_argument("--output_dir", help="Override output directory")
     parser.add_argument("--max_samples", type=int, help="Override max_samples")
     parser.add_argument("--num_chunks", type=int, help="Override num_chunks")
+    parser.add_argument(
+        "--split",
+        help="Data split to evaluate (default: test = all datasets). "
+        "Use a single dataset name (e.g. ami, earnings22) to run only that subset.",
+    )
     parser.add_argument("--dry_run", action="store_true", help="Print commands without executing")
     parser.add_argument("--generation_only", action="store_true", help="Only run generation")
     parser.add_argument("--scoring_only", action="store_true", help="Only run scoring")
@@ -134,7 +128,7 @@ def main():
     args = parser.parse_args()
     config = load_config(args.config)
 
-    override_keys = ["cluster", "partition", "model", "output_dir", "max_samples", "num_chunks"]
+    override_keys = ["cluster", "partition", "model", "output_dir", "max_samples", "num_chunks", "split"]
     for key in override_keys:
         if getattr(args, key, None) is not None:
             config[key] = getattr(args, key)
