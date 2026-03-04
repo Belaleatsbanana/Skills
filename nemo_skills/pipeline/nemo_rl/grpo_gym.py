@@ -129,7 +129,7 @@ class NemoRLGymTask:
             f"export UV_PROJECT=/opt/nemo-rl && "
             f"{nsight_cmd}"
             f"echo 'Starting GRPO training with NemoGym' && "
-            f"uv run --active python /nemo_run/code/nemo_skills/training/nemo_rl/start_grpo_gym.py "
+            f"uv run python /nemo_run/code/nemo_skills/training/nemo_rl/start_grpo_gym.py "
             f"  {self.format_train_args()} "
             f"  {self.format_data_args()} "
             f"  {self.logging_params} "
@@ -184,7 +184,7 @@ def get_training_cmd(
 def get_checkpoint_convert_cmd(output_dir, final_hf_path, step, backend, max_position_embeddings=None):
     cmd = "export PYTHONPATH=$PYTHONPATH:/nemo_run/code && export UV_PROJECT=/opt/nemo-rl && cd /nemo_run/code && "
     if backend == "fsdp":
-        cmd += "uv run --active python -m nemo_skills.training.nemo_rl.convert_dcp_to_hf "
+        cmd += "uv run --extra automodel python -m nemo_skills.training.nemo_rl.convert_dcp_to_hf "
     elif backend == "megatron":
         cmd += "uv run --extra mcore python -m nemo_skills.training.nemo_rl.convert_megatron_to_hf "
     else:

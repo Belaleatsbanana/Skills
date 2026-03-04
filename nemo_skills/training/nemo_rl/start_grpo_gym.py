@@ -25,19 +25,14 @@ import pprint
 from itertools import chain, repeat
 from typing import Optional
 
-import ray
 from datasets import Dataset
+
 from nemo_rl.algorithms.grpo import MasterConfig, grpo_train, setup
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data.datasets import AllTaskProcessedDataset
 from nemo_rl.data.interfaces import DatumSpec
-from nemo_rl.distributed.ray_actor_environment_registry import (
-    get_actor_python_env,
-)
 from nemo_rl.distributed.virtual_cluster import init_ray
 from nemo_rl.environments.nemo_gym import (
-    NemoGym,
-    NemoGymConfig,
     nemo_gym_example_to_nemo_rl_datum_spec,
     setup_nemo_gym_config,
 )
@@ -177,10 +172,12 @@ The validation set you pass in will directly be used for validation with no addi
     config["grpo"]["max_val_samples"] = len(val_dataset)
     config["grpo"]["val_batch_size"] = config["grpo"]["max_val_samples"]
 
-    # Setup RL components
+    # Setup RL components (setup() creates NemoGym actor internally when
+    # env.should_use_nemo_gym=true; JUDGE_SERVER_ARGS is propagated via os.environ)
     (
         policy,
         policy_generation,
+        nemo_gym_env,
         cluster,
         dataloader,
         val_dataloader,
@@ -191,41 +188,7 @@ The validation set you pass in will directly be used for validation with no addi
         master_config,
     ) = setup(config, tokenizer, train_dataset, val_dataset)
 
-    # Setup NemoGym environment
-    print("\n▶ Creating NemoGym environment...")
-    nemo_gym_config = NemoGymConfig(
-        model_name=policy_generation.cfg["model_name"],
-        base_urls=policy_generation.dp_openai_server_base_urls,
-        initial_global_config_dict=config["env"]["nemo_gym"],
-    )
-
-    # Pass JUDGE_SERVER_ARGS and SLURM_MASTER_NODE_HET_GROUP_* into the NemoGym Ray actor
-    # so math_with_judge can use the separate judge vLLM (OpenAI path) instead of policy_model.
-    _ray_env_vars = {}
-    if os.environ.get("JUDGE_SERVER_ARGS"):
-        _ray_env_vars["JUDGE_SERVER_ARGS"] = os.environ["JUDGE_SERVER_ARGS"]
-    for _k, _v in os.environ.items():
-        if _k.startswith("SLURM_MASTER_NODE_HET_GROUP_"):
-            _ray_env_vars[_k] = _v
-    _n_het = sum(1 for _k in _ray_env_vars if _k.startswith("SLURM_MASTER_NODE_HET_GROUP_"))
-    print(
-        f"[NemoGym] Judge env in driver: JUDGE_SERVER_ARGS={'set' if _ray_env_vars.get('JUDGE_SERVER_ARGS') else 'not set'}, "
-        f"SLURM_MASTER_NODE_HET_GROUP_* count={_n_het}. Passing to actor: {bool(_ray_env_vars)}."
-    )
-    _runtime_env = {
-        "py_executable": get_actor_python_env("nemo_rl.environments.nemo_gym.NemoGym"),
-    }
-    if _ray_env_vars:
-        _runtime_env["env_vars"] = _ray_env_vars
-
-    # Register NemoGym environment
-    nemo_gym = NemoGym.options(runtime_env=_runtime_env).remote(nemo_gym_config)
-
-    # Blocking wait for NeMo-Gym to spin up
-    ray.get(nemo_gym.health_check.remote())
-    print("✅ NemoGym environment ready!")
-
-    task_to_env = {"nemo_gym": nemo_gym}
+    task_to_env = {"nemo_gym": nemo_gym_env}
     val_task_to_env = task_to_env
 
     # Start training
