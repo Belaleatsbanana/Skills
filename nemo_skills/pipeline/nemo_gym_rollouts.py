@@ -42,8 +42,8 @@ Example usage:
         --config_paths "ns_tools/configs/ns_tools.yaml" \\
         --input_file data/example.jsonl \\
         --output_dir /results/rollouts \\
-        --model http://localhost:8000/v1 \\
-        --policy_model_name nvidia/model-name \\
+        --server_address http://localhost:8000/v1 \\
+        --model nvidia/model-name \\
         +agent_name=ns_tools_simple_agent
 """
 
@@ -88,9 +88,11 @@ def nemo_gym_rollouts(
     input_file: str = typer.Option(..., help="Path to input JSONL file for rollout collection"),
     output_dir: str = typer.Option(..., help="Directory for rollout outputs. Output file will be rollouts.jsonl"),
     expname: str = typer.Option("nemo_gym_rollouts", help="NeMo Run experiment name"),
-    model: str = typer.Option(
+    model: str = typer.Option(None, help="Path to model or model name for the policy server"),
+    server_address: str = typer.Option(
         None,
-        help="Model path for self-hosted server, or server URL (e.g., http://host:8000/v1) for pre-hosted.",
+        help="Address of pre-hosted server (e.g., http://localhost:8000/v1). "
+        "If provided, skips self-hosted server setup.",
     ),
     server_type: pipeline_utils.SupportedServers = typer.Option(
         None,
@@ -184,29 +186,27 @@ def nemo_gym_rollouts(
     config_paths_list = [p.strip() for p in config_paths.split(",") if p.strip()]
     LOG.info(f"Config paths: {config_paths_list}")
 
-    # Determine if model is a URL (pre-hosted) or a path (self-hosted)
-    pre_hosted = model is not None and model.startswith("http")
-    self_hosted = model is not None and not pre_hosted and server_gpus is not None
+    # Determine hosting mode: server_gpus as discriminator (matches ns generate pattern)
+    self_hosted = server_gpus is not None and server_gpus > 0
+    pre_hosted = not self_hosted
 
-    if model is None:
-        raise ValueError("--model is required. Provide a model path for self-hosted or a URL for pre-hosted server.")
-
-    if not self_hosted and not pre_hosted:
-        raise ValueError(
-            "--server_gpus is required when using a self-hosted server (model path). "
-            "Or provide a URL (http://...) for pre-hosted."
-        )
+    if self_hosted and model is None:
+        raise ValueError("--model is required when using self-hosted server")
 
     if self_hosted and server_type is None:
         raise ValueError("--server_type is required when using self-hosted server")
 
-    # Validate and set policy_model_name
-    if pre_hosted and policy_model_name is None:
-        raise ValueError("--policy_model_name is required when using a pre-hosted server")
+    if pre_hosted and server_address is None:
+        raise ValueError("--server_address is required when not using self-hosted server (no --server_gpus)")
 
-    if self_hosted and policy_model_name is None:
+    # Validate and set policy_model_name
+    if pre_hosted and policy_model_name is None and model is None:
+        raise ValueError("--policy_model_name or --model is required when using a pre-hosted server")
+
+    if policy_model_name is None:
         policy_model_name = model
-        LOG.info(f"Using model path as policy_model_name: {policy_model_name}")
+        if policy_model_name:
+            LOG.info(f"Using model path as policy_model_name: {policy_model_name}")
 
     # Get cluster config
     cluster_config = pipeline_utils.get_cluster_config(cluster, config_dir)
@@ -319,7 +319,7 @@ def nemo_gym_rollouts(
             output_file=output_file,
             extra_arguments=extra_arguments,
             server=server_script,
-            server_address=model if pre_hosted else None,
+            server_address=server_address if pre_hosted else None,
             sandbox=sandbox_script,
             gym_path=gym_path,
             policy_api_key=policy_api_key,
