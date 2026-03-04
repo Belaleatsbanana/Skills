@@ -315,7 +315,12 @@ def prepare_eval_commands(
     generation_module=None,
     extra_benchmark_map=None,
 ):
-    """Prepare per-job eval generation units for evaluation batching.
+    """
+    # TODO: there is a bit too much code duplication here and logic is quite dense, should try to refactor
+
+    # TODO: should we allow setting num chunks per benchmark when not using groups? Maybe benchmark:rs_num:num_chunks?
+
+    Prepare per-job eval generation units for evaluation batching.
 
     Returns:
         benchmarks_dict: Mapping benchmark name -> BenchmarkArgs (includes job_ids, remaining_jobs, etc.)
@@ -333,8 +338,9 @@ def prepare_eval_commands(
 
     if num_jobs is None:
         if cluster_config["executor"] == "slurm":
-            num_jobs = -1
+            num_jobs = -1  # -1 means run all benchmarks in parallel
         else:
+            # for local executor, it makes no sense to use other values
             num_jobs = 1
 
     benchmarks_dict = {}
@@ -386,6 +392,7 @@ def prepare_eval_commands(
         if num_chunks:
             benchmark_args.num_chunks = num_chunks
         if benchmark_args.num_chunks is not None:
+            # TODO: currently using global chunk_ids but local num_chunks. That's not ideal
             benchmark_chunk_ids = compute_chunk_ids(chunk_ids, benchmark_args.num_chunks)
         if benchmark_chunk_ids is None:
             benchmark_chunk_ids = [None]
@@ -401,6 +408,7 @@ def prepare_eval_commands(
             total_evals += len(benchmark_chunk_ids)
 
     if num_jobs < 0:
+        # if num_jobs is -1, we run all benchmarks in parallel
         num_jobs = total_evals
 
     if num_jobs == 0:
@@ -428,6 +436,7 @@ def prepare_eval_commands(
         benchmark_output_dir = f"{output_dir}/{benchmark_args.eval_subfolder}"
         for seed_idx, (seed, benchmark_chunk_ids) in enumerate(benchmark_args.remaining_jobs.items()):
             if wandb_parameters:
+                # no need for chunks as it will run after merging
                 wandb_parameters["samples_file"] = pipeline_utils.get_chunked_rs_filename(
                     benchmark_output_dir,
                     random_seed=seed,
