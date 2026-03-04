@@ -199,6 +199,19 @@ def nemo_gym_rollouts(
     if pre_hosted and server_address is None:
         raise ValueError("--server_address is required when not using self-hosted server (no --server_gpus)")
 
+    if pre_hosted:
+        invalid_flags = []
+        if server_type is not None:
+            invalid_flags.append("--server_type")
+        if server_nodes != 1:
+            invalid_flags.append("--server_nodes")
+        if server_args:
+            invalid_flags.append("--server_args")
+        if server_container is not None:
+            invalid_flags.append("--server_container")
+        if invalid_flags:
+            raise ValueError(f"{', '.join(invalid_flags)} are only valid for self-hosted mode (--server_gpus)")
+
     # Validate and set policy_model_name
     if pre_hosted and policy_model_name is None and model is None:
         raise ValueError("--policy_model_name or --model is required when using a pre-hosted server")
@@ -224,13 +237,18 @@ def nemo_gym_rollouts(
         else:
             seed_indices = list(random_seeds)
         LOG.info(f"Using explicit seeds: {seed_indices}")
-    elif num_random_seeds:
+    elif num_random_seeds is not None:
+        if num_random_seeds <= 0:
+            raise ValueError("--num_random_seeds must be > 0")
         seed_indices = list(range(starting_seed, starting_seed + num_random_seeds))
         LOG.info(
             f"Creating {num_random_seeds} separate jobs (rs{starting_seed}..rs{starting_seed + num_random_seeds - 1})"
         )
     else:
         seed_indices = [None]  # Single job, no seed suffix
+
+    if seed_indices != [None] and len(seed_indices) != len(set(seed_indices)):
+        raise ValueError("--random_seeds must not contain duplicate values")
 
     # Get server type string and container if self-hosted
     server_type_str = None

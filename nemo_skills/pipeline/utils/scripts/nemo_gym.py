@@ -61,6 +61,8 @@ class NemoGymRolloutsScript(BaseJobScript):
 
     def __post_init__(self):
         """Initialize the combined ng_run + ng_collect_rollouts script."""
+        if self.server is not None and self.server_address is not None:
+            raise ValueError("Specify only one of `server` or `server_address`.")
 
         def build_cmd() -> Tuple[str, Dict]:
             """Build the full rollout collection command."""

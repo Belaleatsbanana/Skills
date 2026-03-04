@@ -80,6 +80,8 @@ class ServerScript(BaseJobScript):
         if self.port is None and self.allocate_port:
             self.port = get_free_port(strategy="random")
             LOG.debug(f"Allocated port {self.port} for {self.server_type} server")
+        if self.port is None:
+            raise ValueError("ServerScript requires `port` when allocate_port=False")
 
         cmd, self.num_tasks = get_server_command(
             server_type=self.server_type,
@@ -127,6 +129,8 @@ class SandboxScript(BaseJobScript):
         if self.port is None and self.allocate_port:
             self.port = get_free_port(strategy="random")
             LOG.debug(f"Allocated port {self.port} for sandbox")
+        if self.port is None:
+            raise ValueError("SandboxScript requires `port` when allocate_port=False")
 
         cmd, metadata = sandbox_command(
             cluster_config=self.cluster_config,
