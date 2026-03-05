@@ -26,7 +26,6 @@ mounts:
   - /lustre/fsw/portfolios/llmservice:/lustre/fsw/portfolios/llmservice
   - /scratch:/scratch
   - /scratch/fsw/portfolios/llmservice/users/bihu/sadegh/migrate/nemo-rl-internal/nemo_rl:/opt/nemo-rl/nemo_rl
-  - /scratch/fsw/portfolios/llmservice/users/bihu/sadegh/migrate/nemo-rl-internal/examples:/opt/nemo-rl/examples
   - /scratch/fsw/portfolios/llmservice/users/bihu/sadegh/migrate/Gym:/opt/nemo-rl/3rdparty/Gym-workspace/Gym
 
 env_vars:
