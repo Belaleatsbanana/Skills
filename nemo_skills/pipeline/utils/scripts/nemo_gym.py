@@ -34,7 +34,7 @@ class NemoGymRolloutsScript(BaseJobScript):
 
     Attributes:
         config_paths: List of YAML config file paths for ng_run
-        input_file: Input JSONL file path for rollout collection
+        input_file: Input JSONL file path for rollout collection (optional when using +benchmark=)
         output_file: Output JSONL file path for rollouts
         extra_arguments: Additional Hydra overrides passed to both ng_run and ng_collect_rollouts
         server: Optional ServerScript reference for policy model server
@@ -47,7 +47,7 @@ class NemoGymRolloutsScript(BaseJobScript):
     """
 
     config_paths: List[str]
-    input_file: str
+    input_file: Optional[str] = None
     output_file: str
     extra_arguments: str = ""
     server: Optional["ServerScript"] = None
@@ -93,9 +93,11 @@ class NemoGymRolloutsScript(BaseJobScript):
             # Build ng_collect_rollouts command
             ng_collect_parts = [
                 "ng_collect_rollouts",
-                f'+input_jsonl_fpath="{self.input_file}"',
                 f'+output_jsonl_fpath="{self.output_file}"',
             ]
+
+            if self.input_file is not None:
+                ng_collect_parts.append(f'+input_jsonl_fpath="{self.input_file}"')
 
             if self.extra_arguments:
                 ng_collect_parts.append(self.extra_arguments)
@@ -177,7 +179,7 @@ done
 set -o pipefail
 
 echo "=== Running rollout collection ==="
-echo "Input file: {self.input_file}"
+echo "Input file: {self.input_file or "(from config)"}"
 echo "Output file: {self.output_file}"
 mkdir -p "$(dirname "{self.output_file}")"
 echo "Output directory created: $(dirname "{self.output_file}")"

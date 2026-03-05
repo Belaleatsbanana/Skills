@@ -85,7 +85,11 @@ def nemo_gym_rollouts(
         help="Comma-separated list of NeMo Gym config YAML files for ng_run. "
         "E.g., 'ns_tools/configs/ns_tools.yaml,math_with_judge/configs/math_with_judge.yaml'",
     ),
-    input_file: str = typer.Option(..., help="Path to input JSONL file for rollout collection"),
+    input_file: str = typer.Option(
+        None,
+        help="Path to input JSONL file for rollout collection. "
+        "Optional when using +benchmark=<name> (the benchmark config provides the input path).",
+    ),
     output_dir: str = typer.Option(..., help="Directory for rollout outputs. Output file will be rollouts.jsonl"),
     expname: str = typer.Option("nemo_gym_rollouts", help="NeMo Run experiment name"),
     model: str = typer.Option(None, help="Path to model or model name for the policy server"),
