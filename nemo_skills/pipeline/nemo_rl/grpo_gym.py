@@ -320,6 +320,9 @@ def grpo_gym_nemo_rl(
     server_args: str = typer.Option(
         "", help="Extra arguments passed to the judge server command (e.g. vLLM/sglang CLI flags)."
     ),
+    n_servers: int = typer.Option(
+        1, help="Number of judge server instances to launch (sglang supports multiple via --dp-size)."
+    ),
 ):
     """Runs NeMo-RL GRPO training with NemoGym integration (no proxy server).
 
@@ -392,7 +395,7 @@ def grpo_gym_nemo_rl(
             "model_path": server_model,
             "server_port": server_port,
             "server_args": server_args or "",
-            "n_servers": 1,
+            "n_servers": n_servers,
         }
         LOG.info("Judge server will be started in heterogeneous job: %s", json.dumps(server_config, indent=2))
 
