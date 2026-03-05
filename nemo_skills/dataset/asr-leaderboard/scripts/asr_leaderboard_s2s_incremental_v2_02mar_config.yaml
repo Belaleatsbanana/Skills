@@ -35,8 +35,8 @@ server_args: >-
   --matmul_precision medium
   --vllm_gpu_memory_utilization 0.35
   --vllm_max_model_len 8192
-  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_artifacts_full_no_system_prompt_LS-clean
-  --batch_size 2
+  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_artifacts_full_no_system_prompt_LS-clean_
+  --batch_size 1
   --code_path /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/NeMo
   --pip_install "hf-xet==1.1.9 huggingface-hub==0.34.4 nvidia-modelopt==0.33.1 nvidia-modelopt-core==0.33.1 tokenizers==0.22.0 transformers==4.56.0 lhotse==1.32.2 nv-one-logger-core==2.1.0 nv-one-logger-pytorch-lightning-integration==2.1.0 nv-one-logger-training-telemetry==2.1.0 kaldialign==0.9.1 jiwer whisper-normalizer sacrebleu"
 
@@ -49,7 +49,7 @@ benchmark: asr-leaderboard
 # Paths -- data_dir must match the container mount in cluster config
 # (cluster mounts /lustre/fs12/.../nemo_skills/dataset -> /dataset)
 data_dir: /dataset
-output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_full_no_system_prompt_LS-clean
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/asr_leaderboard_incremental_v2_02mar_full_no_system_prompt_LS-clean_
 split: librispeech_clean
 installation_command: "pip install jiwer whisper-normalizer sacrebleu"
 

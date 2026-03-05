@@ -37,7 +37,7 @@ server_args: >-
   --ignore_system_prompt
   --system_prompt "You are an AI assistant developed by NVIDIA. Your name is NVIDIA VoiceChat. Your job is to be helpful and have engaging conversations in English. Maintain a warm tone. Keep the dialogue open and ongoing. You must provide diverse responses, rephrase answers if user asks the same questions."
   --merge_user_channel_v2
-  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/fdb_v1_0_incremental_v2_02mar_artifacts_force_turn_taking
+  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/fdb_v1_0_incremental_v2_02mar_artifacts_force_turn_taking-pause
   --code_path /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/NeMo
   --pip_install "hf-xet==1.1.9 huggingface-hub==0.34.4 nvidia-modelopt==0.33.1 nvidia-modelopt-core==0.33.1 tokenizers==0.22.0 transformers==4.56.0 lhotse==1.32.2 nv-one-logger-core==2.1.0 nv-one-logger-pytorch-lightning-integration==2.1.0 nv-one-logger-training-telemetry==2.1.0 kaldialign==0.9.1"
 
@@ -49,7 +49,7 @@ server_server_type: vllm_multimodal
 fdb_version: v1.0
 
 data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Skills/nemo_skills/dataset/fdb
-output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/fdb_v1_0_incremental_v2_02mar_force_turn_taking
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/fdb_v1_0_incremental_v2_02mar_force_turn_taking-pause
 fdb_repo_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench
 fdb_data_path: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/Full-Duplex-Bench-data
 

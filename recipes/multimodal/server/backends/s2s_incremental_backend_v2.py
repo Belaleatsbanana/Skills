@@ -386,6 +386,16 @@ class S2SIncrementalBackendV2(InferenceBackend):
                 audio_bytes = None
                 if output.get("audio") is not None:
                     audio_np = output["audio"].float().cpu().numpy().squeeze()
+
+                    # Trim output audio to original input duration so that
+                    # silence_padding_sec doesn't inflate the saved file.
+                    import librosa as _lr
+
+                    input_dur = _lr.get_duration(filename=audio_path)
+                    max_out_samples = int(input_dur * self.target_sample_rate)
+                    if len(audio_np) > max_out_samples:
+                        audio_np = audio_np[:max_out_samples]
+
                     max_val = np.abs(audio_np).max()
                     if max_val > 0:
                         audio_np = audio_np / max_val * 0.95
