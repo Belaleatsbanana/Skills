@@ -90,6 +90,8 @@ def run_asr_leaderboard_eval(config: dict):
         auto_summarize_results=True,
         dry_run=dry_run,
     )
+    if config.get("chunk_ids"):
+        eval_kwargs["chunk_ids"] = config["chunk_ids"]
     if split:
         eval_kwargs["split"] = split
 

@@ -1,7 +1,9 @@
 # (P1) VoiceBench evaluation - S2S incremental V2 backend, SPEECH output.
 # Full audio decoding with codec cache for clean output.
 # Uses NemotronVoicechatInferenceWrapper with vLLM + perception/codec caches.
-# Checkpoint: Mar 2 2026 (Feb 26 STT + Mar 3 TTS, Megan speaker, force_turn_taking OFF)
+# Checkpoint: Mar 2 2026 (Feb 26 STT + Mar 3 TTS, Megan speaker)
+# No system prompt, no force_turn_taking, pad_audio_to_sec=40.
+# Produces both metrics_variant=generated (text) and metrics_variant=asr (speech) scores.
 #
 # Run:
 #   python nemo_skills/dataset/voicebench/scripts/generate_from_api_and_score_official.py \
@@ -22,20 +24,21 @@ server_entrypoint: "-m nemo_skills.inference.server.serve_unified"
 server_args: >-
   --backend s2s_incremental_v2
   --decode_audio
+  --ignore_system_prompt
   --speaker_reference /lustre/fsw/portfolios/convai/users/ecasanova/Checkpoints/Mg_a_00759.wav
   --num_frames_per_inference 3
   --engine_type vllm_llm_vllm_eartts
   --use_perception_cache
   --use_perception_cudagraph
   --use_codec_cache
-  --buffer_size_frames 20
+  --buffer_size_frames 21
   --codec_token_history_size 60
+  --pad_audio_to_sec 40
   --repetition_penalty 1.0
   --matmul_precision medium
   --vllm_gpu_memory_utilization 0.35
   --vllm_max_model_len 8192
-  --system_prompt "You are an AI assistant developed by NVIDIA. Your name is NVIDIA VoiceChat. Your job is to be helpful and have engaging conversations in English. Maintain a warm tone. Keep the dialogue open and ongoing. You must provide diverse responses, rephrase answers if user asks the same questions."
-  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/voicebench_incremental_v2_sound_02mar_artifacts
+  --output_dir /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02_FIXED/voicebench_incremental_v2_sound_02mar_no_sys_prompt_artifacts
   --batch_size 2
   --code_path /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/NeMo
   --pip_install "hf-xet==1.1.9 huggingface-hub==0.34.4 nvidia-modelopt==0.33.1 nvidia-modelopt-core==0.33.1 tokenizers==0.22.0 transformers==4.56.0 lhotse==1.32.2 nv-one-logger-core==2.1.0 nv-one-logger-pytorch-lightning-integration==2.1.0 nv-one-logger-training-telemetry==2.1.0 kaldialign==0.9.1"
@@ -45,13 +48,11 @@ server_server_type: vllm_multimodal
 
 # Paths
 data_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/voicebench_data_dir
-output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02/voicebench_incremental_v2_sound_02mar
+output_dir: /lustre/fsw/portfolios/convai/users/mmkrtchyan/projects/speechLM/s2s/MAR_02_FIXED/voicebench_incremental_v2_sound_02mar_no_sys_prompt
 voicebench_repo_path: /lustre/fsw/portfolios/llmservice/users/vmendelev/code/VoiceBench
 
 subtests:
-  - openbookqa
   - sd_qa
-  - mmsu
   - alpacaeval_full
   - alpacaeval
   - ifeval
@@ -59,16 +60,20 @@ subtests:
   - commoneval
   - wildvoice
   - alpacaeval_speaker
-  - bbh
+  # - openbookqa
+  # - mmsu
+  # - bbh
 
 # Scoring settings
 api_type: nvidia
 nvidia_model: azure/openai/gpt-4o-mini
+agent_audio_asr_model: nvidia/parakeet-tdt-1.1b
 
 installation_command: ""
+agent_audio_installation_command: "ln -sf $(which python3) /usr/local/bin/python"
 scoring_installation_command: "pip install sacrebleu qa_metrics"
 
-expname: voicebench_s2s_incremental_v2_sound_02mar
+expname: voicebench_s2s_incremental_v2_sound_02mar_no_sys_prompt
 generation_only: false
 scoring_only: false
 dry_run: false
