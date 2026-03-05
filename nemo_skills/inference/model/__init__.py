@@ -138,7 +138,7 @@ def get_tool_calling_model(
     **kwargs,
 ):
     if isinstance(model, str):
-        model = get_model(model=model, tokenizer=tokenizer, **kwargs)
+        model = get_model(model=model, tokenizer=tokenizer, require_tokenizer=True, **kwargs)
     return ToolCallingWrapper(
         model,
         tool_modules=tool_modules,

@@ -436,23 +436,39 @@ class BaseModel:
     def _process_chat_chunk(self, chunk):
         """Process a single chat chunk and return data to yield."""
         if hasattr(chunk.choices[0], "delta"):
-            cur_delta = chunk.choices[0].delta.content
-            # Check for reasoning_content in delta
+            delta = chunk.choices[0].delta
+            cur_delta = delta.content
             reasoning_delta = (
-                getattr(chunk.choices[0].delta, "reasoning_content", None)
-                if hasattr(chunk.choices[0].delta, "reasoning_content")
-                else None
+                getattr(delta, "reasoning_content", None) if hasattr(delta, "reasoning_content") else None
             )
+            tool_calls_delta = getattr(delta, "tool_calls", None) if hasattr(delta, "tool_calls") else None
         else:
             cur_delta = chunk.choices[0].text
             reasoning_delta = None
+            tool_calls_delta = None
+
+        if cur_delta is None:
+            cur_delta = ""
 
         finish_reason = getattr(chunk.choices[0], "finish_reason", None)
         result = {"generation": cur_delta}
 
-        # Add reasoning_content to result if available
         if reasoning_delta:
             result["reasoning_content"] = reasoning_delta
+
+        if tool_calls_delta:
+            if isinstance(tool_calls_delta, dict):
+                tool_calls_delta = [tool_calls_delta]
+            elif not isinstance(tool_calls_delta, list):
+                tool_calls_delta = [tool_calls_delta]
+            normalized_calls = []
+            for tool_call in tool_calls_delta:
+                if hasattr(tool_call, "model_dump"):
+                    normalized_calls.append(tool_call.model_dump())
+                else:
+                    normalized_calls.append(tool_call)
+            if normalized_calls:
+                result["tool_calls"] = normalized_calls
 
         if finish_reason:
             result["finish_reason"] = finish_reason
