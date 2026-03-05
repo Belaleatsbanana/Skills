@@ -890,14 +890,14 @@ class GenerationTask:
         with open(self.cfg.output_file + "-async", "rt", encoding="utf-8") as fin:
             generations = [json.loads(line) for line in fin]
 
-        ordered_generations = [None] * len(generations)
+        ordered_generations = {}
         for gen_dict in generations:
             async_pos = gen_dict.pop(self.cfg.async_position_key)
             ordered_generations[async_pos] = gen_dict
 
         with open(self.cfg.output_file, "wt", encoding="utf-8") as fout:
-            for gen_dict in ordered_generations:
-                fout.write(json.dumps(gen_dict) + "\n")
+            for pos in sorted(ordered_generations.keys()):
+                fout.write(json.dumps(ordered_generations[pos]) + "\n")
 
         Path(self.cfg.output_file + "-async").unlink()
         self.cleanup_litellm_cache()

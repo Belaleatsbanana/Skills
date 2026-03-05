@@ -77,6 +77,9 @@ def eval_mcq(cfg):
         data = [json.loads(line) for line in fin]
     with open(jsonl_file, "wt", encoding="utf-8") as fout:
         for sample in tqdm(data):
+            if sample is None:
+                fout.write("null\n")
+                continue
             # Per-sample values override config defaults for backward compatibility
             extract_from_boxed = sample.get("extract_from_boxed", eval_config.extract_from_boxed)
             extract_regex = sample.get("extract_regex", eval_config.extract_regex)
