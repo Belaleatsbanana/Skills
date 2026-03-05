@@ -363,9 +363,10 @@ def get_executor(
         "env_vars": env_vars,
     }
 
-    # Add ray_template if provided
-    if ray_template is not None:
-        executor_params["ray_template"] = ray_template
+    # Add ray_template if provided (parameter takes precedence over cluster_config)
+    effective_ray_template = ray_template or cluster_config.get("ray_template")
+    if effective_ray_template is not None:
+        executor_params["ray_template"] = effective_ray_template
 
     # Update with explicit_kwargs to allow overriding default values
     if explicit_kwargs:
