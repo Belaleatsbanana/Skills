@@ -221,7 +221,12 @@ def main() -> None:
     if config["checkpointing"]["enabled"]:
         print(f"📊 Using checkpoint directory: {config['checkpointing']['checkpoint_dir']}")
 
-    # Print final config
+    if not os.environ.get("PROOF_JUDGE_LOG_JSONL_PATH"):
+        os.environ["PROOF_JUDGE_LOG_JSONL_PATH"] = os.path.join(
+            config["logger"]["log_dir"], "proof_judge_log.jsonl"
+        )
+    print(f"📝 proof_judge JSONL log: {os.environ['PROOF_JUDGE_LOG_JSONL_PATH']}")
+
     print("\nFinal config:")
     pprint.pprint(config)
 
