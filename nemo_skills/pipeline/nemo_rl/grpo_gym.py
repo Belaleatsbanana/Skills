@@ -293,6 +293,7 @@ def grpo_gym_nemo_rl(
         "You can use an arbitrary command here and we will run it on a single rank for each node. "
         "E.g. 'pip install my_package'",
     ),
+    dependent_jobs: int = typer.Option(0, help="Number of dependent jobs to chain (total runs = dependent_jobs + 1)"),
     dry_run: bool = typer.Option(False, help="If True, will not run the job, but will validate all arguments."),
     sbatch_kwargs: str = typer.Option(
         "",
@@ -436,14 +437,17 @@ def grpo_gym_nemo_rl(
             math_judge_log_dir,
         )
 
+    if run_conversion_only:
+        dependent_jobs = -1
+
     with get_exp(expname, cluster_config, _reuse_exp) as exp:
         prev_task = _task_dependencies
         with temporary_env_update(cluster_config, env_update):
-            if not run_conversion_only:
+            for job_id in range(dependent_jobs + 1):
                 prev_task = add_task(
                     exp,
                     cmd=train_cmd,
-                    task_name=f"{expname}-grpo-gym",
+                    task_name=f"{expname}-grpo-gym-{job_id}",
                     log_dir=f"{log_dir}/training-logs",
                     container=cluster_config["containers"]["nemo-rl"],
                     num_gpus=num_gpus,
