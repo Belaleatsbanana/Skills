@@ -204,8 +204,6 @@ policy:
   optimizer: null # remove default FSDP optimizer
   scheduler: null
 
-  offload_optimizer_for_logprob: False
-
   generation:
     backend: "vllm"
     max_new_tokens: ${policy.max_total_sequence_length}
