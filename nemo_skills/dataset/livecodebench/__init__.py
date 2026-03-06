@@ -16,3 +16,4 @@
 METRICS_TYPE = "livecodebench"
 EVAL_SPLIT = "test_v6_2408_2505"
 GENERATION_ARGS = "++prompt_config=eval/livecodebench/default_reasoning ++eval_type=livecodebench"
+REQUIRES_SANDBOX = True
