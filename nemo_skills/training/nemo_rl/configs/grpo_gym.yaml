@@ -2,15 +2,15 @@
 grpo:
   num_prompts_per_step: 128
   num_generations_per_prompt: 16
-  num_val_generations_per_prompt: 4
-  max_rollout_turns: 1 # for multi-turn rollouts. Math Environments just have 1 turn (answering the question)
-  max_num_epochs: 10
+  num_val_generations_per_prompt: 2
+  max_rollout_turns: 1
+  max_num_epochs: 1
   max_num_steps: 1000000
   normalize_rewards: true
   use_leave_one_out_baseline: true
   val_period: 100
   val_at_start: false
-  overlong_filtering: true
+  overlong_filtering: false
   max_val_samples: null
   val_batch_size: 256
   seed: 42
@@ -48,28 +48,28 @@ grpo:
   seq_logprob_error_threshold: 2
 
 loss_fn:
-  reference_policy_kl_penalty: 0
-  reference_policy_kl_type: k3
-  kl_input_clamp_value: null
-  kl_output_clamp_value: null
+  reference_policy_kl_penalty: 0.0
+  reference_policy_kl_type: "k3"
+  kl_input_clamp_value: 20.0
+  kl_output_clamp_value: 10.0
   ratio_clip_min: 0.2
   ratio_clip_max: 0.28
   ratio_clip_c: null
-  # (default off) loss formulation improvements (docs/guides/grpo.md#loss)
   use_on_policy_kl_approximation: true
   use_importance_sampling_correction: true
+  truncated_importance_sampling_ratio: null
   sequence_level_importance_ratios: false
   token_level_loss: true
-  truncated_importance_sampling_ratio: null
+  force_on_policy_ratio: false
 
 checkpointing:
   enabled: true
   checkpoint_dir: "results/grpo"
-  metric_name: "val:total_reward/mean"
+  metric_name: "val:reward"
   higher_is_better: true
-  keep_top_k: 1000000
+  keep_top_k: 50
   save_period: 10
-  checkpoint_must_save_by: "00:03:30:00"
+  checkpoint_must_save_by: null
   model_save_format: "safetensors"
   save_consolidated: false
 
@@ -84,7 +84,11 @@ policy:
   logprob_batch_size: 4
   max_total_sequence_length: 8192
   precision: "bfloat16"
+  lr: 1e-6
+  weight_decay: 0.0
+  min_lr: 1e-6
   logprob_chunk_size: 2048
+  offload_optimizer_for_logprob: false
 
   dtensor_cfg:
     _v2: true
@@ -101,7 +105,8 @@ policy:
     enabled: true
     empty_unused_memory_level: 1
     activation_checkpointing: true
-    bias_activation_fusion: False
+    converter_type: "Qwen2ForCausalLM"
+    bias_activation_fusion: false
     tensor_model_parallel_size: 2
     expert_tensor_parallel_size: 1
     expert_model_parallel_size: 8
@@ -134,9 +139,9 @@ policy:
 
     optimizer:
       optimizer: "adam"
-      lr: 3.0e-6
-      min_lr: 3.0e-6
-      weight_decay: 0.0
+      lr: ${policy.lr}
+      min_lr: ${policy.min_lr}
+      weight_decay: ${policy.weight_decay}
       bf16: true
       fp16: false
       params_dtype: "float32"
@@ -160,7 +165,7 @@ policy:
       end_weight_decay: ${policy.megatron_cfg.optimizer.weight_decay}
       weight_decay_incr_style: "constant"
       lr_decay_style: "constant"
-      lr_decay_iters: null
+      lr_decay_iters: ${grpo.max_num_steps}
       lr_warmup_iters: 10
       lr_warmup_init: 3e-7
 
