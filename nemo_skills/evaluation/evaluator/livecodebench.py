@@ -166,7 +166,7 @@ async def _install_packages_in_sandbox(sandbox: Sandbox, eval_config: LiveCodeBe
     """Installs required packages in the provided sandbox."""
     LOG.info(f"Installing livecodebench with {eval_config.interpreter} in sandbox...")
     pip_cmd = "pip" if eval_config.interpreter == "python" else "pypy3 -m pip"
-    cmd = f"{pip_cmd} install 'datasets>=3.0.0' {LIVECODEBENCH_GIT_URL}"
+    cmd = f"{pip_cmd} install {LIVECODEBENCH_GIT_URL}"
 
     result, _ = await execute_in_sandbox_with_retries(
         sandbox, eval_config.num_retries, cmd, language="shell", timeout=300
