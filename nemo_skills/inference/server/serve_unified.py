@@ -217,6 +217,24 @@ def main():
         default=0.0,
         help="Boost for EOS token logits during inference",
     )
+    parser.add_argument(
+        "--inference_user_pad_boost",
+        type=float,
+        default=None,
+        help="Boost for ASR PAD token logits during inference (requires nemotron_h.py patch for vLLM)",
+    )
+    parser.add_argument(
+        "--inference_user_bos_boost",
+        type=float,
+        default=None,
+        help="Boost for ASR BOS token logits during inference (requires nemotron_h.py patch for vLLM)",
+    )
+    parser.add_argument(
+        "--inference_user_eos_boost",
+        type=float,
+        default=None,
+        help="Boost for ASR EOS token logits during inference (requires nemotron_h.py patch for vLLM)",
+    )
 
     # s2s_voicechat (nemotron_voicechat_infer-like) options
     parser.add_argument(
@@ -333,9 +351,11 @@ def main():
         help="Sliding-window buffer size; ignored when use_codec_cache is on (s2s_incremental_v2)",
     )
     parser.add_argument(
+        "--pad_audio_to_sec",
         "--pad_to_duration_secs",
         type=float,
         default=None,
+        dest="pad_to_duration_secs",
         help="Pad input audio to this duration in seconds (s2s_incremental_v2)",
     )
     parser.add_argument(
@@ -590,6 +610,20 @@ def main():
         extra_config["use_codec_cache"] = args.use_codec_cache
         extra_config["codec_token_history_size"] = args.codec_token_history_size
         extra_config["repetition_penalty"] = args.repetition_penalty
+        extra_config["top_p"] = args.top_p
+        extra_config["temperature"] = args.temperature
+        if args.inference_pad_boost:
+            extra_config["inference_pad_boost"] = args.inference_pad_boost
+        if args.inference_bos_boost:
+            extra_config["inference_bos_boost"] = args.inference_bos_boost
+        if args.inference_eos_boost:
+            extra_config["inference_eos_boost"] = args.inference_eos_boost
+        if args.inference_user_pad_boost is not None:
+            extra_config["inference_user_pad_boost"] = args.inference_user_pad_boost
+        if args.inference_user_bos_boost is not None:
+            extra_config["inference_user_bos_boost"] = args.inference_user_bos_boost
+        if args.inference_user_eos_boost is not None:
+            extra_config["inference_user_eos_boost"] = args.inference_user_eos_boost
         extra_config["force_turn_taking"] = args.force_turn_taking
         extra_config["force_turn_taking_threshold"] = args.force_turn_taking_threshold
         extra_config["force_turn_taking_pad_window"] = args.force_turn_taking_pad_window

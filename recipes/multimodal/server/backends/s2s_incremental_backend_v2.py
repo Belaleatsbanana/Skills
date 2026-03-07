@@ -89,6 +89,7 @@ class S2SIncrementalV2Config(BackendConfig):
     force_turn_taking_pad_window: int = 25
 
     decode_audio: bool = True
+    merge_user_channel: bool = False
     use_asr_as_response: bool = False
 
     save_session_artifacts: bool = True
@@ -110,6 +111,15 @@ class S2SIncrementalV2Config(BackendConfig):
     use_codec_cache: bool = True
 
     repetition_penalty: float = 1.0
+    top_p: float = 1.0
+    temperature: float = 1.0
+
+    inference_pad_boost: Optional[float] = None
+    inference_bos_boost: Optional[float] = None
+    inference_eos_boost: Optional[float] = None
+    inference_user_pad_boost: Optional[float] = None
+    inference_user_bos_boost: Optional[float] = None
+    inference_user_eos_boost: Optional[float] = None
 
     system_prompt: Optional[str] = None
     tts_system_prompt: Optional[str] = None
@@ -206,6 +216,7 @@ class S2SIncrementalBackendV2(InferenceBackend):
             "use_codec_cache": cfg.use_codec_cache,
             "top_p": cfg.top_p,
             "repetition_penalty": cfg.repetition_penalty,
+            "temperature": cfg.temperature,
             "tts_system_prompt": cfg.tts_system_prompt,
             "compute_dtype": cfg.dtype,
             "device": cfg.device,
@@ -213,6 +224,18 @@ class S2SIncrementalBackendV2(InferenceBackend):
             "force_turn_taking_threshold": cfg.force_turn_taking_threshold,
             "force_turn_taking_pad_window": cfg.force_turn_taking_pad_window,
         }
+
+        for boost_key in (
+            "inference_pad_boost",
+            "inference_bos_boost",
+            "inference_eos_boost",
+            "inference_user_pad_boost",
+            "inference_user_bos_boost",
+            "inference_user_eos_boost",
+        ):
+            val = getattr(cfg, boost_key, None)
+            if val is not None:
+                d[boost_key] = val
 
         if cfg.vllm_llm_config:
             d["vllm_llm_config"] = cfg.vllm_llm_config
@@ -384,39 +407,42 @@ class S2SIncrementalBackendV2(InferenceBackend):
                 )
 
                 audio_bytes = None
+                out_sr = self.target_sample_rate
                 if output.get("audio") is not None:
-                    audio_np = output["audio"].float().cpu().numpy().squeeze()
-
-                    # Trim output audio to original input duration so that
-                    # silence_padding_sec doesn't inflate the saved file.
-                    import librosa as _lr
-
-                    input_dur = _lr.get_duration(filename=audio_path)
-                    max_out_samples = int(input_dur * self.target_sample_rate)
-                    if len(audio_np) > max_out_samples:
-                        audio_np = audio_np[:max_out_samples]
-
-                    max_val = np.abs(audio_np).max()
-                    if max_val > 0:
-                        audio_np = audio_np / max_val * 0.95
-                    wav_buffer = io.BytesIO()
                     import soundfile as sf
 
-                    sf.write(wav_buffer, audio_np, self.target_sample_rate, format="WAV")
-                    audio_bytes = wav_buffer.getvalue()
+                    wav = output["audio"].float().cpu().numpy().squeeze()
+
+                    # Trim to padded input duration (input + extra padding) at target SR.
+                    # Matches s2s_voicechat_infer_backend: trim to (input_len + padding) / source_sr * target_sr.
+                    # This removes frame-alignment overshoot while keeping the full response.
+                    pad_to = self._compute_pad_audio_sec(audio_path)
+                    if pad_to is not None:
+                        per_sample_pred_len = int(pad_to * out_sr)
+                        if 0 < per_sample_pred_len < len(wav):
+                            wav = wav[:per_sample_pred_len]
+
+                    max_val = float(np.abs(wav).max()) if wav.size else 0.0
+                    if max_val > 0:
+                        wav = wav / max_val * 0.95
+
+                    if self.v2_config.merge_user_channel:
+                        merged = self._merge_user_model_audio(audio_path, wav, out_sr)
+                        buf = io.BytesIO()
+                        sf.write(buf, merged, out_sr, format="WAV")
+                        audio_bytes = buf.getvalue()
+                    else:
+                        buf = io.BytesIO()
+                        sf.write(buf, wav, out_sr, format="WAV")
+                        audio_bytes = buf.getvalue()
 
                 elapsed_ms = (time.time() - start_time) * 1000
                 output_text = output["text"][0] if output.get("text") else ""
                 asr_text = output["asr_text"][0] if output.get("asr_text") else None
                 debug_info = output.get("debug_info", {})
 
-                # For ASR evaluation: use the ASR channel (user speech transcription)
-                # as the primary response instead of the agent text channel.
-                # Only enabled with --use_asr_as_response (not for VoiceBench etc.
-                # where the agent's response is what matters).
                 if self.v2_config.use_asr_as_response and asr_text:
                     cleaned = asr_text
-                    # Strip turn-taking markers: <$ts$>, <|ts|>, ^ (user BOS)
                     cleaned = re.sub(r"<[\$|][^>]*[\$|]>", "", cleaned)
                     cleaned = cleaned.replace("^", "")
                     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -424,24 +450,15 @@ class S2SIncrementalBackendV2(InferenceBackend):
 
                 request_id_key = req.request_id or datetime.now().strftime("%Y%m%d_%H%M%S")
                 artifacts_dir = self._get_artifacts_dir(request_id_key)
-                response_audio_bytes = audio_bytes
-                response_sample_rate = self.target_sample_rate
-
                 if artifacts_dir:
                     self._save_artifacts(artifacts_dir, audio_path, output_text, audio_bytes, debug_info, elapsed_ms)
-                    dual_path = self._generate_dual_channel_audio(artifacts_dir, audio_path, audio_bytes)
-                    if dual_path:
-                        debug_info["dual_channel_audio_path"] = dual_path
-                        with open(dual_path, "rb") as f:
-                            response_audio_bytes = f.read()
-                        response_sample_rate = TTS_SAMPLE_RATE
 
                 results.append(
                     GenerationResult(
                         text=output_text,
                         asr_text=asr_text,
-                        audio_bytes=response_audio_bytes,
-                        audio_sample_rate=response_sample_rate,
+                        audio_bytes=audio_bytes,
+                        audio_sample_rate=out_sr,
                         request_id=req.request_id,
                         generation_time_ms=elapsed_ms,
                         debug_info=debug_info,
@@ -555,56 +572,40 @@ class S2SIncrementalBackendV2(InferenceBackend):
 
         return {"artifacts_dir": artifacts_dir, "input_path": input_dest, "output_path": output_audio_path}
 
-    def _generate_dual_channel_audio(
+    def _merge_user_model_audio(
         self,
-        artifacts_dir: str,
         input_audio_path: str,
-        output_audio_bytes: Optional[bytes],
-    ) -> Optional[str]:
+        pred_audio: np.ndarray,
+        pred_sr: int,
+    ) -> np.ndarray:
+        """Merge user (input) and model (pred) into a two-channel array on one timeline.
+
+        Mirrors s2s_voicechat_infer_backend._merge_user_model_audio:
+        channel 0 = user, channel 1 = pred, same length (padded),
+        so FDB ASR (--stereo) gets a single timeline.
+        """
         import soundfile as sf
 
-        if not output_audio_bytes:
-            return None
-
-        output_sr = TTS_SAMPLE_RATE
-
-        try:
-            user_audio, user_sr = sf.read(input_audio_path)
-            if user_sr != output_sr:
+        user_audio, user_sr = sf.read(input_audio_path)
+        user = np.asarray(user_audio, dtype=np.float64).squeeze()
+        pred = np.asarray(pred_audio, dtype=np.float64).squeeze()
+        if user.ndim > 1:
+            user = user.mean(axis=1)
+        if pred.ndim > 1:
+            pred = pred.mean(axis=1)
+        if user_sr != pred_sr:
+            try:
+                import librosa
+                user = librosa.resample(user, orig_sr=user_sr, target_sr=pred_sr)
+            except ImportError:
                 import scipy.signal
-
-                user_audio = scipy.signal.resample(user_audio, int(len(user_audio) * output_sr / user_sr))
-            if len(user_audio.shape) > 1:
-                user_audio = user_audio[:, 0]
-        except Exception as e:
-            print(f"[S2SIncrementalV2] Error reading user audio: {e}")
-            return None
-
-        try:
-            agent_audio, agent_sr = sf.read(io.BytesIO(output_audio_bytes))
-            if agent_sr != output_sr:
-                import scipy.signal
-
-                agent_audio = scipy.signal.resample(agent_audio, int(len(agent_audio) * output_sr / agent_sr))
-            if len(agent_audio.shape) > 1:
-                agent_audio = agent_audio[:, 0]
-        except Exception as e:
-            print(f"[S2SIncrementalV2] Error reading agent audio: {e}")
-            return None
-
-        max_len = max(len(user_audio), len(agent_audio))
-        stereo = np.zeros((max_len, 2), dtype=np.float32)
-        stereo[: len(user_audio), 0] = user_audio
-        stereo[: len(agent_audio), 1] = agent_audio
-
-        max_val = np.abs(stereo).max()
-        if max_val > 0:
-            stereo = stereo / max_val * 0.95
-
-        output_path = os.path.join(artifacts_dir, "dual_channel.wav")
-        sf.write(output_path, stereo, output_sr)
-        print(f"[S2SIncrementalV2] Generated dual-channel audio: {output_path}")
-        return output_path
+                user = scipy.signal.resample(user, int(len(user) * pred_sr / user_sr))
+        T1, T2 = user.shape[0], pred.shape[0]
+        max_len = max(T1, T2)
+        user_pad = np.pad(user, (0, max_len - T1), mode="constant", constant_values=0)
+        pred_pad = np.pad(pred, (0, max_len - T2), mode="constant", constant_values=0)
+        merged = np.stack([user_pad, pred_pad], axis=1).astype(np.float32)
+        return merged
 
     # ------------------------------------------------------------------
     # Frame alignment utilities (kept for debug/session compat)

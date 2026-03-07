@@ -20,7 +20,6 @@ Usage:
 """
 
 import argparse
-from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -284,12 +283,6 @@ def main():
         config["generation_only"] = True
     if args.scoring_only:
         config["scoring_only"] = True
-
-    # Add timestamp to output_dir if not present
-    output_dir = config.get("output_dir", "")
-    if output_dir and not any(char.isdigit() for char in Path(output_dir).name):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        config["output_dir"] = f"{output_dir}_{timestamp}"
 
     run_voicebench_eval(config)
 
