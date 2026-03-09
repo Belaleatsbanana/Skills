@@ -57,7 +57,12 @@ def _apply_task_overrides(combined_cmd, task_classes, job_num_gpus, cluster_conf
     container = cluster_config["containers"]["nemo-skills"]
     for tc in task_classes:
         key = getattr(tc, "CONTAINER_KEY", None)
-        if key and key in cluster_config.get("containers", {}):
+        if key:
+            if key not in cluster_config["containers"]:
+                raise ValueError(
+                    f"Task class {tc.__name__} requires container '{key}' but it is not defined "
+                    f"in cluster config. Available containers: {list(cluster_config['containers'].keys())}"
+                )
             container = cluster_config["containers"][key]
             break
 

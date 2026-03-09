@@ -406,8 +406,12 @@ def prepare_eval_commands(
         if task_cls is not None and hasattr(task_cls, "is_self_contained"):
             if task_cls.is_self_contained(extra_arguments):
                 ba.self_contained_task = True
-                if server_parameters["server_gpus"]:
-                    ba.num_gpus = server_parameters["server_gpus"]
+                if not server_parameters["server_gpus"]:
+                    raise ValueError(
+                        f"Benchmark '{ba.name}' uses a self-contained task ({task_cls.__name__}) "
+                        f"that requires --server_gpus to allocate GPUs for in-process inference."
+                    )
+                ba.num_gpus = server_parameters["server_gpus"]
         # Allow task class to override metrics_type (e.g. mcore_skills uses
         # VLMEvalKit evaluation and writes eval_kit_metrics.json).
         if task_cls is not None and hasattr(task_cls, "METRICS_TYPE_OVERRIDE"):

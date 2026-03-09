@@ -235,7 +235,7 @@ env_vars:
 
 After evaluation completes, results are in `<output_dir>/eval-results/`:
 
-```
+```text
 <output_dir>/
 └── eval-results/
     └── eval_kit.LibriSpeech_test_clean/
