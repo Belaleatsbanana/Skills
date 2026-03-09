@@ -159,6 +159,9 @@ def _wer_with_counts(ref: str, hyp: str) -> dict[str, Any]:
         "wer": wer_score,
         "wer_errors": wer_errors,
         "wer_ref_words": wer_ref_words,
+        "wer_substitutions": measures.substitutions,
+        "wer_insertions": measures.insertions,
+        "wer_deletions": measures.deletions,
     }
 
 

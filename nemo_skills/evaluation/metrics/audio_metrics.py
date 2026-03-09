@@ -69,6 +69,9 @@ class AudioMetrics(BaseMetrics):
         # Corpus-level WER accumulators (total errors / total ref words)
         self.wer_total_errors = 0
         self.wer_total_ref_words = 0
+        self.wer_total_substitutions = 0
+        self.wer_total_insertions = 0
+        self.wer_total_deletions = 0
 
         # Extended metrics
         self.cer_scores = []
@@ -197,6 +200,9 @@ class AudioMetrics(BaseMetrics):
                 if "wer_errors" in pred and "wer_ref_words" in pred:
                     self.wer_total_errors += pred["wer_errors"]
                     self.wer_total_ref_words += pred["wer_ref_words"]
+                    self.wer_total_substitutions += pred.get("wer_substitutions", 0)
+                    self.wer_total_insertions += pred.get("wer_insertions", 0)
+                    self.wer_total_deletions += pred.get("wer_deletions", 0)
             if "wer_c" in pred and pred["wer_c"] is not None:
                 self.wer_c_scores.append(pred["wer_c"])
             if "wer_pc" in pred and pred["wer_pc"] is not None:
@@ -263,6 +269,10 @@ class AudioMetrics(BaseMetrics):
                 agg_metrics["corpus_wer"] = round(
                     100.0 * self.wer_total_errors / self.wer_total_ref_words, 2
                 )
+                agg_metrics["corpus_substitutions"] = self.wer_total_substitutions
+                agg_metrics["corpus_insertions"] = self.wer_total_insertions
+                agg_metrics["corpus_deletions"] = self.wer_total_deletions
+                agg_metrics["corpus_ref_words"] = self.wer_total_ref_words
             if self.wer_c_scores:
                 agg_metrics["wer_c"] = round(100.0 * sum(self.wer_c_scores) / len(self.wer_c_scores), 2)
             if self.wer_pc_scores:
@@ -330,6 +340,10 @@ class AudioMetrics(BaseMetrics):
             base_metrics["wer"] = as_percentage
         if self.wer_total_ref_words > 0:
             base_metrics["corpus_wer"] = as_percentage
+            base_metrics["corpus_substitutions"] = as_int
+            base_metrics["corpus_insertions"] = as_int
+            base_metrics["corpus_deletions"] = as_int
+            base_metrics["corpus_ref_words"] = as_int
         if self.wer_c_scores:
             base_metrics["wer_c"] = as_percentage
         if self.wer_pc_scores:
