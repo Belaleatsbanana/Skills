@@ -293,7 +293,9 @@ def summarize_results(
             [
                 jsonl_file
                 for jsonl_file in glob.glob(f"{benchmark_path}/output-rs*.jsonl")
-                if Path(jsonl_file).name != "output.jsonl" and "_chunk_" not in Path(jsonl_file).name
+                if Path(jsonl_file).name != "output.jsonl"
+                and "_chunk_" not in Path(jsonl_file).name
+                and "_submissions" not in Path(jsonl_file).name  # introduced because of critpt
             ]
         )
         has_sampling = len(input_files) > 0
