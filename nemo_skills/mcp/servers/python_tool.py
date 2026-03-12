@@ -117,7 +117,7 @@ def _get_free_port():
         return s.getsockname()[1]
 
 
-class PythonTool(MCPClientTool):
+class MCPPythonTool(MCPClientTool):
     """Tool provider that spawns a persistent python_tool HTTP server and connects via MCP Streamable HTTP."""
 
     def __init__(self) -> None:
@@ -230,19 +230,19 @@ class PythonTool(MCPClientTool):
             self._config_tmpfile = None
 
 
-class DirectPythonTool(Tool):
-    """Python code execution tool that calls the sandbox directly, bypassing MCP.
+class PythonTool(Tool):
+    """Python code execution tool that calls the sandbox directly via HTTP.
 
-    This is a drop-in replacement for PythonTool that eliminates the MCP protocol
-    overhead (subprocess spawning, MCP session initialization, JSON-RPC serialization)
-    by calling sandbox.execute_code() directly via HTTP.
+    This is the default tool for executing Python code in a sandbox during generation.
+    It calls sandbox.execute_code() directly, avoiding the overhead of spawning an MCP
+    subprocess. For the MCP-based variant (needed by Gym/RL resource servers), use MCPPythonTool.
 
-    Shared config keys with PythonTool (so switching is just changing the module spec):
+    Config keys (overridable via tool_overrides.PythonTool):
         - hide_args: controls which args are stripped from schemas and sanitized at runtime
         - exec_timeout_s: default execution timeout
 
     Usage:
-        tool_modules=["nemo_skills.mcp.servers.python_tool::DirectPythonTool"]
+        tool_modules=["nemo_skills.mcp.servers.python_tool::PythonTool"]
     """
 
     def __init__(self) -> None:
@@ -324,6 +324,10 @@ class DirectPythonTool(Tool):
     async def shutdown(self) -> None:
         if self._sandbox is not None:
             await self._sandbox.close()
+
+
+# Backward-compatible alias
+DirectPythonTool = PythonTool
 
 
 if __name__ == "__main__":
