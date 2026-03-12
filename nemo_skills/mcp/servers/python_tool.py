@@ -128,7 +128,8 @@ class PythonTool(MCPClientTool):
                 "client": "nemo_skills.mcp.clients.MCPStreamableHttpClient",
                 "client_params": {"base_url": "http://127.0.0.1:0/mcp"},
                 "hide_args": {"stateful_python_code_exec": ["session_id", "timeout"]},
-                "init_hook": "hydra",
+                # No init_hook — sandbox config is handled in post_configure() which
+                # spawns the HTTP server subprocess with the config passed via --config flag
                 "exec_timeout_s": 10,
                 "server_host": "127.0.0.1",
                 "server_port": 0,  # 0 = auto-allocate
@@ -308,7 +309,7 @@ class DirectPythonTool(Tool):
                 timeout=timeout,
                 session_id=session_id,
             )
-        except RemoteProtocolError:
+        except httpx.RemoteProtocolError:
             output_dict = {"process_status": "fail", "stdout": "", "stderr": "Error connecting to sandbox"}
             session_id = None
 
