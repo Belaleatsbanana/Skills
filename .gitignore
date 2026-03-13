@@ -46,3 +46,4 @@ nemo_skills/dataset/aalcr/lcr/
 CLAUDE.md
 
 .idea
+cluster_configs/lax.yaml
