@@ -232,7 +232,7 @@ policy:
         enable_auto_tools: true
         tool_parser: qwen3_coder
         reasoning_parser: nano_v3
-        reasoning_parser_plugin: /opt/NeMo-RL/nemo_rl/utils/nano_v3_reasoning_parser.py
+        reasoning_parser_plugin: /opt/nemo-rl/nemo_rl/utils/nano_v3_reasoning_parser.py
 
     vllm_kwargs:
       mamba_ssm_cache_dtype: "float32"
