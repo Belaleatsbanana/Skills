@@ -82,11 +82,11 @@ def write_data_to_file(output_file, data, max_context_window, problem_types, cou
             fout.write("\n")
 
 
-def get_graphwalks_data(problem_types, setup, max_context_window, tokenizer):
+def get_graphwalks_data(problem_types, setup, max_context_window, tokenizer_name):
     dataset = load_dataset("openai/graphwalks")["train"]
     data_dir = Path(__file__).absolute().parent
 
-    count_tokens = build_tokenizer(tokenizer)
+    count_tokens = build_tokenizer(tokenizer_name)
     output_file = data_dir / f"{setup}.jsonl"
     write_data_to_file(output_file, dataset, max_context_window, problem_types, count_tokens)
 
@@ -113,7 +113,7 @@ if __name__ == "__main__":
         help="Setup name used as the output filename, e.g. 'all', 'parents', 'bfs_128k'.",
     )
     parser.add_argument(
-        "--tokenizer",
+        "--tokenizer_name",
         type=str,
         default="cl100k_base",
         help=(
@@ -126,5 +126,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(f"Preparing GraphWalks dataset with arguments: {args}")
-    get_graphwalks_data(args.problem_types, args.setup, args.max_context_window, args.tokenizer)
+    get_graphwalks_data(args.problem_types, args.setup, args.max_context_window, args.tokenizer_name)
     print(f"GraphWalks dataset preparation with setup '{args.setup}' completed. Use --split={args.setup} to evaluate!")
