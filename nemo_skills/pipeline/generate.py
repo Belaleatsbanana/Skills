@@ -57,6 +57,7 @@ def _create_job_unified(
     partition: Optional[str],
     account: Optional[str],
     keep_mounts_for_sandbox: bool,
+    make_mounts_readonly_for_sandbox: bool,
     task_name: str,
     log_dir: str,
     sbatch_kwargs: Optional[Dict] = None,
@@ -84,6 +85,7 @@ def _create_job_unified(
         with_sandbox: Whether to include sandbox
         partition: Slurm partition
         keep_mounts_for_sandbox: Whether to keep mounts for sandbox
+        make_mounts_readonly_for_sandbox: Whether to make sandbox mounts read-only
         task_name: Name for the task
         log_dir: Directory for logs
         sbatch_kwargs: Additional sbatch kwargs
@@ -144,6 +146,7 @@ def _create_job_unified(
                 sandbox_script = SandboxScript(
                     cluster_config=cluster_config,
                     keep_mounts=keep_mounts_for_sandbox,
+                    make_mounts_readonly=make_mounts_readonly_for_sandbox,
                     allocate_port=True,  # Always allocate port for sandbox
                     env_overrides=sandbox_env_overrides,
                 )
@@ -336,6 +339,10 @@ def generate(
     keep_mounts_for_sandbox: bool = typer.Option(
         False,
         help="If True, will keep the mounts for the sandbox container. Note that, it is risky given that sandbox executes LLM commands and could potentially lead to data loss. So, we advise not to use this unless absolutely necessary.",
+    ),
+    make_mounts_readonly_for_sandbox: bool = typer.Option(
+        False,
+        help="If True and --keep_mounts_for_sandbox is set, all mounts in the sandbox container will be read-only. Has no effect without --keep_mounts_for_sandbox.",
     ),
     check_mounted_paths: bool = typer.Option(False, help="Check if mounted paths are available on the remote machine"),
     log_samples: bool = typer.Option(
@@ -598,6 +605,7 @@ def generate(
                     partition=partition,
                     account=account,
                     keep_mounts_for_sandbox=keep_mounts_for_sandbox,
+                    make_mounts_readonly_for_sandbox=make_mounts_readonly_for_sandbox,
                     task_name=task_name,
                     log_dir=log_dir,
                     sbatch_kwargs=sbatch_kwargs,

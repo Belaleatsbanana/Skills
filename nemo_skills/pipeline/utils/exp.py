@@ -442,6 +442,7 @@ def add_task(
     with_sandbox=False,
     sandbox_container=None,
     keep_mounts_for_sandbox=False,
+    make_mounts_readonly_for_sandbox=False,
     sandbox_port: int | None = None,
     server_config=None,
     n_servers: int = 1,
@@ -661,7 +662,12 @@ def add_task(
                 gpus_per_node=0,
                 partition=partition,
                 account=account,
-                mounts=None if keep_mounts_for_sandbox else [],
+                mounts=(
+                    [f"{m}:ro" for m in get_mounts_from_config(cluster_config)]
+                    if keep_mounts_for_sandbox and make_mounts_readonly_for_sandbox
+                    else None if keep_mounts_for_sandbox
+                    else []
+                ),
                 dependencies=dependencies,
                 job_name=task_name,
                 log_dir=log_dir,

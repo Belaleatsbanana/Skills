@@ -128,6 +128,7 @@ def launch_server(
     account=None,
     with_sandbox=False,
     keep_mounts_for_sandbox=False,
+    make_mounts_readonly_for_sandbox=False,
     server_port=None,
     sandbox_port=None,
     main_container=None,
@@ -184,6 +185,7 @@ def launch_server(
         server_config=server_config,
         with_sandbox=with_sandbox,
         keep_mounts_for_sandbox=keep_mounts_for_sandbox,
+        make_mounts_readonly_for_sandbox=make_mounts_readonly_for_sandbox,
         sandbox_port=sandbox_port,
         sandbox_container=sandbox_container,
         sbatch_kwargs=sbatch_kwargs,
@@ -231,6 +233,10 @@ def start_server(
     keep_mounts_for_sandbox: bool = typer.Option(
         False,
         help="If True, will keep the mounts for the sandbox container. Note that, it is risky given that sandbox executes LLM commands and could potentially lead to data loss. So, we advise not to use this unless absolutely necessary.",
+    ),
+    make_mounts_readonly_for_sandbox: bool = typer.Option(
+        False,
+        help="If True and --keep_mounts_for_sandbox is set, all mounts in the sandbox container will be read-only. Has no effect without --keep_mounts_for_sandbox.",
     ),
     launch_chat_interface: bool = typer.Option(
         False, help="If True, will launch a gradio app that provides chat with the model"
@@ -285,6 +291,7 @@ def start_server(
         account=account,
         with_sandbox=with_sandbox,
         keep_mounts_for_sandbox=keep_mounts_for_sandbox,
+        make_mounts_readonly_for_sandbox=make_mounts_readonly_for_sandbox,
         server_port=server_port,
         sandbox_port=sandbox_port,
         main_container=main_container,

@@ -249,12 +249,28 @@ class Command:
         execution_config = {
             "log_prefix": getattr(self.script, "log_prefix", "main"),
             "environment": runtime_metadata.get("environment", {}),
-            "mounts": None,  # Mounts not currently exposed by Scripts
+            "mounts": self._get_mounts_for_script(cluster_config),
             "container": self.container,
         }
 
         # Return the Script object itself
         return self.script, execution_config
+
+    def _get_mounts_for_script(self, cluster_config: Dict):
+        """Determine mounts for this command's script.
+
+        For SandboxScript: honors keep_mounts and make_mounts_readonly.
+        For all other scripts: None (use cluster config mounts).
+        """
+        if not isinstance(self.script, SandboxScript):
+            return None
+        if not self.script.keep_mounts:
+            return []  # safe default: sandbox gets no filesystem mounts
+        if self.script.make_mounts_readonly:
+            from nemo_skills.pipeline.utils.mounts import get_mounts_from_config
+
+            return [f"{m}:ro" for m in get_mounts_from_config(cluster_config)]
+        return None  # sandbox gets full cluster config mounts
 
     def get_name(self) -> str:
         return self.name

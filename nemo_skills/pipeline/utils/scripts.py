@@ -255,6 +255,7 @@ class SandboxScript(BaseJobScript):
     cluster_config: Dict
     port: Optional[int] = None
     keep_mounts: bool = False
+    make_mounts_readonly: bool = False  # Only applies when keep_mounts=True; appends :ro to each mount
     allocate_port: bool = True
     env_overrides: Optional[List[str]] = None  # Extra env vars in KEY=VALUE form
 

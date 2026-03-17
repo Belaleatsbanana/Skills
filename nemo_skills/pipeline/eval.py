@@ -60,6 +60,7 @@ def _create_llm_judge_tasks(
     sandbox_container,
     with_sandbox,
     keep_mounts_for_sandbox,
+    make_mounts_readonly_for_sandbox,
     run_after,
     reuse_code_exp,
     reuse_code,
@@ -103,6 +104,7 @@ def _create_llm_judge_tasks(
         sandbox_container=sandbox_container,
         with_sandbox=with_sandbox,
         keep_mounts_for_sandbox=keep_mounts_for_sandbox,
+        make_mounts_readonly_for_sandbox=make_mounts_readonly_for_sandbox,
         run_after=run_after,
         reuse_code_exp=reuse_code_exp,
         reuse_code=reuse_code,
@@ -260,6 +262,10 @@ def eval(
     keep_mounts_for_sandbox: bool = typer.Option(
         False,
         help="If True, will keep the mounts for the sandbox container. Note that, it is risky given that sandbox executes LLM commands and could potentially lead to data loss. So, we advise not to use this unless absolutely necessary.",
+    ),
+    make_mounts_readonly_for_sandbox: bool = typer.Option(
+        False,
+        help="If True and --keep_mounts_for_sandbox is set, all mounts in the sandbox container will be read-only. Has no effect without --keep_mounts_for_sandbox.",
     ),
     check_mounted_paths: bool = typer.Option(False, help="Check if mounted paths are available on the remote machine"),
     log_samples: bool = typer.Option(
@@ -451,6 +457,7 @@ def eval(
                     server_config=job_server_config,
                     with_sandbox=job_needs_sandbox or with_sandbox,
                     keep_mounts_for_sandbox=job_needs_sandbox_to_keep_mounts or keep_mounts_for_sandbox,
+                    make_mounts_readonly_for_sandbox=make_mounts_readonly_for_sandbox,
                     sandbox_port=None if get_random_port else 6000,
                     sandbox_env_overrides=job_sandbox_env_overrides,
                     sandbox_container=sandbox_container,
@@ -558,6 +565,7 @@ def eval(
                     sandbox_container=sandbox_container,
                     with_sandbox=with_sandbox,
                     keep_mounts_for_sandbox=keep_mounts_for_sandbox,
+                    make_mounts_readonly_for_sandbox=make_mounts_readonly_for_sandbox,
                     run_after=run_after,
                     reuse_code_exp=reuse_code_exp,
                     reuse_code=reuse_code,
