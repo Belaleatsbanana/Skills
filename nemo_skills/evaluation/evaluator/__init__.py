@@ -122,29 +122,6 @@ def _resolve_eval_type(eval_type: str):
     return None, False
 
 
-def _resolve_eval_type(eval_type: str):
-    """Resolve eval_type to either a class or function.
-
-    Supports two formats:
-        - Built-in string key: looks up in EVALUATOR_CLASS_MAP / EVALUATOR_MAP
-        - Path format with `::`: `module.path::name` or `/path/to/file.py::name`
-          Dynamically imports the module and returns the attribute.
-
-    Returns (obj, is_class) where is_class is True if obj is a BaseEvaluator subclass.
-    Returns (None, False) if eval_type is a plain string not found in either map.
-    """
-    if "::" in eval_type:
-        obj = locate(eval_type)
-        is_class = inspect.isclass(obj) and issubclass(obj, BaseEvaluator)
-        return obj, is_class
-
-    if eval_type in EVALUATOR_CLASS_MAP:
-        return EVALUATOR_CLASS_MAP[eval_type], True
-    if eval_type in EVALUATOR_MAP:
-        return EVALUATOR_MAP[eval_type], False
-    return None, False
-
-
 def is_evaluator_registered(eval_type: str):
     """Check if evaluator is registered in either class or function map."""
     return eval_type in _EVALUATOR_CLASS_MAP_PATHS or eval_type in _EVALUATOR_MAP_PATHS
