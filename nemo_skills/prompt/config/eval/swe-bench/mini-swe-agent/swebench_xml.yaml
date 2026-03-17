@@ -170,6 +170,7 @@ environment:
   environment_class: docker
 
 model:
+  model_class: litellm_textbased
   observation_template: |
     {% if output.exception_info -%}
     <exception>{{output.exception_info}}</exception>
