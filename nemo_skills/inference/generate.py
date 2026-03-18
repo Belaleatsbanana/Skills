@@ -339,9 +339,10 @@ class GenerationTask:
                 self.cfg.chat_template_kwargs = self.cfg.inference.extra_body.pop("chat_template_kwargs")
 
         # Setup tokenizer
+        soft_fail_needs_tokenizer = self.cfg.server.get("enable_soft_fail", False) and self.cfg.server.get("context_limit_retry_strategy", None) is not None
         if (
             self.cfg.inference.endpoint_type == EndpointType.text
-            or self.cfg.server.get("enable_soft_fail", False)
+            or soft_fail_needs_tokenizer
             or self.cfg.count_prompt_tokens
         ):
             # These are the only cases where we need a tokenizer
