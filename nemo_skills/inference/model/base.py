@@ -342,7 +342,7 @@ class BaseModel:
                             "num_generated_tokens": 0,
                             "serialized_output": [],
                         }
-                    elif "max_tokens or model output limit was reached" in str(e):
+                    elif "max_tokens or model output limit was reached" in str(e) or "max_tokens was reached" in str(e):
                         # API-based models (e.g. Azure) raise BadRequestError when the output token limit
                         # is hit, unlike vLLM which returns finish_reason="length" with partial output.
                         # Soft-fail this datapoint to mirror vLLM behavior.
