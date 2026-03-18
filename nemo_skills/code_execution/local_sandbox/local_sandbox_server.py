@@ -100,6 +100,11 @@ def shell_worker(conn):
         _socket_module.socket = BlockedSocket  # Blocks: import _socket; _socket.socket()
         socket_module.socket = BlockedSocket  # Blocks: import socket; socket.socket()
 
+    # Give each worker its own IPython profile dir to avoid SQLite history race
+    # conditions when all workers start simultaneously and try to init the same
+    # history.sqlite file. WORKER_NUM is set by uwsgi for each worker process.
+    worker_num = os.getenv("WORKER_NUM", os.getpid())
+    os.environ["IPYTHONDIR"] = f"/tmp/ipython_worker_{worker_num}"
     shell = TerminalInteractiveShell()
     # TerminalInteractiveShell installs a SIGINT handler that calls sys.exit(0)
     # instead of raising KeyboardInterrupt when _executing is False (which is
@@ -252,10 +257,19 @@ class ShellManager:
             try:
                 conn.send({"cmd": "exec", "id": exec_id, "code": code, "traceback_verbosity": traceback_verbosity})
             except Exception as exc:
+                # Shell process died - clean up the dead entry and restart so
+                # future requests for this session_id don't keep hitting the same broken pipe.
+                with self.manager_lock:
+                    self.shells.pop(shell_id, None)
+                self.start_shell(shell_id)
+                with self.manager_lock:
+                    if shell_id in self.shells:
+                        self.shells[shell_id]["restart_pending"] = True
                 return {
                     "status": "error",
                     "msg": f"send failed: {exc}",
                     "shell_was_created": shell_was_created,
+                    "shell_was_restarted": True,
                     "shell_was_recently_restarted": shell_was_recently_restarted,
                 }
 
