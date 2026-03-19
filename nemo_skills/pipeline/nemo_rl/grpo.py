@@ -136,8 +136,8 @@ class NemoRLTask:
         self.logging_params = self.format_wandb_args()
         nsight_cmd = get_nsight_cmd(self.profile_step_range)
         cmd = (
-            f"export PYTHONPATH=$PYTHONPATH:/nemo_run/code:/opt/NeMo-RL && "
-            f"export UV_PROJECT=/opt/NeMo-RL && "
+            f"export PYTHONPATH=$PYTHONPATH:/nemo_run/code:/opt/nemo-rl && "
+            f"export UV_PROJECT=/opt/nemo-rl && "
             f"{nsight_cmd}"
             f"echo 'Starting training' && "
             f"uv run --active python /nemo_run/code/nemo_skills/training/nemo_rl/start_grpo.py "
