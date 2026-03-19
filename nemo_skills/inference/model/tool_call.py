@@ -146,6 +146,14 @@ class ToolCallingWrapper:
                 **generation_kwargs,
             )
 
+            if "error" in generation:
+                # Soft-fail returned an empty generation (e.g. enable_soft_fail caught an API error).
+                # Propagate the error fields and stop the tool loop for this data point.
+                for k in ["error", "detailed_error"]:
+                    if k in generation:
+                        result_steps[k].append(generation[k])
+                break
+
             if isinstance(tokens_to_generate, int):
                 tokens_to_generate -= generation["num_generated_tokens"]
 
