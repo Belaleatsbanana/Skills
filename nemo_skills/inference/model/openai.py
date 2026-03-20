@@ -121,7 +121,7 @@ class OpenAIModel(BaseModel):
             "messages": messages,
             "seed": random_seed,
             "stop": stop_phrases or None,
-            "timeout": timeout,
+            "timeout": 1200,
             "stream": stream,
             "tools": tools,
             "response_format": response_format,
