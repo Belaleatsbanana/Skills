@@ -154,8 +154,8 @@ class OpenAIModel(BaseModel):
             params["logprobs"] = top_logprobs is not None
             params["top_logprobs"] = top_logprobs
             params["max_completion_tokens"] = tokens_to_generate
-            params["temperature"] = temperature
-            params["top_p"] = top_p
+            # params["temperature"] = temperature
+            # params["top_p"] = top_p
 
         return params
 
