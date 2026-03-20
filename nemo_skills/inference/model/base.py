@@ -330,6 +330,13 @@ class BaseModel:
                         self._maybe_apply_stop_phrase_removal(result, remove_stop_phrases, stop_phrases)
                     return result
 
+                except litellm.exceptions.BadRequestError as e:
+                    if "prompt is too long" in str(e):
+                        LOG.error(f"Prompt is too long, returning empty response: {e}")
+                        return {"generation": "", "num_generated_tokens": 0, "finish_reason": "input_exceeded"}
+                    else:
+                        raise e
+
                 except openai.BadRequestError as e:
                     if "output messages (reasoning and final)" in str(e):
                         if retry_count < max_retries:
