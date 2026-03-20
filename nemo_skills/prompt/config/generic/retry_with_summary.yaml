@@ -1,0 +1,23 @@
+# Retry solving with previous attempt summary. Required keys: problem, summary.
+# No evaluation/self-score; output is solution only.
+
+user: |-
+  Your task is to solve a given problem and give the answer. You are given a summary of your previous attempt. Carefully review it, fix any issues you identified, and provide an improved solution.
+
+  Your final response should be in the following format:
+
+  ## Solution
+  ... (your improved solution here; put the final answer and only the answer inside \boxed{{}})
+
+  ---
+
+  Here is your task input:
+
+  ## Problem
+  {problem}
+
+  ### YOUR PREVIOUS ATTEMPT
+  {summary}
+
+  ### INSTRUCTIONS
+  Please try again. Carefully review your previous attempt, fix any issues, and provide an improved solution in the format above (## Solution only).
