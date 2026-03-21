@@ -120,6 +120,7 @@ class GenerationTaskConfig:
 
     max_samples: int = -1  # If > 0, will stop after generating this many samples. Useful for debugging
     skip_filled: bool = False  # If True, will skip the generations that are already in the output file
+    rerun_soft_failed_errors: bool = False  # If True with skip_filled, rerun rows with rerunnable soft-fail errors
 
     # maximum number of concurrent requests to the server for the async loop
     # if sync loop is used, this is the batch size
@@ -273,6 +274,16 @@ cs.store(name="base_generation_config", node=GenerationTaskConfig)
 
 
 class GenerationTask:
+    @staticmethod
+    def detect_rerunable_soft_failures(output_row: dict) -> bool:
+        """Return True if an existing output row should be rerun due to a soft-fail error."""
+        detailed_error = output_row.get("detailed_error")
+        if isinstance(detailed_error, str):
+            return "RateLimitError" in detailed_error
+        if isinstance(detailed_error, list):
+            return any(isinstance(item, str) and "RateLimitError" in item for item in detailed_error)
+        return False
+
     @classmethod
     def get_generation_default_args(cls) -> str:
         """
@@ -552,8 +563,39 @@ class GenerationTask:
         evaluate(self.cfg.eval_type, self.cfg.eval_config)
 
     def skip_completed_samples(self, data):
-        # if non-async file exists and we are asked to skip filled, then there is no more data to process
-        if self.cfg.skip_filled and Path(self.cfg.output_file).exists():
+        output_path = Path(self.cfg.output_file)
+        async_output_path = Path(self.cfg.output_file + "-async")
+
+        # Preprocessing: if rerun_soft_failed_errors, detect soft-fail rows and rebuild async file
+        if self.cfg.skip_filled and self.cfg.rerun_soft_failed_errors:
+            existing_path = output_path if output_path.exists() else async_output_path if async_output_path.exists() else None
+            if existing_path is not None:
+                preserved = []
+                rerunnable_found = False
+                is_final_output = existing_path == output_path
+                with open(existing_path, "rt", encoding="utf-8") as fin:
+                    for idx, line in enumerate(fin):
+                        row = json.loads(line)
+                        if self.detect_rerunable_soft_failures(row):
+                            rerunnable_found = True
+                            continue
+                        if is_final_output:
+                            row[self.cfg.async_position_key] = idx
+                        preserved.append(row)
+                if rerunnable_found:
+                    LOG.info(
+                        "Preserving %d completed rows from `%s` and rerunning %d rows with rerunnable soft-fail errors",
+                        len(preserved),
+                        existing_path,
+                        len(data) - len(preserved),
+                    )
+                    with open(async_output_path, "wt", encoding="utf-8") as fout:
+                        self.dump_outputs(preserved, [], fout)
+                    if output_path.exists():
+                        output_path.unlink()
+
+        # Original skip_filled logic (unchanged shape)
+        if self.cfg.skip_filled and output_path.exists():
             return []
 
         filled_positions = set()
@@ -565,11 +607,11 @@ class GenerationTask:
                     LOG.warning(f"File `{base_output_file}` exists, skipping generation")
                     return []
             try:
-                with open(self.cfg.output_file + "-async", "rt", encoding="utf-8") as fin:
+                with open(async_output_path, "rt", encoding="utf-8") as fin:
                     for line in fin:
                         filled_positions.add(int(json.loads(line)[self.cfg.async_position_key]))
             except FileNotFoundError:
-                LOG.warning(f"File `{self.cfg.output_file}-async` not found, starting from scratch")
+                LOG.warning(f"File `{async_output_path}` not found, starting from scratch")
 
         remaining_data = []
         for idx, dp in enumerate(data):

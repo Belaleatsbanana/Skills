@@ -180,12 +180,12 @@ def get_expected_done_files(output_dir, random_seeds, chunk_ids):
     return file_map
 
 
-def get_remaining_jobs(cluster_config, output_dir, random_seeds, chunk_ids, rerun_done):
+def get_remaining_jobs(cluster_config, output_dir, random_seeds, chunk_ids, rerun_done, rerun_soft_failed_errors=False):
     """
     Determines which jobs still need to be run based on missing .done files.
     Returns a mapping from random_seed to list of chunk_ids that need processing.
     """
-    if rerun_done:
+    if rerun_done or rerun_soft_failed_errors:
         return {seed: copy.deepcopy(chunk_ids) for seed in random_seeds}
 
     status_dir = get_unmounted_path(cluster_config, output_dir)

@@ -330,6 +330,9 @@ def generate(
     rerun_done: bool = typer.Option(
         False, help="If True, will re-run jobs even if a corresponding '.done' file already exists"
     ),
+    rerun_soft_failed_errors: bool = typer.Option(
+        False, help="If True, rerun rows with rerunnable soft-fail errors even when the corresponding '.done' file exists"
+    ),
     with_sandbox: bool = typer.Option(False, help="If True, will start a sandbox container alongside this job"),
     sandbox_env_overrides: List[str] = typer.Option(
         None,
@@ -510,6 +513,7 @@ def generate(
         random_seeds=random_seeds,
         chunk_ids=chunk_ids,
         rerun_done=rerun_done,
+        rerun_soft_failed_errors=rerun_soft_failed_errors,
     )
 
     if _task_dependencies is None:

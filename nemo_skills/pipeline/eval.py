@@ -258,6 +258,9 @@ def eval(
     rerun_done: bool = typer.Option(
         False, help="If True, will re-run jobs even if a corresponding '.done' file already exists"
     ),
+    rerun_soft_failed_errors: bool = typer.Option(
+        False, help="If True, rerun rows with rerunnable soft-fail errors even when the corresponding '.done' file exists"
+    ),
     with_sandbox: bool = typer.Option(False, help="If True, will start a sandbox container alongside this job"),
     keep_mounts_for_sandbox: bool = typer.Option(
         False,
@@ -406,6 +409,7 @@ def eval(
         num_chunks,
         chunk_ids,
         rerun_done,
+        rerun_soft_failed_errors,
         server_parameters,
         extra_arguments,
         data_dir,
