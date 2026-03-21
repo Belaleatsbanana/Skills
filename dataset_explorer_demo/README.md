@@ -28,3 +28,23 @@
    ```
    python visualize_similar.py
    ```
+
+## ns eval results viewer
+
+For quick inspection of `ns eval` JSONL outputs, including nested `conversation` trees and Python-style row filters:
+
+```bash
+python dataset_explorer_demo/ns_eval_results_viewer.py <input_path>
+```
+
+The CLI input path is optional. If provided, it pre-fills the path field in the viewer. The input path can be either:
+
+- A single JSONL file
+- A directory, in which case all `output-rs*.jsonl` files in that directory are concatenated
+
+
+Example filter:
+
+```python
+row["generation"] == ""
+```

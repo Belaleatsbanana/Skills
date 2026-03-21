@@ -53,6 +53,5 @@ AGENTS.md
 .idea
 site/
 local/
-
 #scripts at root level
 /*.sh

@@ -160,6 +160,11 @@ class ToolCallingWrapper:
             for k in ["generation", "num_generated_tokens", "reasoning_content", "finish_reason"]:
                 if k in generation:
                     result_steps[k].append(generation[k])
+                else:
+                    if not k=="generation":
+                        result_steps[k].append(None)
+                    else:
+                        result_steps[k].append("")
 
             conversation.extend(generation["serialized_output"])
 
