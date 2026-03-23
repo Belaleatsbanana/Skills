@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 import copy
 import json
 import logging
@@ -99,11 +98,14 @@ class ToolCallingWrapper:
         return result
 
     async def _execute_tool_calls(self, tool_calls: List, request_id: str, endpoint_type: EndpointType):
-        tasks = [
-            self._execute_tool_call(tool_call, request_id=request_id, endpoint_type=endpoint_type)
-            for tool_call in tool_calls
-        ]
-        tool_results = await asyncio.gather(*tasks)
+        # Run in model emission order. Parallel gather shared one stateful session (e.g. IPython)
+        # but the sandbox serializes per session anyway, so ordering was nondeterministic while
+        # still piling concurrent waits on the same worker.
+        tool_results = []
+        for tool_call in tool_calls:
+            tool_results.append(
+                await self._execute_tool_call(tool_call, request_id=request_id, endpoint_type=endpoint_type)
+            )
         return [
             format_tool_response_by_endpoint_type(tool_call, tool_result, endpoint_type)
             for tool_call, tool_result in zip(tool_calls, tool_results)
