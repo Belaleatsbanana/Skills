@@ -16,10 +16,12 @@ import json
 
 # running most things through subprocess since that's how it's usually used
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
 from nemo_skills.evaluation.metrics import ComputeMetrics
+from nemo_skills.inference.model.base import BaseModel
 from nemo_skills.pipeline.generate import _create_job_unified
 from nemo_skills.pipeline.utils.scripts import ServerScript
 
@@ -29,8 +31,8 @@ def test_eval_gsm8k_api(tmp_path):
     cmd = (
         f"ns eval "
         f"    --server_type=openai "
-        f"    --model=nvidia/nvidia/nemotron-nano-30b-v3 "
-        f"    --server_address=https://inference-api.nvidia.com/v1/ "
+        f"    --model=nvidia/nemotron-3-nano-30b-a3b "
+        f"    --server_address=https://integrate.api.nvidia.com/v1 "
         f"    --benchmarks=gsm8k "
         f"    --output_dir={tmp_path} "
         f"    ++max_samples=2 "
@@ -60,12 +62,12 @@ def test_eval_judge_api(tmp_path):
     cmd = (
         f"ns eval "
         f"    --server_type=openai "
-        f"    --model=nvidia/nvidia/nemotron-nano-30b-v3 "
-        f"    --server_address=https://inference-api.nvidia.com/v1/ "
+        f"    --model=nvidia/nemotron-3-nano-30b-a3b "
+        f"    --server_address=https://integrate.api.nvidia.com/v1 "
         f"    --benchmarks=math-500 "
         f"    --output_dir={tmp_path} "
-        f"    --judge_model=nvidia/nvidia/nemotron-nano-30b-v3 "
-        f"    --judge_server_address=https://inference-api.nvidia.com/v1/ "
+        f"    --judge_model=nvidia/nemotron-3-nano-30b-a3b "
+        f"    --judge_server_address=https://integrate.api.nvidia.com/v1 "
         f"    --judge_server_type=openai "
         f"    --judge_generation_type=math_judge "
         f"    --extra_judge_args='++max_concurrent_requests=1 ++inference.timeout=120 ++server.max_retries=1' "
@@ -96,8 +98,8 @@ def test_fail_on_api_key_env_var(tmp_path):
     cmd = (
         f"ns eval "
         f"    --server_type=openai "
-        f"    --model=nvidia/nvidia/nemotron-nano-30b-v3 "
-        f"    --server_address=https://inference-api.nvidia.com/v1/ "
+        f"    --model=nvidia/nemotron-3-nano-30b-a3b "
+        f"    --server_address=https://integrate.api.nvidia.com/v1 "
         f"    --benchmarks=gsm8k "
         f"    --output_dir={tmp_path} "
         f"    ++max_samples=2 "
@@ -118,8 +120,8 @@ def test_succeed_on_api_key_env_var(tmp_path):
         f"unset NVIDIA_API_KEY && "
         f"ns eval "
         f"    --server_type=openai "
-        f"    --model=nvidia/nvidia/nemotron-nano-30b-v3 "
-        f"    --server_address=https://inference-api.nvidia.com/v1/ "
+        f"    --model=nvidia/nemotron-3-nano-30b-a3b "
+        f"    --server_address=https://integrate.api.nvidia.com/v1 "
         f"    --benchmarks=gsm8k "
         f"    --output_dir={tmp_path} "
         f"    ++max_samples=2 "
@@ -151,8 +153,8 @@ def test_generate_openai_format(tmp_path, format):
     cmd = (
         f"ns generate "
         f"    --server_type=openai "
-        f"    --model=nvidia/nvidia/nemotron-nano-30b-v3 "
-        f"    --server_address=https://inference-api.nvidia.com/v1/ "
+        f"    --model=nvidia/nemotron-3-nano-30b-a3b "
+        f"    --server_address=https://integrate.api.nvidia.com/v1 "
         f"    --input_file=/nemo_run/code/tests/data/openai-input-{format}.test "
         f"    --output_dir={tmp_path} "
         f"    ++prompt_format=openai "
@@ -217,12 +219,12 @@ def test_judge_generations_with_structured_output(tmp_path):
     cmd = (
         f"ns eval "
         f"    --server_type=openai "
-        f"    --model=nvidia/nvidia/nemotron-nano-30b-v3 "
-        f"    --server_address=https://inference-api.nvidia.com/v1/ "
+        f"    --model=nvidia/nemotron-3-nano-30b-a3b "
+        f"    --server_address=https://integrate.api.nvidia.com/v1 "
         f"    --benchmarks=hle "
         f"    --output_dir={tmp_path} "
-        f"    --judge_model=nvidia/nvidia/nemotron-nano-30b-v3 "
-        f"    --judge_server_address=https://inference-api.nvidia.com/v1/ "
+        f"    --judge_model=nvidia/nemotron-3-nano-30b-a3b "
+        f"    --judge_server_address=https://integrate.api.nvidia.com/v1 "
         f"    --judge_server_type=openai "
         f"    --metric_type=hle-aa "
         f'    --extra_judge_args="++structured_output=HLE_JUDGE_AA ++max_concurrent_requests=1 ++inference.timeout=120 ++server.max_retries=1" '
@@ -243,3 +245,70 @@ def test_judge_generations_with_structured_output(tmp_path):
     assert set(judgements[1].keys()) == expected_keys
     assert judgements[0]["correct"] in {"yes", "no"}
     assert judgements[1]["correct"] in {"yes", "no"}
+
+
+def test_process_chat_chunk_never_yields_none_generation():
+    """Regression test for https://github.com/NVIDIA-NeMo/Skills/issues/1267
+
+    OpenAI-compatible streaming APIs can emit chunks where delta.content is None.
+    _process_chat_chunk must never return {"generation": None}.
+    """
+    model = BaseModel.__new__(BaseModel)
+    p = model._process_chat_chunk
+
+    def _chunk(content, finish_reason=None, *, use_delta=True):
+        if use_delta:
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content=content),
+                        finish_reason=finish_reason,
+                    )
+                ]
+            )
+        return SimpleNamespace(choices=[SimpleNamespace(text=content, finish_reason=finish_reason)])
+
+    # Normal text
+    assert p(_chunk("Hello"))[0]["generation"] == "Hello"
+
+    # None delta (intermediate chunk) — was the bug
+    assert p(_chunk(None))[0]["generation"] == ""
+
+    # None on finish
+    r = p(_chunk(None, finish_reason="stop"))[0]
+    assert r["generation"] == "" and r["finish_reason"] == "stop"
+
+    # Non-delta (completion-style) with text=None
+    assert p(_chunk(None, use_delta=False))[0]["generation"] == ""
+
+    # Full consumer loop — must not raise TypeError
+    full = ""
+    for c in [
+        _chunk("Hello "),
+        _chunk(None),
+        _chunk("world"),
+        _chunk(None, finish_reason="stop"),
+    ]:
+        for r in p(c):
+            full += r["generation"]
+    assert full == "Hello world"
+
+
+@pytest.mark.parametrize(
+    "usage_kwargs,expected_input",
+    [
+        ({"prompt_tokens": 5}, 5),
+        ({"input_tokens": 7}, 7),
+        ({}, None),
+    ],
+)
+def test_parse_completion_response_token_counts(usage_kwargs, expected_input):
+    model = BaseModel.__new__(BaseModel)
+    usage = SimpleNamespace(completion_tokens=10, **usage_kwargs)
+    response = SimpleNamespace(
+        usage=usage,
+        choices=[SimpleNamespace(text="hi", finish_reason="stop", logprobs=None)],
+    )
+    result = model._parse_completion_response(response)
+    assert result["num_generated_tokens"] == 10
+    assert result.get("num_input_tokens") == expected_input
