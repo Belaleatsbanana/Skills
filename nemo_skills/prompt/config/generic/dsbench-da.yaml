@@ -1,13 +1,12 @@
-# DSBench Data Analysis - Tool mode (Python tool reads Excel files)
+# DSBench Data Analysis - Tool mode (Python tool: spreadsheets when present, else general computation)
 # Adapted from https://raw.githubusercontent.com/LiqiangJing/DSBench/refs/heads/main/data_analysis/eva_autogen_gpt.ipynb
+# prompt_excel_section is set per row in dataset/dsbench_da/prepare.py (see build_prompt_excel_section).
 user: |-
   {problem}
 
-  The worksheet can be obtained in the path: {excel_paths}
+  You have access to a stateful Python tool. Use it to read workbook files (if available) and for any other computations or checks you need (e.g. numeric work, small simulations, verifying reasoning). Use /tmp for any intermediate files you create.
 
-  Feel free to use the stateful python tool to read the files or perform other actions or calculations. Use /tmp directory to store any intermediate files.
-
-  Avoid unnecessary mistakes in reading the files by first exploring the file to understand its structure and schema (e.g., sheet names, column names, nan values, etc.) and identify the relevant data for the question before jumping into solution.
+  {prompt_excel_section}
 
   Put your final answer in \boxed{{your final answer}}. Format your answer based on the question type:
   - Multiple choice: Put only the option letter (e.g., \boxed{{A}})
