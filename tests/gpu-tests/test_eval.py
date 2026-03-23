@@ -87,8 +87,8 @@ def test_aaa_prepare_and_eval_all_datasets():
     judge_datasets = []
     for dataset in dataset_names:
         dataset_module = import_module(f"nemo_skills.dataset.{dataset}")
-        # Check if JUDGE_PIPELINE_ARGS exists (even if empty dict, which is falsy)
-        if hasattr(dataset_module, "JUDGE_PIPELINE_ARGS"):
+        # Check if JUDGE_PIPELINE_ARGS or JUDGE_ARGS exists (either means judge is required)
+        if hasattr(dataset_module, "JUDGE_PIPELINE_ARGS") or hasattr(dataset_module, "JUDGE_ARGS"):
             judge_datasets.append(dataset)
 
     non_judge_datasets = [dataset for dataset in dataset_names if dataset not in judge_datasets]
