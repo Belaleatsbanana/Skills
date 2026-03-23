@@ -483,13 +483,12 @@ def get_generation_cmd(
 
     job_end_cmd = ""
 
-    if random_seed is not None and input_dir is None:  # if input_dir is not None, we default to greedy generations
-        cmd += (
-            f"    ++inference.random_seed={random_seed} "
-            f"    ++inference.temperature=0.7 "
-            f"    ++inference.top_k=-1 "
-            f"    ++inference.top_p=0.95 "
-        )
+    # Multi-seed eval: only pass the seed here. Sampling (temperature / top_p / top_k) comes from
+    # InferenceConfig defaults and user/benchmark ++ overrides — injecting 0.7/0.95 broke reasoning
+    # models (fixed sampling) and Anthropic routes (must not send both temperature and top_p).
+    if random_seed is not None and input_dir is None:
+        cmd += f"    ++inference.random_seed={random_seed} "
+        
 
     if with_sandbox:
         cmd += "++wait_for_sandbox=true "
