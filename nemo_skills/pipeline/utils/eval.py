@@ -480,7 +480,10 @@ def prepare_eval_commands(
                     requirements=requirements,
                     # only logging for the first seed
                     wandb_parameters=wandb_parameters if seed_idx == 0 else None,
-                    with_sandbox=benchmark_args.requires_sandbox,
+                    # Match add_task(with_sandbox=job_needs_sandbox or with_sandbox): if the user passes
+                    # --with-sandbox but the benchmark omits REQUIRES_SANDBOX (e.g. dsbench_da), we still
+                    # start the sandbox sidecar and must wait for it before tool calls.
+                    with_sandbox=benchmark_args.requires_sandbox or with_sandbox,
                 )
                 job_cmds.append(cmd)
 

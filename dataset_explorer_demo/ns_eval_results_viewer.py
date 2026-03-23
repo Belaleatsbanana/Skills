@@ -19,7 +19,9 @@ import argparse
 import ast
 import html
 import json
+import math
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -30,6 +32,13 @@ DEFAULT_RESULTS_PATH = (
     / "local/tmp/results/azure-openai-gpt-4-1/ipython-tool/default/eval-results/dsbench_da/output-rs0.jsonl"
 )
 DEFAULT_FILTER = 'row["generation"] == ""'
+SYSTEM_ERROR_PATTERNS = (
+    re.compile(r"client timed out", re.IGNORECASE),
+    re.compile(r"broken pipe", re.IGNORECASE),
+    re.compile(r"connection reset by peer", re.IGNORECASE),
+    re.compile(r"session error", re.IGNORECASE),
+    re.compile(r"send failed", re.IGNORECASE),
+)
 
 CUSTOM_CSS = """
 .ns-results-viewer {max-width: 1600px; margin: 0 auto;}
@@ -154,6 +163,61 @@ CUSTOM_CSS = """
 }
 .ns-results-viewer .empty {color: #8b93a7; font-style: italic;}
 .ns-results-viewer .status {padding-top: 6px;}
+.ns-results-viewer .diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ns-results-viewer .diagnostics-card {
+  background: #f6f7fb;
+  border: 1px solid #d9dce7;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.ns-results-viewer .diagnostics-card .label {
+  font-size: 12px;
+  color: #5c6475;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ns-results-viewer .diagnostics-card .value {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.ns-results-viewer .diagnostics-card .meta {
+  margin-top: 4px;
+  color: #5c6475;
+  font-size: 13px;
+}
+.ns-results-viewer .plot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+.ns-results-viewer .plot-card {
+  background: #fbfcff;
+  border: 1px solid #d9dce7;
+  border-radius: 12px;
+  padding: 12px;
+}
+.ns-results-viewer .plot-card h3 {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+}
+.ns-results-viewer .plot-card p {
+  margin: 0 0 10px 0;
+  color: #5c6475;
+  font-size: 13px;
+}
+.ns-results-viewer .plot-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: white;
+  border-radius: 10px;
+}
 """
 
 ALLOWED_FUNCS = {
@@ -217,7 +281,7 @@ def load_jsonl(file_path: str) -> list[dict]:
     rows = []
     for current_file in files_to_load:
         with current_file.open("r", encoding="utf-8") as f:
-            rows.extend(json.loads(line) for line in f if line.strip())
+            rows.extend(enrich_row(json.loads(line)) for line in f if line.strip())
     return rows
 
 
@@ -230,6 +294,46 @@ def resolve_input_files(path: Path) -> list[Path]:
             raise FileNotFoundError(f"No files matching output-rs*.jsonl found in directory: {path}")
         return matches
     raise FileNotFoundError(f"Unsupported input path: {path}")
+
+
+def is_system_error_message(content: str) -> bool:
+    return any(pattern.search(content) for pattern in SYSTEM_ERROR_PATTERNS)
+
+
+def normalize_tool_content(message: dict) -> str:
+    content = message.get("content")
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    return json.dumps(content, ensure_ascii=False)
+
+
+def enrich_row(row: dict) -> dict:
+    conversation = row.get("conversation")
+    tool_messages = []
+    if isinstance(conversation, list):
+        tool_messages = [
+            message for message in conversation if isinstance(message, dict) and message.get("role") == "tool"
+        ]
+
+    tool_contents = [normalize_tool_content(message) for message in tool_messages]
+    num_system_errors = sum(1 for content in tool_contents if is_system_error_message(content))
+    num_traceback_error = sum(1 for content in tool_contents if "Traceback" in content)
+    last_tool_content = tool_contents[-1] if tool_contents else ""
+    judgement = row.get("judgement")
+    symbolic_correct = bool(row.get("symbolic_correct"))
+    judged_yes = "Judgement: Yes" in judgement if isinstance(judgement, str) else False
+    is_correct = symbolic_correct or judged_yes
+    predicted_answer = row.get("predicted_answer")
+    is_no_answer = predicted_answer is None or (isinstance(predicted_answer, str) and predicted_answer.strip() == "")
+
+    row["num_system_errors"] = num_system_errors
+    row["is_final_tool_call_system_errors"] = bool(is_system_error_message(last_tool_content))
+    row["num_traceback_error"] = num_traceback_error
+    row["is_correct_or_judged_yes"] = is_correct
+    row["answer_category"] = "correct" if is_correct else ("no_answer" if is_no_answer else "incorrect")
+    return row
 
 
 def validate_filter_expression(expression: str) -> ast.AST:
@@ -435,6 +539,11 @@ def render_row(row: dict, file_path: str, matched_position: int, matched_total: 
         "finish_reason": summarize_scalar(row.get("finish_reason")),
         "generation": summarize_scalar(row.get("generation")),
         "num_tool_calls": summarize_scalar(row.get("num_tool_calls")),
+        "num_system_errors": summarize_scalar(row.get("num_system_errors")),
+        "final_tool_system_error": summarize_scalar(row.get("is_final_tool_call_system_errors")),
+        "num_traceback_error": summarize_scalar(row.get("num_traceback_error")),
+        "correct_or_judged_yes": summarize_scalar(row.get("is_correct_or_judged_yes")),
+        "answer_category": summarize_scalar(row.get("answer_category")),
         "symbolic_correct": summarize_scalar(row.get("symbolic_correct")),
     }
     summary_html = "".join(
@@ -470,6 +579,149 @@ def build_status(file_path: str, rows: list[dict], matches: list[int], expressio
         f"<span>{html.escape(file_path)}</span>"
         "</div>"
     )
+
+
+def average(values: list[float]) -> float:
+    return 0.0 if not values else sum(values) / len(values)
+
+
+def render_metric_plot(rows: list[dict], metric_key: str, title: str, subtitle: str) -> str:
+    width = 420
+    height = 220
+    margin_left = 44
+    margin_right = 12
+    margin_top = 16
+    margin_bottom = 34
+    plot_width = width - margin_left - margin_right
+    plot_height = height - margin_top - margin_bottom
+    categories = [
+        ("incorrect", 1 / 6, "#c2410c"),
+        ("no_answer", 3 / 6, "#7c3aed"),
+        ("correct", 5 / 6, "#15803d"),
+    ]
+    category_positions = {name: margin_left + frac * plot_width for name, frac, _ in categories}
+    category_colors = {name: color for name, _, color in categories}
+
+    values = [float(row.get(metric_key, 0) or 0) for row in rows]
+    max_value = max(values, default=0.0)
+    y_max = max(1.0, max_value)
+    y_ticks = [0.0, y_max / 2.0, y_max]
+    axis_x0 = margin_left
+    axis_y0 = margin_top + plot_height
+    axis_x1 = margin_left + plot_width
+
+    circles = []
+    for idx, row in enumerate(rows):
+        value = float(row.get(metric_key, 0) or 0)
+        category = row.get("answer_category", "incorrect")
+        x_center = category_positions.get(category, category_positions["incorrect"])
+        jitter_seed = ((idx * 37) % 19) - 9
+        x = x_center + jitter_seed * 3
+        y = margin_top + plot_height - (value / y_max) * plot_height
+        color = category_colors.get(category, category_colors["incorrect"])
+        circles.append(
+            f"<circle cx='{x:.1f}' cy='{y:.1f}' r='4' fill='{color}' fill-opacity='0.72' />"
+        )
+
+    tick_lines = []
+    tick_labels = []
+    for tick in y_ticks:
+        y = margin_top + plot_height - (tick / y_max) * plot_height
+        tick_lines.append(
+            f"<line x1='{axis_x0}' y1='{y:.1f}' x2='{axis_x1}' y2='{y:.1f}' stroke='#e2e8f0' stroke-width='1' />"
+        )
+        label = str(int(tick)) if math.isclose(tick, round(tick)) else f"{tick:.1f}"
+        tick_labels.append(
+            f"<text x='{axis_x0 - 8}' y='{y + 4:.1f}' text-anchor='end' font-size='11' fill='#64748b'>{html.escape(label)}</text>"
+        )
+
+    footer_parts = []
+    for category, _, _ in categories:
+        category_values = [
+            float(row.get(metric_key, 0) or 0) for row in rows if row.get("answer_category") == category
+        ]
+        footer_parts.append(f"{category} avg {average(category_values):.2f} ({len(category_values)} rows)")
+    footer = " | ".join(footer_parts)
+
+    category_labels = "".join(
+        f"<text x='{category_positions[name]:.1f}' y='{height - 10}' text-anchor='middle' font-size='12' fill='{color}'>{name}</text>"
+        for name, _, color in categories
+    )
+
+    return (
+        "<div class='plot-card'>"
+        f"<h3>{html.escape(title)}</h3>"
+        f"<p>{html.escape(subtitle)}</p>"
+        f"<svg class='plot-svg' viewBox='0 0 {width} {height}' role='img' aria-label='{html.escape(title)}'>"
+        + "".join(tick_lines)
+        + f"<line x1='{axis_x0}' y1='{axis_y0}' x2='{axis_x1}' y2='{axis_y0}' stroke='#94a3b8' stroke-width='1.2' />"
+        + f"<line x1='{axis_x0}' y1='{margin_top}' x2='{axis_x0}' y2='{axis_y0}' stroke='#94a3b8' stroke-width='1.2' />"
+        + "".join(tick_labels)
+        + "".join(circles)
+        + category_labels
+        + "</svg>"
+        + f"<p>{html.escape(footer)}</p>"
+        + "</div>"
+    )
+
+
+def build_diagnostics_html(rows: list[dict]) -> str:
+    if not rows:
+        return ""
+
+    correct_rows = sum(1 for row in rows if row.get("answer_category") == "correct")
+    no_answer_rows = sum(1 for row in rows if row.get("answer_category") == "no_answer")
+    incorrect_rows = sum(1 for row in rows if row.get("answer_category") == "incorrect")
+    total_system_errors = sum(int(row.get("num_system_errors", 0) or 0) for row in rows)
+    final_system_errors = sum(1 for row in rows if row.get("is_final_tool_call_system_errors"))
+    total_tracebacks = sum(int(row.get("num_traceback_error", 0) or 0) for row in rows)
+
+    cards = [
+        (
+            "Total number of rows",
+            str(len(rows)),
+            f"correct {correct_rows} | no_answer {no_answer_rows} | incorrect {incorrect_rows}",
+        ),
+        ("System errors", str(total_system_errors), f"avg {average([row.get('num_system_errors', 0) for row in rows]):.2f} per row"),
+        ("Traceback errors", str(total_tracebacks), f"avg {average([row.get('num_traceback_error', 0) for row in rows]):.2f} per row"),
+        (
+            "Final tool system errors",
+            str(final_system_errors),
+            f"{(final_system_errors / len(rows)) * 100:.1f}% of total rows",
+        ),
+    ]
+    cards_html = "".join(
+        "<div class='diagnostics-card'>"
+        f"<div class='label'>{html.escape(label)}</div>"
+        f"<div class='value'>{html.escape(value)}</div>"
+        f"<div class='meta'>{html.escape(meta)}</div>"
+        "</div>"
+        for label, value, meta in cards
+    )
+
+    plots_html = "".join(
+        [
+            render_metric_plot(
+                rows,
+                "num_system_errors",
+                "num_system_errors vs correctness",
+                'correctness = row["symbolic_correct"] or "Judgement: Yes" in row["judgement"]',
+            ),
+            render_metric_plot(
+                rows,
+                "num_traceback_error",
+                "num_traceback_error vs correctness",
+                'count of tool results containing "Traceback"',
+            ),
+            render_metric_plot(
+                rows,
+                "is_final_tool_call_system_errors",
+                "final tool system error vs correctness",
+                "0/1 flag for whether the last tool result is a system error",
+            ),
+        ]
+    )
+    return f"<div class='diagnostics-grid'>{cards_html}</div><div class='plot-grid'>{plots_html}</div>"
 
 
 def view_for_position(
@@ -702,6 +954,13 @@ PAGE_TEMPLATE = """
     <div class="panel">{{ status_html|safe }}</div>
     {% endif %}
 
+    {% if diagnostics_html %}
+    <div class="panel">
+      <h2>Diagnostics</h2>
+      {{ diagnostics_html|safe }}
+    </div>
+    {% endif %}
+
     {% if conversation_html or details_html %}
     <div id="results-root" class="split">
       <div class="panel">
@@ -743,6 +1002,7 @@ def create_app(initial_file_path: str = "") -> Flask:
                     position_display=1,
                     row_index=-1,
                     status_html="",
+                    diagnostics_html="",
                     conversation_html="",
                     details_html="",
                 )
@@ -767,6 +1027,7 @@ def create_app(initial_file_path: str = "") -> Flask:
             position, row_index, status_html, conversation_html, details_html = view_for_position(
                 file_path, rows, matches, position, expression
             )
+            diagnostics_html = build_diagnostics_html(rows)
             return render_template_string(
                 PAGE_TEMPLATE,
                 css=CUSTOM_CSS,
@@ -776,6 +1037,7 @@ def create_app(initial_file_path: str = "") -> Flask:
                 position_display=max(position + 1, 1),
                 row_index=row_index,
                 status_html=status_html,
+                diagnostics_html=diagnostics_html,
                 conversation_html=conversation_html,
                 details_html=details_html,
             )
@@ -789,6 +1051,7 @@ def create_app(initial_file_path: str = "") -> Flask:
                 position_display=1,
                 row_index=-1,
                 status_html="",
+                diagnostics_html="",
                 conversation_html="",
                 details_html="",
             )
