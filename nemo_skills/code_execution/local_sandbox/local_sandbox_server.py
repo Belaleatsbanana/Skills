@@ -30,6 +30,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import psutil
 from flask import Flask, request
 from IPython.terminal.interactiveshell import TerminalInteractiveShell
+from traitlets.config import Config
 
 app = Flask(__name__)
 
@@ -100,12 +101,20 @@ def shell_worker(conn):
         _socket_module.socket = BlockedSocket  # Blocks: import _socket; _socket.socket()
         socket_module.socket = BlockedSocket  # Blocks: import socket; socket.socket()
 
-    # Give each worker its own IPython profile dir to avoid SQLite history race
-    # conditions when all workers start simultaneously and try to init the same
-    # history.sqlite file. WORKER_NUM is set by uwsgi for each worker process.
-    worker_num = os.getenv("WORKER_NUM", os.getpid())
-    os.environ["IPYTHONDIR"] = f"/tmp/ipython_worker_{worker_num}"
-    shell = TerminalInteractiveShell()
+    # Each shell_worker runs in its own multiprocessing.Process (one per session).
+    # Using only WORKER_NUM would share one history.sqlite across all sessions on the
+    # same uWSGI worker → sqlite "database is locked" / readonly errors. Include pid
+    # so every IPython subprocess gets a distinct profile dir. WORKER_NUM is set by
+    # uwsgi for the parent worker (for debugging in the path).
+    worker_tag = os.getenv("WORKER_NUM", "nw")
+    os.environ["IPYTHONDIR"] = f"/tmp/ipython_{worker_tag}_{os.getpid()}"
+    # Disable SQLite-backed command history: not needed for programmatic run_cell() and
+    # avoids history DB lock/contention under many concurrent sessions. Opt-in with
+    # NEMO_SKILLS_SANDBOX_ENABLE_IPYTHON_HISTORY=1 for debugging only.
+    ipython_cfg = Config()
+    if os.getenv("NEMO_SKILLS_SANDBOX_ENABLE_IPYTHON_HISTORY", "").lower() not in ("1", "true", "yes"):
+        ipython_cfg.HistoryManager.enabled = False
+    shell = TerminalInteractiveShell(config=ipython_cfg)
     # TerminalInteractiveShell installs a SIGINT handler that calls sys.exit(0)
     # instead of raising KeyboardInterrupt when _executing is False (which is
     # the case when run_cell is called programmatically). Restore the default
