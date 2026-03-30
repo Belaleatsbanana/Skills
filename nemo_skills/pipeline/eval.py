@@ -492,6 +492,10 @@ def eval(
             benchmark_args.eval_subfolder = benchmark_args.eval_subfolder[4:]
             judge_pipeline_args["output_dir"] = str(Path(output_dir) / benchmark_args.eval_subfolder)
 
+            # Merge any extra judge kwargs from the CLI into judge_pipeline_args.
+            if judge_pipeline_kwargs:
+                judge_pipeline_args.update(parse_kwargs(judge_pipeline_kwargs))
+
             # judge_step_fn is a :: path to the judge creator function (locate() convention).
             # Could be set directly in JUDGE_PIPELINE_ARGS; falls back to None for LLM judge.
             judge_step_fn = judge_pipeline_args.pop("judge_step_fn", judge_step_fn)
