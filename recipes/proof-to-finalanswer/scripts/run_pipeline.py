@@ -159,7 +159,7 @@ def main():
     parser.add_argument(
         "--provided_proof_solution_keys",
         type=str,
-        default="reference_solution,proof_solution,solution",
+        default=None,
     )
     parser.add_argument("--proof_solution_attempts", type=int, default=2)
     parser.add_argument("--final_answer_solution_attempts", type=int, default=2)
