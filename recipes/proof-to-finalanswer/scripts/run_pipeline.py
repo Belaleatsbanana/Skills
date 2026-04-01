@@ -78,7 +78,7 @@ def run_generation_stage(args, run_after: list[str] | None):
         server_args=args.server_args,
         run_after=run_after,
         exclusive=True,
-        partition="interactive",
+        qos="interactive",
     )
     return expname
 
