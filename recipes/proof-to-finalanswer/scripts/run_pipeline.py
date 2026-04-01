@@ -154,7 +154,7 @@ def main():
     parser.add_argument(
         "--allow_provided_proof_solution",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--provided_proof_solution_keys",
