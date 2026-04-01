@@ -78,6 +78,7 @@ def run_generation_stage(args, run_after: list[str] | None):
         server_args=args.server_args,
         run_after=run_after,
         exclusive=True,
+        partition="interactive",
     )
     return expname
 
@@ -131,7 +132,7 @@ def main():
     parser.add_argument("--num_random_seeds", type=int, default=1)
     parser.add_argument("--dependent_jobs", type=int, default=0)
     parser.add_argument("--inline_args", type=str, default=DEFAULT_INLINE_ARGS)
-    parser.add_argument("--max_concurrent_requests", type=int, default=40)
+    parser.add_argument("--max_concurrent_requests", type=int, default=1)
 
     parser.add_argument(
         "--generate_solution_prompt_path",
