@@ -1,0 +1,108 @@
+user: |-
+  Your task is to transform the proof-based math problem below into a single final-answer problem whose answer is a specific number or an explicit algebraic expression.
+
+  You will be given:
+  1. the original problem statement, and
+  2. a reference correct solution to the original problem.
+
+  Your task is to use the reference correct solution to determine what the original proof actually depends on, and then design a new standalone final-answer problem that preserves that same essential difficulty.
+
+  Objective:
+  The difficulty of obtaining the final answer must be essentially equivalent to the difficulty of proving the original statement. A solver should need the same key ideas, same indispensable lemmas, or same structural identifications as in the reference solution, not merely assume the original conclusion and then perform routine computation.
+
+  The reference correct solution is not incidental background. It is the primary source for identifying:
+  - the crux of the proof,
+  - the minimal indispensable intermediate lemmas,
+  - the real dependency spine of the argument,
+  - and the genuine free choices or parameters that the proof must control.
+
+  You should reason carefully from that reference solution, audit whether your transformed problem truly preserves the original difficulty, and refine it until you can make no further improvement.
+
+  Requirements:
+
+  1. Crux identification
+  - Read the reference correct solution closely.
+  - Identify the crux: the hardest step of the original proof, or the smallest indispensable set of intermediate lemmas actually used in the reference solution.
+  - If the reference solution contains side arguments, detours, or optional simplifications, compress them to the minimal indispensable backbone.
+  - Construct the new problem so that the final answer cannot be determined without establishing that crux.
+  - The new target must force the solver to recover the same decisive idea(s), not merely use the final theorem statement as a black box.
+  - If the reference solution appears flawed, incomplete, or reliant on an unjustified step, explicitly say so in the explanation and salvage the strongest valid crux you can. Do not silently rely on unsupported claims.
+
+  2. Degrees-of-freedom audit
+  - Identify the genuine free choices or parameters in the original configuration, such as:
+    - an arbitrary point,
+    - an arbitrary circle through two points,
+    - a variable integer,
+    - a family of admissible constructions,
+    - or any other nontrivial source of variation.
+  - Determine how the reference solution actually resolves, constrains, or eliminates those degrees of freedom.
+  - The requested final answer must depend on resolving those degrees of freedom.
+  - Do not ask for a target that becomes fixed immediately after assuming the original conclusion.
+  - Prefer targets that require uniquely identifying a specific object, not merely proving that it lies on some locus.
+  - If the original statement claims an invariant under a free choice, do not ask for an invariant that can be computed from the conclusion alone. Instead, ask for a quantity that still varies unless the solver proves the stronger identifying lemmas used in the reference solution.
+  - In the explanation, explicitly state what could vary and what had to be pinned down.
+
+  3. No binary or guessable answers
+  - Do not ask yes/no questions.
+  - The answer should not be guessable from small cases, symmetry, heuristic induction, dimensional intuition, or common defaults such as 0, 1, or +-1.
+  - Do not choose a target whose value becomes obvious once the original theorem is known.
+  - When appropriate, introduce large parameters or constants so brute force is infeasible, while keeping the post-crux computation finite and contest-doable.
+  - Prefer targets whose exact value becomes available only after the hard structural step is completed.
+
+  4. Faithfulness and consistency of added constraints
+  - Any added constraints must remain consistent with the original hypotheses and must not create an impossible configuration.
+  - Do not overconstrain the setup by imposing multiple independent conditions unless compatibility is automatic and clear.
+  - If consistency is nontrivial, define objects by construction so the original conditions are guaranteed instead of imposing independent conditions that may conflict.
+  - Include a brief sanity check in the explanation covering:
+    - existence,
+    - uniqueness,
+    - and nondegeneracy.
+  - The transformed problem must be standalone, valid, and solvable under its own stated conditions.
+
+  5. Packaging the final answer
+  - The final answer must be unambiguous and well-defined.
+  - If using modular arithmetic, choose the modulus intentionally.
+  - If inverses or division appear naturally, a prime modulus is usually cleaner.
+  - If using a composite modulus, avoid illegal division by asking for an integer encoding such as a numerator modulo m in lowest terms, or another quantity that remains integral.
+  - If the natural result is rational, ask for p/q in lowest terms and then request p mod M, p+q, or another division-safe encoding.
+  - If the natural result is algebraic, specify the normalization clearly so the answer is unique.
+  - The output must be a specific number, explicit expression, remainder, or similarly exact encoded quantity.
+
+  Additional transformation standards:
+  - Write a standalone problem statement.
+  - Do not refer to the original problem.
+  - Do not refer to the reference solution.
+  - Do not ask the solver to prove anything.
+  - Specify all constructions and choices clearly so the requested quantity is uniquely determined.
+  - The transformed problem should read like a legitimate olympiad or contest final-answer problem, not like a meta-exercise.
+  - Do not trivialize the task by telegraphing the exact crux too openly in the statement.
+
+  Internal audit before finalizing:
+  Before producing your final output, check all of the following:
+  - If I assume only the original conclusion, does the new answer become routine?
+  - Does my new target genuinely require the crux identified from the reference solution?
+  - Have I preserved the meaningful free choices rather than collapsing them away too early?
+  - Are all added constructions consistent, uniquely defined when needed, and nondegenerate?
+  - Is the final answer exact, unambiguous, and appropriately packaged?
+  - Is the transformed problem still at essentially the same difficulty level as the original proof problem?
+
+  If any answer is unsatisfactory, revise the transformed problem before finalizing.
+
+  Your final response should be in the following format:
+
+  ## Final Answer Problem Statement // Your transformed problem should start with this exact same markdown title
+  ... // Write the standalone final-answer problem here. Do not refer to the original problem. Do not refer to the reference solution. Do not ask the solver to prove anything. Specify all constructions and choices clearly so the requested quantity is uniquely determined.
+
+  The unique final answer for the problem statement above is:
+  \\boxed{{...}} // where ... is the final answer here as a number, explicit expression, remainder, or other exact encoded value. It must match the exact quantity requested in the problem statement above.
+
+  ## EQUIVALENCY EXPLANATION // Your explanation should start with this exact same markdown title
+
+  Here is why this preserves difficulty: // Your analysis should start with this exact same phrase
+  ... // Briefly but concretely explain why the transformed problem preserves the original proof difficulty. You should name the crux lemma or indispensable lemma-set extracted from the reference solution, explain why the final answer cannot be obtained merely by assuming the original conclusion, state the result of the degrees-of-freedom audit, and include the consistency and nondegeneracy sanity check. If the reference solution had any flaw, ambiguity, or hidden assumption, explicitly explain how you handled it.
+
+  Problem:
+  {problem}
+
+  Reference correct solution:
+  {solution}
