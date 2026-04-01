@@ -125,8 +125,8 @@ def main():
 
     parser.add_argument("--model", type=str, default=model, help="Model path/name.")
     parser.add_argument("--server_type", type=str, default="sglang")
-    parser.add_argument("--server_gpus", type=int, default=8)
-    parser.add_argument("--server_nodes", type=int, default=1)
+    parser.add_argument("--server_gpus", type=int, default=4)
+    parser.add_argument("--server_nodes", type=int, default=2)
     parser.add_argument("--server_args", type=str, default=DEFAULT_SERVER_ARGS)
     parser.add_argument("--num_chunks", type=int, default=None)
     parser.add_argument("--num_random_seeds", type=int, default=1)
