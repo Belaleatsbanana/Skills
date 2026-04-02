@@ -29,7 +29,7 @@ DEFAULT_INLINE_ARGS = (
     "++inference.temperature=0.7 "
     "++inference.top_p=0.95"
 )
-DEFAULT_SERVER_ARGS = "--context-length 128000"
+DEFAULT_SERVER_ARGS = "--context-length 32768 --ep-size 16"
 
 
 def _parse_csv_list(value: str | None) -> list[str] | None:
