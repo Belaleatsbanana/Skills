@@ -54,12 +54,15 @@ class _MMLUProXExamplesMap:
         return key.startswith("mmlu_prox_few_shot_")
 
     def keys(self):
+        # No static keys — this map resolves keys on demand at lookup time.
         return iter(())
 
     def items(self):
+        # No static items — this map resolves keys on demand at lookup time.
         return iter(())
 
     def __len__(self):
+        # Reported as 0 so this map is invisible to static deduplication checks.
         return 0
 
 

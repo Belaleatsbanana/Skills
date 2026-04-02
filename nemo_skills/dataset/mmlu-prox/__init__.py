@@ -15,6 +15,15 @@
 
 METRICS_TYPE = "multichoice"
 
-# 5-shot only: resolve few-shot set per-row via `examples_type` field from dataset entries.
-# Escaped quotes keep `{examples_type}` as a string for Hydra parsing, then prompt code formats it per row.
+# Few-shot is disabled by default. To enable 5-shot evaluation, add the examples_type override.
+# The escaping differs depending on where you add it:
+#
+#   In GENERATION_ARGS (this file):  ++examples_type=\\'{examples_type}\\'
+#   On the command line (with surrounding quotes): "++examples_type=\\\\\\\"{examples_type}\\\\\\\""
+#
+# The prompt code formats {examples_type} per row as the user message in the prompt.
+# At inference time, the `examples_type` field is written into each dataset entry by prepare.py
+# (e.g. "mmlu_prox_few_shot_de"). This triggers the dynamic few-shot loader in
+# nemo_skills/prompt/few_shot_examples/mmlu_prox.py, which downloads the first 5 examples from
+# the li-lab/MMLU-ProX validation split for the appropriate language.
 GENERATION_ARGS = "++prompt_config=multilingual/mmlu-prox ++eval_type=multichoice"
