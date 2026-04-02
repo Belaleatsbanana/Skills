@@ -102,7 +102,7 @@ def run_build_stage(args, run_after: list[str] | None):
 
 
 def main():
-    cluster = "hsg"
+    cluster = "dfw"
     model = "/hf_models/DeepSeek-V3.2-Speciale"
     input_file = "/workspace/finalanswer/data/single_problem.jsonl"
     output_dir = "/workspace/finalanswer/results"
