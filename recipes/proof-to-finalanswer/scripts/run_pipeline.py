@@ -25,7 +25,7 @@ ALL_STAGES = [GEN_STAGE, BUILD_STAGE]
 
 DEFAULT_PROMPT_ROOT = "/nemo_run/code/recipes/proof-to-finalanswer/prompts"
 DEFAULT_INLINE_ARGS = (
-    "++inference.tokens_to_generate=100000 "
+    "++inference.tokens_to_generate=30000 "
     "++inference.temperature=0.7 "
     "++inference.top_p=0.95"
 )
