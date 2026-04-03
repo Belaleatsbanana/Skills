@@ -29,7 +29,7 @@ DEFAULT_INLINE_ARGS = (
     "++inference.temperature=1.0 "
     "++inference.top_p=0.95"
 )
-DEFAULT_SERVER_ARGS = "--context-length 32000 --ep-size 16 --disable-cuda-graph --skip-server-warmup"
+DEFAULT_SERVER_ARGS = "--context-length 32000 --ep-size 16 --disable-cuda-graph"
 
 
 def _parse_csv_list(value: str | None) -> list[str] | None:
