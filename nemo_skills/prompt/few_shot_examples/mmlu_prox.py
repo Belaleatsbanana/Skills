@@ -53,6 +53,10 @@ class _MMLUProXExamplesMap:
     def __contains__(self, key):
         return key.startswith("mmlu_prox_few_shot_")
 
+    def __iter__(self):
+        # No static keys — this map resolves keys on demand at lookup time.
+        return iter(())
+
     def keys(self):
         # No static keys — this map resolves keys on demand at lookup time.
         return iter(())
