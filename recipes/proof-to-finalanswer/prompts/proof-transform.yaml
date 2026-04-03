@@ -26,7 +26,6 @@ user: |-
   - If the reference solution contains side arguments, detours, or optional simplifications, compress them to the minimal indispensable backbone.
   - Construct the new problem so that the final answer cannot be determined without establishing that crux.
   - The new target must force the solver to recover the same decisive idea(s), not merely use the final theorem statement as a black box.
-  - If the reference solution appears flawed, incomplete, or reliant on an unjustified step, explicitly say so in the explanation and salvage the strongest valid crux you can. Do not silently rely on unsupported claims.
 
   2. Degrees-of-freedom audit
   - Identify the genuine free choices or parameters in the original configuration, such as:
