@@ -100,10 +100,7 @@ def load_mmlu_prox_validation_few_shot(
     if language not in lang_subjects:
         return []
 
-    try:
-        ds = load_dataset("li-lab/MMLU-ProX", language, split="validation", trust_remote_code=True)
-    except Exception:
-        return []
+    ds = load_dataset("li-lab/MMLU-ProX", language, split="validation", trust_remote_code=True)
 
     examples = []
     for i in range(min(n, len(ds))):
