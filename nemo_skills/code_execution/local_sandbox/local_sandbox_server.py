@@ -256,10 +256,25 @@ class ShellManager:
             try:
                 conn.send({"cmd": "exec", "id": exec_id, "code": code, "traceback_verbosity": traceback_verbosity})
             except Exception as exc:
+                logging.warning(f"Shell process for {shell_id} failed before execution request was sent, restarting")
+                with self.manager_lock:
+                    self.shells.pop(shell_id, None)
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                self.start_shell(shell_id)
+
+                # Mark the new shell as having a restart pending so the caller can restore session state
+                with self.manager_lock:
+                    if shell_id in self.shells:
+                        self.shells[shell_id]["restart_pending"] = True
+
                 return {
                     "status": "error",
                     "msg": f"send failed: {exc}",
                     "shell_was_created": shell_was_created,
+                    "shell_was_restarted": True,
                     "shell_was_recently_restarted": shell_was_recently_restarted,
                 }
 
