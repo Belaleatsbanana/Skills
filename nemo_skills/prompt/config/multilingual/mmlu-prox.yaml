@@ -4,6 +4,4 @@ few_shot_examples:
   suffix: ""
 
 user: |-
-  {description}
-
-  {examples}{problem}
+  {description}{examples}{problem}
