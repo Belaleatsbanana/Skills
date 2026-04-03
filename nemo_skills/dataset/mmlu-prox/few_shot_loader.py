@@ -46,7 +46,7 @@ def _format_validation_row_to_few_shot(entry, language, lang_libs) -> dict:
     # question marker + question + options marker + options + answer prompt.
     problem = f"{ld[0]}\n{entry['question']}\n{ld[1]}\n"
     for i in range(10):
-        opt = entry.get(f"option_{i}")
+        opt = entry[f"option_{i}"]
         if opt is not None:
             problem += f"{chr(ord('A') + i)}. {opt}\n"
     problem += f"{ld[2]}\n"
@@ -98,7 +98,7 @@ def load_mmlu_prox_validation_few_shot(
         lang_libs, lang_subjects = _lang_libs_cache[0]
 
     if language not in lang_subjects:
-        return []
+        raise ValueError(f"Language {language} not found in MMLU-ProX validation split")
 
     ds = load_dataset("li-lab/MMLU-ProX", language, split="validation", trust_remote_code=True)
 
