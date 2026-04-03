@@ -124,7 +124,7 @@ def parse_generate_solution_response(response_text: str) -> dict[str, Any]:
     self_eval_section = extract_markdown_section(clean_text, GENERATE_SOLUTION_EVAL_HEADER)
     parsed_solution = solution_section or clean_text
     return {
-        "clean_generation": clean_text,
+        "clean_generation": response_text,
         "solution": parsed_solution,
         "self_evaluation": self_eval_section,
         "self_score_raw": boxed_score,
