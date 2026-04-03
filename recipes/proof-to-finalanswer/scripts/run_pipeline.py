@@ -25,11 +25,11 @@ ALL_STAGES = [GEN_STAGE, BUILD_STAGE]
 
 DEFAULT_PROMPT_ROOT = "/nemo_run/code/recipes/proof-to-finalanswer/prompts"
 DEFAULT_INLINE_ARGS = (
-    "++inference.tokens_to_generate=100000 "
+    "++inference.tokens_to_generate=10000 "
     "++inference.temperature=1.0 "
     "++inference.top_p=0.95"
 )
-DEFAULT_SERVER_ARGS = "--context-length 128000 --ep-size 16"
+DEFAULT_SERVER_ARGS = "--context-length 32000 --ep-size 16 --disable-cuda-graph --skip-server-warmup"
 
 
 def _parse_csv_list(value: str | None) -> list[str] | None:
@@ -104,7 +104,7 @@ def run_build_stage(args, run_after: list[str] | None):
 def main():
     cluster = "dfw"
     model = "/hf_models/DeepSeek-V3.2-Speciale"
-    input_file = "/workspace/finalanswer/data/single_problem.jsonl"
+    input_file = "/workspace/finalanswer/data/easy_problem.jsonl"
     output_dir = "/workspace/finalanswer/results"
 
     parser = argparse.ArgumentParser(description="Proof-to-finalanswer pipeline runner.")
