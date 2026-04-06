@@ -23,7 +23,6 @@ user: |-
   Your final assessment must be one of the following:
 
   - 0 = not equivalent; the two problems are not essentially equivalent, or one is much easier than the other
-  - 0.5 = close but not fully equivalent; the final-answer problem would need modifications before the pair becomes essentially equivalent in difficulty
   - 1 = equivalent; the two problems and their solutions are essentially equivalent in both content and difficulty
 
   Your analysis should be exceptionally careful and explicit, and it will be judged according to the following evaluation instruction:
@@ -37,11 +36,6 @@ user: |-
   - the core obstacle, indispensable lemmas, constructions, or structural identifications in the reference solutions are equivalent in substance,
   - and Problem 2 does not admit a materially easier route that bypasses the main crux of Problem 1.
 
-  A score of 0.5 should be given if:
-  - the two problems are clearly related and close in spirit, but they are not yet fully equivalent in formulation with an easy modification to fix and get a faithful reformulation,
-  - or Problem 2 is a faithful reformilation of Problem 1 but is missing a constraint, has an avoidable shortcut, collapses an important degree of freedom too early, asks for a target that becomes routine once the theorem is known, or otherwise fails to fully preserve the original difficulty,
-  - and there are plausible concrete modifications to Problem 2 that could make the pair be equivalent in consistency and difficulty which would deserve a score of 1.
-
   A score of 0 should be given if:
   - the two problems are not essentially solving the same task,
   - or the mismatch in assumptions, target, or structure is substantial,
@@ -54,7 +48,6 @@ user: |-
   - But you must not be fooled by a solution that imitates another solution unnecessarily.
   - The real question is whether the statement of Problem 2 actually requires equivalent mathematical work, i.e. if the reference solution to Problem 2 actually needs all its steps.
   - If the provided Solution 2 is elaborate but the problem statement itself allows a much easier shortcut, this must count against equivalence.
-  - If you give a score of 0.5, you should explain what concrete modifications to Problem 2 could raise the score to 1.
 
   Your final response should be in the following format:
 
@@ -62,7 +55,7 @@ user: |-
   ... // Your analysis of the equivalence between the two problems (with solutions). You are required to analyze both statement-level consistency and difficulty-level equivalence. Your analysis should provide clear and detailed justification for its score according to the criteria provided above. In particular, if the score is 0.5, you must explicitly describe what concrete modifications to Problem 2 could raise the score to 1. If the score is 0, you must explicitly describe why the equivalency breaks, e.g. shortcut solution to Problem 2 or inconsistency in statements. If the score is 1, you must provide explicit justification for the faithfulness of the reformulation, and the necessity of difficulty in the reference solutions.
 
   Based on my evaluation of the two problem, solution pairs, the final equivalence score should be:
-  \\boxed{{...}} // where ... should be the final overall score (0, 0.5, or 1, and nothing else) based on the criteria above.
+  \\boxed{{...}} // where ... should be the final overall score (0 or 1, and nothing else) based on the criteria above.
 
   Problem 1
   {proof_problem}

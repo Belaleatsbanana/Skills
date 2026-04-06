@@ -25,11 +25,11 @@ ALL_STAGES = [GEN_STAGE, BUILD_STAGE]
 
 DEFAULT_PROMPT_ROOT = "/nemo_run/code/recipes/proof-to-finalanswer/prompts"
 DEFAULT_INLINE_ARGS = (
-    "++inference.tokens_to_generate=20000 "
+    "++inference.tokens_to_generate=50000 "
     "++inference.temperature=1.0 "
     "++inference.top_p=0.95"
 )
-DEFAULT_SERVER_ARGS = "--context-length 32000 --ep-size 16"
+DEFAULT_SERVER_ARGS = "--context-length 64000 --ep-size 16"
 
 
 def _parse_csv_list(value: str | None) -> list[str] | None:

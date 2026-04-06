@@ -82,7 +82,7 @@ user: |-
   - Does my new target genuinely require the crux identified from the reference solution?
   - Have I preserved the meaningful free choices rather than collapsing them away too early?
   - Are all added constructions consistent, uniquely defined when needed, and nondegenerate?
-  - Is the final answer exact, unambiguous, and appropriately packaged?
+  - Is the final answer exact, unambiguous, appropriately packaged and most importantly correct?
   - Is the transformed problem still at essentially the same difficulty level as the original proof problem?
 
   If any answer is unsatisfactory, revise the transformed problem before finalizing.
