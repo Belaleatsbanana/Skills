@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,43 +16,53 @@ from pathlib import Path
 
 from datasets import load_dataset
 
+
+def process_safim_subset(subset_name: str, output_dir: Path) -> int:
+    """Loads and transforms a specific SAFIM subset."""
+    print(f"Processing subset: {subset_name}...")
+
+    # Load dataset
+    ds = load_dataset("gonglinyuan/safim", subset_name, split="test")
+
+    def transform(example):
+        # 1. Split the prompt into prefix and suffix
+        parts = example["eval_prompt"].split("{{completion}}")
+        prefix = parts[0]
+        suffix = parts[1] if len(parts) > 1 else ""
+
+        # 2. Map language to comment delimiter
+        # Using a dictionary is much safer than complex and/or logic
+        lang = str(example["lang"]).lower()
+        delimiters = {
+            "python": "#",
+            "cpp": "//",
+            "java": "//",
+            "javascript": "//",
+            "csharp": "//",
+        }
+        comment_delimiter = delimiters.get(lang, "#")
+
+        return {
+            "prefix": prefix,
+            "suffix": suffix,
+            "language": example["lang"],
+            "comment_delimiter": comment_delimiter,
+        }
+
+    # Apply transformations and remove old columns in one go
+    ds = ds.map(transform)
+    ds = ds.remove_columns(["prompt", "eval_prompt", "lang"])
+
+    output_path = output_dir / f"{subset_name}.jsonl"
+    ds.to_json(str(output_path), orient="records", lines=True)
+
+    return len(ds)
+
+
 if __name__ == "__main__":
-    data_dir = Path(__file__).absolute().parent
-    api_dataset = load_dataset("gonglinyuan/safim", "api", split="test")
-    block_dataset = load_dataset("gonglinyuan/safim", "block", split="test")
-    control_dataset = load_dataset("gonglinyuan/safim", "control", split="test")
+    data_dir = Path(__file__).resolve().parent
+    subsets = ["api", "block", "control"]
 
-    api_dataset = api_dataset.map(
-        lambda x: {
-            "prefix": x["eval_prompt"].split("{{completion}}")[0],
-            "suffix": x["eval_prompt"].split("{{completion}}")[1],
-        }
-    )
-    block_dataset = block_dataset.map(
-        lambda x: {
-            "prefix": x["eval_prompt"].split("{{completion}}")[0],
-            "suffix": x["eval_prompt"].split("{{completion}}")[1],
-        }
-    )
-    control_dataset = control_dataset.map(
-        lambda x: {
-            "prefix": x["eval_prompt"].split("{{completion}}")[0],
-            "suffix": x["eval_prompt"].split("{{completion}}")[1],
-        }
-    )
-
-    api_dataset = api_dataset.map(lambda x: {"language": x["lang"]})
-    block_dataset = block_dataset.map(lambda x: {"language": x["lang"]})
-    control_dataset = control_dataset.map(lambda x: {"language": x["lang"]})
-
-    api_dataset = api_dataset.remove_columns(["prompt", "eval_prompt", "lang"])
-    block_dataset = block_dataset.remove_columns(["prompt", "eval_prompt", "lang"])
-    control_dataset = control_dataset.remove_columns(["prompt", "eval_prompt", "lang"])
-
-    print(f"Number of examples in api: {len(api_dataset)}")
-    print(f"Number of examples in block: {len(block_dataset)}")
-    print(f"Number of examples in control: {len(control_dataset)}")
-
-    api_dataset.to_json("api.jsonl", orient="records", lines=True)
-    block_dataset.to_json("block.jsonl", orient="records", lines=True)
-    control_dataset.to_json("control.jsonl", orient="records", lines=True)
+    for subset in subsets:
+        count = process_safim_subset(subset, data_dir)
+        print(f"Number of examples in {subset}: {count}")

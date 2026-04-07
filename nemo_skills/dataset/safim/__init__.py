@@ -15,6 +15,9 @@
 # settings that define how evaluation should be done by default (all can be changed from cmdline)
 DATASET_GROUP = "code"
 METRICS_TYPE = "safim"
+# Pipeline default input: nemo_skills/dataset/safim/{EVAL_SPLIT}.jsonl (see prepare.py).
+# Use split=api|block|control when launching eval for each subset.
+EVAL_SPLIT = "api"
 GENERATION_ARGS = "++prompt_config=generic/fim ++eval_type=safim"
 GENERATION_MODULE = "nemo_skills.inference.eval.safim"
 REQUIRES_SANDBOX = True
