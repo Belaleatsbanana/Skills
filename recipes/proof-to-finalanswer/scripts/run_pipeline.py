@@ -25,11 +25,11 @@ ALL_STAGES = [GEN_STAGE, BUILD_STAGE]
 
 DEFAULT_PROMPT_ROOT = "/nemo_run/code/recipes/proof-to-finalanswer/prompts"
 DEFAULT_INLINE_ARGS = (
-    "++inference.tokens_to_generate=50000 "
+    "++inference.tokens_to_generate=100000 "
     "++inference.temperature=1.0 "
     "++inference.top_p=0.95"
 )
-DEFAULT_SERVER_ARGS = "--context-length 64000 --ep-size 16"
+DEFAULT_SERVER_ARGS = "--context-length 128000 --ep-size 16"
 
 
 def _parse_csv_list(value: str | None) -> list[str] | None:
@@ -78,7 +78,6 @@ def run_generation_stage(args, run_after: list[str] | None):
         server_args=args.server_args,
         run_after=run_after,
         exclusive=True,
-        partition="interactive",
     )
     return expname
 
@@ -104,8 +103,17 @@ def run_build_stage(args, run_after: list[str] | None):
 def main():
     cluster = "dfw"
     model = "/hf_models/DeepSeek-V3.2-Speciale"
-    input_file = "/workspace/finalanswer/data/single_easy.jsonl"
-    output_dir = "/workspace/finalanswer/results"
+    input = "ultra_proof_problems_subset"
+    expname = f"transform_{input}"
+    input_file = f"/workspace/finalanswer/data/{input}.jsonl"
+    output_dir = f"/workspace/finalanswer/{expname}"
+    server_gpus = 8
+    server_nodes = 2
+    num_chunks = 16
+    proof_attempts = 4
+    finalanswer_attempts = 4
+    transform_attempts = 1
+    comparison_attempts = 1
 
     parser = argparse.ArgumentParser(description="Proof-to-finalanswer pipeline runner.")
     parser.add_argument(
@@ -115,7 +123,7 @@ def main():
         help=f"Comma-separated stages to run. Available: {', '.join(ALL_STAGES)}",
     )
     parser.add_argument("--cluster", type=str, default=cluster, help="Cluster config name.")
-    parser.add_argument("--expname", type=str, default="proof-to-finalanswer")
+    parser.add_argument("--expname", type=str, default=expname)
     parser.add_argument("--run_after", type=str, default="", help="Comma-separated dependency experiment names.")
 
     parser.add_argument("--input_file", type=str, default=input_file, help="Input jsonl file with proof problems.")
@@ -125,10 +133,10 @@ def main():
 
     parser.add_argument("--model", type=str, default=model, help="Model path/name.")
     parser.add_argument("--server_type", type=str, default="sglang")
-    parser.add_argument("--server_gpus", type=int, default=8)
-    parser.add_argument("--server_nodes", type=int, default=2)
+    parser.add_argument("--server_gpus", type=int, default=server_gpus)
+    parser.add_argument("--server_nodes", type=int, default=server_nodes)
     parser.add_argument("--server_args", type=str, default=DEFAULT_SERVER_ARGS)
-    parser.add_argument("--num_chunks", type=int, default=None)
+    parser.add_argument("--num_chunks", type=int, default=num_chunks)
     parser.add_argument("--num_random_seeds", type=int, default=1)
     parser.add_argument("--dependent_jobs", type=int, default=0)
     parser.add_argument("--inline_args", type=str, default=DEFAULT_INLINE_ARGS)
@@ -161,10 +169,10 @@ def main():
         type=str,
         default=None,
     )
-    parser.add_argument("--proof_solution_attempts", type=int, default=2)
-    parser.add_argument("--final_answer_solution_attempts", type=int, default=2)
-    parser.add_argument("--transform_attempts", type=int, default=1)
-    parser.add_argument("--comparison_attempts", type=int, default=1)
+    parser.add_argument("--proof_solution_attempts", type=int, default=proof_attempts)
+    parser.add_argument("--final_answer_solution_attempts", type=int, default=finalanswer_attempts)
+    parser.add_argument("--transform_attempts", type=int, default=transform_attempts)
+    parser.add_argument("--comparison_attempts", type=int, default=comparison_attempts)
     parser.add_argument("--required_equivalence_score", type=float, default=1.0)
     parser.add_argument("--keep_attempt_generations", action="store_true")
 
