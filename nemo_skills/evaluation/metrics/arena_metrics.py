@@ -15,6 +15,8 @@
 import re
 from collections import defaultdict
 
+import numpy as np
+
 from nemo_skills.evaluation.metrics.base import BaseMetrics
 
 
@@ -39,6 +41,70 @@ class ArenaMetrics(BaseMetrics):
         prediction["judgement-gen-base"] = "Rating: [[A>>B]]"
         prediction["judgement-base-gen"] = "Rating: [[B>>A]]"
         return prediction
+
+    def get_style_metadata(self, answer):
+        # adapted from https://github.com/lmarena/arena-hard-auto/blob/main/utils/add_markdown_info.py
+
+        def count_markdown_elements(markdown_text, suffix):
+            counters = {
+                f"header_count{suffix}": {
+                    "h1": len(re.findall(r"^#{1}\s", markdown_text, re.MULTILINE)),
+                    "h2": len(re.findall(r"^#{2}\s", markdown_text, re.MULTILINE)),
+                    "h3": len(re.findall(r"^#{3}\s", markdown_text, re.MULTILINE)),
+                    "h4": len(re.findall(r"^#{4}\s", markdown_text, re.MULTILINE)),
+                    "h5": len(re.findall(r"^#{5}\s", markdown_text, re.MULTILINE)),
+                    "h6": len(re.findall(r"^#{6}\s", markdown_text, re.MULTILINE)),
+                },
+                f"list_count{suffix}": {
+                    "ordered": len(re.findall(r"^\s*\d+\.\s", markdown_text, re.MULTILINE)),
+                    "unordered": len(re.findall(r"^\s*[-*+]\s", markdown_text, re.MULTILINE)),
+                },
+                f"bold_count{suffix}": {
+                    "**": len(re.findall(r"\*\*[^*\n]+\*\*", markdown_text)),
+                    "__": len(re.findall(r"__[^_\n]+__", markdown_text)),
+                },
+            }
+            return counters
+
+        def remove_pattern(answer, pattern):
+            blocks = pattern.findall(answer)
+            for block in blocks:
+                answer = answer.replace(block, "")
+            return answer
+
+        def get_num_tokens(answer):
+            import tiktoken
+
+            encoding = tiktoken.encoding_for_model("gpt-4o")
+            return len(encoding.encode(answer, disallowed_special=()))
+
+        metadata = {"token_len": get_num_tokens(answer)}
+        return metadata | count_markdown_elements(
+            remove_pattern(answer, re.compile("```([^`]*)```")),
+            suffix="",
+        )
+
+    def get_style_features(self, baseline: str, answer: str) -> np.array:
+        # adapted from https://github.com/lmarena/arena-hard-auto/blob/main/show_result.py
+        baseline_style_metadata = self.get_style_metadata(baseline)
+        answer_style_metadata = self.get_style_metadata(answer)
+        baseline_feature_tensor = np.array(
+            [v if isinstance(v, int) else sum(v.values()) for k, v in baseline_style_metadata.items()]
+        )
+        answer_feature_tensor = np.array(
+            [v if isinstance(v, int) else sum(v.values()) for k, v in answer_style_metadata.items()]
+        )
+        # model features are normalized against baseline features
+        normalized_feature_tensor = np.zeros_like(answer_feature_tensor, dtype=float)
+        normalized_feature_tensor[0] = (answer_feature_tensor[0] - baseline_feature_tensor[0]) / (
+            answer_feature_tensor[0] + baseline_feature_tensor[0]
+        )
+        model_md_density = answer_feature_tensor[1:] / (answer_feature_tensor[0] + 1)
+        baseline_md_density = baseline_feature_tensor[1:] / (baseline_feature_tensor[0] + 1)
+        normalized_feature_tensor[1:] = (model_md_density - baseline_md_density) / (
+            model_md_density + baseline_md_density + 1
+        )
+        return normalized_feature_tensor
 
     def update(self, predictions):
         """Updating the evaluation results with the current element.
@@ -67,6 +133,12 @@ class ArenaMetrics(BaseMetrics):
                     self.scores[-1].append(possible_score)
                     best_id = judge_scores.index(possible_score)
                     self.lengths += predictions[best_id].get("num_generated_tokens", 0)
+                    self.style_features.append(
+                        self.get_style_features(
+                            predictions[best_id]["baseline_answer"],
+                            predictions[best_id]["generation"],
+                        )
+                    )
                     break
             else:
                 self.scores[-1].append(None)  # in case judge didn't generate a valid score
@@ -79,38 +151,76 @@ class ArenaMetrics(BaseMetrics):
                     self.scores[-1].append(possible_score)
                     best_id = judge_scores.index(possible_score)
                     self.lengths += predictions[best_id].get("num_generated_tokens", 0)
+                    self.style_features.append(
+                        self.get_style_features(
+                            predictions[best_id]["baseline_answer"],
+                            predictions[best_id]["generation"],
+                        )
+                    )
                     break
             else:
                 self.scores[-1].append(None)  # in case judge didn't generate a valid score
         else:
             self.lengths += predictions[0].get("num_generated_tokens", 0)
+            self.style_features.append(
+                self.get_style_features(
+                    predictions[0]["baseline_answer"],
+                    predictions[0]["generation"],
+                )
+            )
             self.scores[-1] = [
                 self._get_judge_score(predictions[0]["judgement-gen-base"]),
                 self._get_judge_score(predictions[0]["judgement-base-gen"]),
             ]
 
-    def get_metrics(self):
+    def get_metrics(
+        self, style_control=False, category_style_control_normalization_factors=None, category_style_control_coefs=None
+    ):
+        """
+        Args:
+            style_control (bool): Whether to use style (length and markdown) control.
+            category_style_control_normalization_factors (dict): A dictionary of normalization factors (mean and std) for each style feature, for each category.
+            category_style_control_coefs (dict): A dictionary of fixed regression coefficients, for each category.
+        """
         from nemo_skills.evaluation.evaluator.arena import get_aggregate_score
 
         metrics_dict = {}
 
-        # Compute overall metrics
-        overall_metrics = {"num_entries": self.total}
-        overall_metrics.update(get_aggregate_score(self.scores))
-        self.update_common_metrics(overall_metrics)
-
-        # Group scores by category for per-category metrics
+        # Group by category
         category_scores = defaultdict(list)
         for score, category in zip(self.scores, self.categories, strict=True):
             category_scores[category].append(score)
 
-        # If we have multiple categories, compute per-category metrics
-        unique_categories = set(self.categories)
-        if len(unique_categories) > 1:
-            for category, scores in category_scores.items():
-                cat_metrics = {"num_entries": len(scores)}
-                cat_metrics.update(get_aggregate_score(scores))
-                overall_metrics[f"category_{category}"] = cat_metrics
+        category_style_features = defaultdict(list)
+        for style_feature, category in zip(self.style_features, self.categories, strict=True):
+            category_style_features[category].append(style_feature)
+
+        # Compute per-category metrics
+        overall_metrics = {"num_entries": self.total}
+        self.update_common_metrics(overall_metrics)
+
+        unique_categories = sorted(set(self.categories))
+        for category in unique_categories:
+            scores = category_scores[category]
+            if style_control:
+                style_features = np.array(category_style_features[category])
+                if category_style_control_normalization_factors is not None:
+                    mean = category_style_control_normalization_factors[category]["mean"]
+                    std = category_style_control_normalization_factors[category]["std"]
+                else:
+                    mean = style_features.mean(axis=0)
+                    std = style_features.std(axis=0)
+                style_features = (style_features - mean) / std
+                if category_style_control_coefs is not None:
+                    style_features_coefs = category_style_control_coefs[category]
+                else:
+                    style_features_coefs = None
+            else:
+                style_features = None
+                style_features_coefs = None
+            cat_metrics = {"num_entries": len(scores)}
+            cat_metrics.update(get_aggregate_score(scores, style_features, style_features_coefs))
+            overall_metrics[f"category_{category}"] = cat_metrics
 
         metrics_dict[self.agg_mode] = overall_metrics
         # arena metrics have their own confidence estimation, so not doing std metrics here
@@ -121,6 +231,7 @@ class ArenaMetrics(BaseMetrics):
         self.scores = []  # list of lists
         self.categories = []  # list of category strings
         self.lengths = 0
+        self.style_features = []
         # TODO: the class should support pass@k, but this forces it to report as pass@1.
         #       There is some error here for k>1
         self.agg_mode = "pass@1"

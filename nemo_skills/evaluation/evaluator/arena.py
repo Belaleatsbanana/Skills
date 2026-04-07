@@ -21,6 +21,7 @@ from collections import defaultdict
 
 import numpy as np
 import pandas as pd
+import statsmodels.api as sm
 from sklearn.linear_model import LogisticRegression
 
 from nemo_skills.utils import get_logger_name
@@ -32,7 +33,7 @@ JUDGE_MODEL = "gpt-4-1106-preview"
 JUDGE_SERVER = "openai"
 
 
-def compute_mle_elo(df, SCALE=400, BASE=10, INIT_RATING=1000):
+def compute_mle_elo(df, SCALE=400, BASE=10, INIT_RATING=1000, control_features=None, control_feature_coefs=None):
     models = pd.concat([df["model_a"], df["model_b"]]).unique()
     models = pd.Series(np.arange(len(models)), index=models)
 
@@ -45,6 +46,12 @@ def compute_mle_elo(df, SCALE=400, BASE=10, INIT_RATING=1000):
     X[np.arange(n), models[df["model_a"]]] = +math.log(BASE)
     X[np.arange(n), models[df["model_b"]]] = -math.log(BASE)
 
+    # add control features to the design matrix
+    X_control = None
+    if control_features is not None:
+        X_control = np.asarray(control_features[df["index"], :], dtype=float)
+        X = np.concatenate([X, X_control], axis=1)
+
     # one A win => two A win
     Y = np.zeros(n)
     Y[df["winner"] == "model_a"] = 1.0
@@ -55,10 +62,22 @@ def compute_mle_elo(df, SCALE=400, BASE=10, INIT_RATING=1000):
     tie_idx[len(tie_idx) // 2 :] = False
     Y[tie_idx] = 1.0
 
-    lr = LogisticRegression(fit_intercept=False, penalty=None, tol=1e-8)
-    lr.fit(X, Y)
+    if control_feature_coefs is not None:
+        if X_control is None:
+            raise ValueError("control_feature_coefs requires control_features")
+        if control_feature_coefs.shape[0] != X_control.shape[1]:
+            raise ValueError(
+                f"control_feature_coefs length {control_feature_coefs.shape[0]} != number of control columns {X_control.shape[1]}"
+            )
+        offset = X_control @ control_feature_coefs  # per-row
+        glm = sm.GLM(Y, X[:, :p], family=sm.families.Binomial(), offset=offset)
+        model_coef = glm.fit(tol=1e-8).params
+    else:
+        lr = LogisticRegression(fit_intercept=False, penalty=None, tol=1e-8)
+        lr.fit(X, Y)
+        model_coef = lr.coef_[0][:p]
 
-    elo_scores = SCALE * lr.coef_[0] + INIT_RATING
+    elo_scores = SCALE * model_coef + INIT_RATING
 
     # set anchor as gpt-4-0314 = 1000
     if "baseline" in models.index:
@@ -66,13 +85,20 @@ def compute_mle_elo(df, SCALE=400, BASE=10, INIT_RATING=1000):
     return pd.Series(elo_scores, index=models.index).sort_values(ascending=False)
 
 
-def get_bootstrap_result(battles, func_compute_elo, num_round):
+def get_bootstrap_result(battles, func_compute_elo, num_round, control_features=None, control_feature_coefs=None):
     rows = []
     kwargs = {}
     if "baseline" in inspect.signature(func_compute_elo).parameters:
         kwargs["baseline"] = "baseline"
     for _ in range(num_round):
-        rows.append(func_compute_elo(battles.sample(frac=1.0, replace=True), **kwargs))
+        rows.append(
+            func_compute_elo(
+                battles.sample(frac=1.0, replace=True),
+                control_features=control_features,
+                control_feature_coefs=control_feature_coefs,
+                **kwargs,
+            )
+        )
     df = pd.DataFrame(rows)
     return df[df.median().sort_values(ascending=False).index]
 
@@ -104,9 +130,9 @@ def get_battles_from_judgment(scores, WEIGHT=3):
     arena_hard_battles = pd.DataFrame()
     num_invalid = 0
 
-    for score in scores:
+    for row_index, score in enumerate(scores):
         # game 1
-        output = {"model_a": "candidate", "model_b": "baseline"}
+        output = {"model_a": "candidate", "model_b": "baseline", "index": row_index}
 
         assert len(score) == 2
         cur_score = score[0]
@@ -132,7 +158,7 @@ def get_battles_from_judgment(scores, WEIGHT=3):
             arena_hard_battles = pd.concat([arena_hard_battles, pd.DataFrame([output] * weight)])
 
         # game 2
-        output = {"model_a": "candidate", "model_b": "baseline"}
+        output = {"model_a": "candidate", "model_b": "baseline", "index": row_index}
 
         cur_score = score[1]
 
@@ -158,23 +184,22 @@ def get_battles_from_judgment(scores, WEIGHT=3):
     return arena_hard_battles, num_invalid
 
 
-def get_aggregate_score(scores, weight=3):
+def get_aggregate_score(scores, control_features=None, control_feature_coefs=None, weight=3):
     battles, num_invalid = get_battles_from_judgment(scores, weight)
-    bootstrap_online_elo = compute_mle_elo(battles)
 
     np.random.seed(42)
     num_rounds = 100
-    bootstrap_elo_lu = get_bootstrap_result(battles, compute_mle_elo, num_rounds)
+    bootstrap_elo_lu = get_bootstrap_result(
+        battles, compute_mle_elo, num_rounds, control_features, control_feature_coefs
+    )
 
     stats = pd.DataFrame()
     stats["results"] = None
     stats["results"] = stats["results"].astype("object")
 
-    for i, model in enumerate(bootstrap_online_elo.index):
-        assert model in bootstrap_elo_lu.columns
-
+    for i, model in enumerate(bootstrap_elo_lu.columns):
         stats.at[i, "model"] = model
-        stats.at[i, "score"] = bootstrap_online_elo[model]
+        stats.at[i, "score"] = bootstrap_elo_lu[model].mean()
         stats.at[i, "lower"] = np.percentile(bootstrap_elo_lu[model], 2.5)
         stats.at[i, "upper"] = np.percentile(bootstrap_elo_lu[model], 97.5)
         stats.at[i, "results"] = bootstrap_elo_lu[model].tolist()
