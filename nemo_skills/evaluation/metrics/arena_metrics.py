@@ -19,6 +19,22 @@ import numpy as np
 
 from nemo_skills.evaluation.metrics.base import BaseMetrics
 
+# Pre-computed style-control normalization factors and regression coefficients
+DEFAULT_CATEGORY_STYLE_CONTROL_NORMALIZATION_FACTORS = {
+    "hard_prompt": {
+        "mean": np.array([0.0904, 0.0020, 0.0075, 0.0091]),
+        "std": np.array([0.3343, 0.0044, 0.0116, 0.0119]),
+    },
+    "creative_writing": {
+        "mean": np.array([0.0243, 0.0005, -0.0016, -0.0024]),
+        "std": np.array([0.3345, 0.0022, 0.0100, 0.0161]),
+    },
+}
+DEFAULT_CATEGORY_STYLE_CONTROL_COEFS = {
+    "hard_prompt": np.array([0.4332, 0.1713, 0.1071, 0.1268]),
+    "creative_writing": np.array([0.3337, 0.1287, -0.3389, 0.0034]),
+}
+
 
 class ArenaMetrics(BaseMetrics):
     def __init__(self):
@@ -174,13 +190,18 @@ class ArenaMetrics(BaseMetrics):
             ]
 
     def get_metrics(
-        self, style_control=False, category_style_control_normalization_factors=None, category_style_control_coefs=None
+        self,
+        style_control=True,
+        category_style_control_normalization_factors=DEFAULT_CATEGORY_STYLE_CONTROL_NORMALIZATION_FACTORS,
+        category_style_control_coefs=DEFAULT_CATEGORY_STYLE_CONTROL_COEFS,
     ):
         """
         Args:
             style_control (bool): Whether to use style (length and markdown) control.
-            category_style_control_normalization_factors (dict): A dictionary of normalization factors (mean and std) for each style feature, for each category.
-            category_style_control_coefs (dict): A dictionary of fixed regression coefficients, for each category.
+            category_style_control_normalization_factors (dict | None): Per-category mean/std for
+                style features. If None, uses empirical mean/std from the current data.
+            category_style_control_coefs (dict | None): Per-category fixed regression coefficients.
+                If None, fits coefficients from the current data.
         """
         from nemo_skills.evaluation.evaluator.arena import get_aggregate_score
 
