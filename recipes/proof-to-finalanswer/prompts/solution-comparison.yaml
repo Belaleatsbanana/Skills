@@ -9,53 +9,91 @@ user: |-
 
   You must determine whether the two problems are equivalent in both of the following senses:
 
-  1. Consistency / content equivalence
-  - The two problems should be essentially about the same underlying mathematical task.
-  - Problem 2 should be a faithful final-answer reformulation of Problem 1, not a different problem that merely looks related.
-  - The hypotheses, objects, degrees of freedom, and intended conclusion should match in substance, even if the wording differs.
+  1. Underlying mathematical burden / content equivalence
+  Do NOT judge equivalence only at the surface level of wording, named objects, or final presentation.
 
-  2. Difficulty / solution-spine equivalence
-  - Solving Problem 2 should require essentially the same core ideas as solving Problem 1.
-  - Given the reference solutions, the indispensable crux, key lemmas, structural identifications, or dependency spine should be equivalent in substance.
-  - It is not enough that Solution 2 is written in a style similar to Solution 1. You must judge whether Problem 2 itself forces comparable work.
-  - If Problem 2 admits a substantially easier shortcut, even if the provided Solution 2 does not use it, then the two problems are not equivalent in difficulty.
+  Problem 2 may still be equivalent to Problem 1 even if it:
+  - removes auxiliary objects, intermediate claims, or parts of the original final wording,
+  - replaces a proof target by a value-computation, identity, extremal value, classification, or yes/no determination,
+  - or compresses the original task into a “normal form” of the decisive relation used in the proof of Problem 1.
 
-  Your final assessment must be one of the following:
+  What matters is whether Problem 2 preserves the same underlying mathematical information that must be discovered.
 
-  - 0 = not equivalent; the two problems are not essentially equivalent, or one is much easier than the other
-  - 1 = equivalent; the two problems and their solutions are essentially equivalent in both content and difficulty
+  Do not reject equivalence merely because the expressions or final conclusions look different.
+  Instead, determine whether the transformed problem requires the same crux, a weaker corollary of that crux, or a genuinely different argument.
 
-  Your analysis should be exceptionally careful and explicit, and it will be judged according to the following evaluation instruction:
+  In particular, treat Problem 2 as content-equivalent to Problem 1 if solving Problem 2 forces the solver to recover the same indispensable relation, invariant, structural identification, reduction, or lemma that carries the real burden of Problem 1, and the remaining passage to the full conclusion of Problem 1 is only routine, standard, or formal cleanup.
 
-  ```txt
-  Here is the instruction to evaluate whether two problems are equivalent.
+  Do not reject equivalence merely because Problem 2 makes the proof based Problem 1 into a numeric or computation based problem as long as the extra numeric conditions do not lead to a much easier solution.
 
-  A score of 1 should be given only if:
-  - Problem 2 is a faithful reformulation of Problem 1 in substance, not merely in surface appearance,
-  - the two problems are solving essentially the same mathematical task,
-  - the core obstacle, indispensable lemmas, constructions, or structural identifications in the reference solutions are equivalent in substance,
-  - and Problem 2 does not admit a materially easier route that bypasses the main crux of Problem 1.
+  Conversely, if Problem 2 asks only for a corollary, byproduct, special case, routine consequence, or isolated sublemma of Problem 1’s solution, then the problems are NOT content-equivalent.
 
-  A score of 0 should be given if:
-  - the two problems are not essentially solving the same task,
-  - or the mismatch in assumptions, target, or structure is substantial,
-  - or the core solution ideas are materially different,
-  - or one problem is much easier than the other,
-  - or Problem 2 can be solved by substantially more routine means than Problem 1.
+  2. Difficulty / minimal solution-spine equivalence
+  You must compare the minimal non-routine core required by the problem statements themselves, not merely the style of the provided solutions.
 
-  Important:
-  - You must evaluate both the problem statements and the provided solutions.
-  - But you must not be fooled by a solution that imitates another solution unnecessarily.
-  - The real question is whether the statement of Problem 2 actually requires equivalent mathematical work, i.e. if the reference solution to Problem 2 actually needs all its steps.
-  - If the provided Solution 2 is elaborate but the problem statement itself allows a much easier shortcut, this must count against equivalence.
+  For each problem, identify the smallest set of genuinely indispensable ideas needed in a strong solution:
+  - decisive lemmas,
+  - invariants,
+  - structural reductions,
+  - nontrivial constructions or parameterizations,
+  - key transformations,
+  - essential case splits.
 
-  Your final response should be in the following format:
+  Then compare those minimal cores.
 
-  Here is the analysis of the two problem, solution pairs: // Your analysis should start with this exact same phrase
-  ... // Your analysis of the equivalence between the two problems (with solutions). You are required to analyze both statement-level consistency and difficulty-level equivalence. Your analysis should provide clear and detailed justification for its score according to the criteria provided above. In particular, if the score is 0.5, you must explicitly describe what concrete modifications to Problem 2 could raise the score to 1. If the score is 0, you must explicitly describe why the equivalency breaks, e.g. shortcut solution to Problem 2 or inconsistency in statements. If the score is 1, you must provide explicit justification for the faithfulness of the reformulation, and the necessity of difficulty in the reference solutions.
+  Important principles:
+  - Auxiliary objects appearing in Problem 1 may be only scaffolding. Their absence from Problem 2 does NOT by itself break equivalence.
+  - A different final packaging (proof vs exact value vs identity vs yes/no answer) does NOT by itself break equivalence.
+  - Do NOT be fooled by Solution 2 imitating Solution 1 unnecessarily.
+  - Do NOT be fooled by surface mismatch in conclusions if the same crux must still be discovered.
+  - You must perform a shortcut audit for BOTH problems, especially Problem 2.
+  - Judge the true difficulty of each problem by the easiest valid substantial solution you can see, not by the reference solution alone.
+  - A score of 1 is allowed even if Problem 2 looks narrower, PROVIDED that its answer cannot be obtained without essentially the same hard step that drives Problem 1, and any extra work in Problem 1 after that step is routine.
+  - A score of 0 is required if Problem 2 removes any genuinely non-routine burden present in Problem 1, or if it isolates only a subsidiary statement that is not itself the real bottleneck.
+
+  Use the following procedure:
+
+  Step 1. Extract the minimal indispensable crux of Problem 1 from its statement and reference solution.
+  Separate genuinely non-routine steps from routine algebra, bookkeeping, or standard deductions.
+
+  Step 2. Extract the minimal indispensable crux of Problem 2 from its statement and reference solution.
+  Again separate the real crux from routine cleanup.
+
+  Step 3. Determine whether the pieces omitted from Problem 1 in Problem 2 are essential mathematical burdens or merely scaffolding / presentation.
+
+  Step 4. Perform a shortcut audit.
+  Ask whether either problem, especially Problem 2, admits a materially easier route that avoids the putative common crux.
+
+  Step 5. Apply the routine-recovery test.
+  - If, after obtaining the crux forced by Problem 2, the substantive conclusion of Problem 1 follows by only routine or standard steps, this supports equivalence.
+  - If Problem 2 can be solved without recovering the crux that Problem 1 genuinely needs, this defeats equivalence.
+
+  Step 6. Decide the score.
+  Give score 1 only if the two problems have the same minimal non-routine mathematical payload up to routine reformulation or compression.
+  Otherwise give 0.
+
+  Scoring rule:
+  - 1 = equivalent
+    Give 1 only if Problem 2 is either a faithful reformulation OR a faithful compression of Problem 1, preserving the same indispensable mathematical burden and real difficulty.
+  - 0 = not equivalent
+    Give 0 if:
+    - the two problems are not solving the same underlying mathematical task,
+    - or Problem 2 is only a corollary / byproduct / special case / routine consequence,
+    - or the core crux differs in substance,
+    - or one problem is materially easier because it admits a simpler valid route,
+    - or Problem 2 removes genuine non-routine work that Problem 1 requires.
+
+  Your final response must be in the following format:
+
+  Here is the analysis of the two problem, solution pairs:
+  Essential crux of Problem 1: ...
+  Essential crux of Problem 2: ...
+  Are the differences merely packaging, or do they remove real mathematical work?: ...
+  Shortcut audit: ...
+  Verdict on equivalence in content and difficulty: ...
 
   Based on my evaluation of the two problem, solution pairs, the final equivalence score should be:
-  \\boxed{{...}} // where ... should be the final overall score (0 or 1, and nothing else) based on the criteria above.
+  \boxed{...}
 
   Problem 1
   {proof_problem}

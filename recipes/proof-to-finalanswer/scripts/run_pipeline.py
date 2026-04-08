@@ -110,8 +110,8 @@ def main():
     server_gpus = 8
     server_nodes = 2
     num_chunks = 16
-    proof_attempts = 4
-    finalanswer_attempts = 4
+    proof_attempts = 2
+    finalanswer_attempts = 2
     transform_attempts = 1
     comparison_attempts = 1
 
