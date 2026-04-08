@@ -30,6 +30,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import psutil
 from flask import Flask, request
 from IPython.terminal.interactiveshell import TerminalInteractiveShell
+from traitlets.config import Config
 
 app = Flask(__name__)
 
@@ -100,7 +101,15 @@ def shell_worker(conn):
         _socket_module.socket = BlockedSocket  # Blocks: import _socket; _socket.socket()
         socket_module.socket = BlockedSocket  # Blocks: import socket; socket.socket()
 
-    shell = TerminalInteractiveShell()
+    # Keep IPython history process-local so workers and sessions do not contend on a shared history.sqlite file.
+    shell_config = Config()
+    shell_config.HistoryManager.hist_file = ":memory:"
+    shell = TerminalInteractiveShell(config=shell_config)
+    # TerminalInteractiveShell installs a SIGINT handler that calls sys.exit(0)
+    # instead of raising KeyboardInterrupt when _executing is False (which is
+    # the case when run_cell is called programmatically). Restore the default
+    # handler so SIGINT raises KeyboardInterrupt and our except clause catches it.
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     try:
         while True:
             try:
@@ -203,7 +212,7 @@ class ShellManager:
         proc.terminate()
         proc.join(timeout=2.0)
 
-    def run_cell(self, shell_id, code, timeout=1.0, grace=0.5, traceback_verbosity="Plain"):
+    def run_cell(self, shell_id, code, timeout=1.0, grace=2.0, traceback_verbosity="Plain"):
         """
         Execute `code` on shell `shell_id`.
         - timeout: seconds to wait for normal completion
@@ -427,7 +436,7 @@ def execute_ipython_session(generated_code, session_id, timeout=30, traceback_ve
 
         # Execute code using ShellManager with proper timeout and cancellation
         result = shell_manager.run_cell(
-            session_id, generated_code, timeout=timeout, grace=0.5, traceback_verbosity=traceback_verbosity
+            session_id, generated_code, timeout=timeout, grace=2.0, traceback_verbosity=traceback_verbosity
         )
 
         # Determine if this is effectively a new session

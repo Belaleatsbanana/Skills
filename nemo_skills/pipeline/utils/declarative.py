@@ -293,14 +293,24 @@ class Command:
             # If inline_cmd is still callable here, we intentionally do not wrap it; it should
             # have been evaluated above. This keeps behavior deterministic.
 
-        # Build execution config from Script fields
+        # Build execution config from Script fields.
+        # Mounts priority: explicit Command.mounts > keep_mounts logic > default (inherit).
+        # For SandboxScript, keep_mounts=False (the safe default) maps to mounts=[]
+        # so the sandbox container has no access to cluster filesystems.
+        # keep_mounts=True maps to mounts=None, which inherits cluster mounts.
+        if self.mounts is not None:
+            resolved_mounts = self.mounts
+        else:
+            keep_mounts = getattr(self.script, "keep_mounts", True)
+            resolved_mounts = None if keep_mounts else []
+
         merged_env = dict(runtime_metadata.get("environment", {}))
         if self.environment:
             merged_env.update(self.environment)
         execution_config = {
             "log_prefix": getattr(self.script, "log_prefix", "main"),
             "environment": merged_env,
-            "mounts": self.mounts,
+            "mounts": resolved_mounts,
             "container": self.container,
         }
 
