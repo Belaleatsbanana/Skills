@@ -36,6 +36,7 @@ sacrebleu
 scikit-learn
 sentence_transformers
 serpapi
+statsmodels
 sympy
 torchcodec
 tqdm

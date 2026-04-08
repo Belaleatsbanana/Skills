@@ -108,9 +108,16 @@ def predict_win_rate(elo_ratings, SCALE=400, BASE=10, INIT_RATING=1000):
     wins = defaultdict(lambda: defaultdict(lambda: 0))
     for a in names:
         for b in names:
-            ea = 1 / (1 + BASE ** ((elo_ratings[b] - elo_ratings[a]) / SCALE))
+            #  avoid overflow issues
+            exponent = ((elo_ratings[b] - elo_ratings[a]) / SCALE) * math.log(BASE)
+            if exponent > 700:
+                ea = 0.0
+            elif exponent < -700:
+                ea = 1.0
+            else:
+                ea = 1.0 / (1.0 + math.exp(exponent))
             wins[a][b] = ea
-            wins[b][a] = 1 - ea
+            wins[b][a] = 1.0 - ea
 
     data = {a: [wins[a][b] if a != b else np.nan for b in names] for a in names}
 

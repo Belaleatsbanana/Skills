@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import re
 from collections import defaultdict
 
 import numpy as np
 
 from nemo_skills.evaluation.metrics.base import BaseMetrics
+from nemo_skills.utils import get_logger_name
+
+LOG = logging.getLogger(get_logger_name(__file__))
 
 # Pre-computed style-control normalization factors and regression coefficients
 DEFAULT_CATEGORY_STYLE_CONTROL_NORMALIZATION_FACTORS = {
@@ -34,6 +38,15 @@ DEFAULT_CATEGORY_STYLE_CONTROL_COEFS = {
     "hard_prompt": np.array([0.4332, 0.1713, 0.1071, 0.1268]),
     "creative_writing": np.array([0.3337, 0.1287, -0.3389, 0.0034]),
 }
+
+
+def categories_covered_for_style_control(categories, norm_factors, coefs):
+    """Return True if norm/coef dicts contain every category."""
+    if norm_factors is not None and not all(c in norm_factors for c in categories):
+        return False
+    if coefs is not None and not all(c in coefs for c in categories):
+        return False
+    return True
 
 
 class ArenaMetrics(BaseMetrics):
@@ -198,6 +211,8 @@ class ArenaMetrics(BaseMetrics):
         """
         Args:
             style_control (bool): Whether to use style (length and markdown) control.
+                Legacy categories (e.g. missing ``category``, ``arena-hard-v0.1``) don't use style
+                control.
             category_style_control_normalization_factors (dict | None): Per-category mean/std for
                 style features. If None, uses empirical mean/std from the current data.
             category_style_control_coefs (dict | None): Per-category fixed regression coefficients.
@@ -205,7 +220,18 @@ class ArenaMetrics(BaseMetrics):
         """
         from nemo_skills.evaluation.evaluator.arena import get_aggregate_score
 
-        metrics_dict = {}
+        unique_categories = sorted(set(self.categories))
+        if style_control and not categories_covered_for_style_control(
+            unique_categories,
+            category_style_control_normalization_factors,
+            category_style_control_coefs,
+        ):
+            LOG.info(
+                "Disabling style control: not all categories %s have entries in the "
+                "normalization and coefficient tables.",
+                unique_categories,
+            )
+            style_control = False
 
         # Group by category
         category_scores = defaultdict(list)
@@ -216,33 +242,68 @@ class ArenaMetrics(BaseMetrics):
         for style_feature, category in zip(self.style_features, self.categories, strict=True):
             category_style_features[category].append(style_feature)
 
-        # Compute per-category metrics
         overall_metrics = {"num_entries": self.total}
         self.update_common_metrics(overall_metrics)
+        if not unique_categories:
+            metrics_dict = {self.agg_mode: overall_metrics}
+            return metrics_dict
 
-        unique_categories = sorted(set(self.categories))
-        for category in unique_categories:
-            scores = category_scores[category]
-            if style_control:
-                style_features = np.array(category_style_features[category])
+        multi_category = len(unique_categories) > 1
+
+        category_style_features_mean_std = {}
+        if style_control:
+            for category in unique_categories:
+                raw_features = np.array(category_style_features[category])
                 if category_style_control_normalization_factors is not None:
                     mean = category_style_control_normalization_factors[category]["mean"]
                     std = category_style_control_normalization_factors[category]["std"]
                 else:
-                    mean = style_features.mean(axis=0)
-                    std = style_features.std(axis=0)
-                style_features = (style_features - mean) / std
+                    mean = raw_features.mean(axis=0)
+                    std = raw_features.std(axis=0)
+                if (std == 0).any():
+                    LOG.warning(
+                        "Category %r: zero standard deviation in style features; "
+                        "skipping style control for this category only.",
+                        category,
+                    )
+                    category_style_features_mean_std[category] = None
+                else:
+                    category_style_features_mean_std[category] = (mean, std)
+
+        for category in unique_categories:
+            scores = category_scores[category]
+            style_features = None
+            style_features_coefs = None
+            if style_control and category_style_features_mean_std[category] is not None:
+                mean, std = category_style_features_mean_std[category]
+                raw_features = np.array(category_style_features[category])
+                style_features = (raw_features - mean) / std
                 if category_style_control_coefs is not None:
                     style_features_coefs = category_style_control_coefs[category]
-                else:
-                    style_features_coefs = None
-            else:
-                style_features = None
-                style_features_coefs = None
             cat_metrics = {"num_entries": len(scores)}
             cat_metrics.update(get_aggregate_score(scores, style_features, style_features_coefs))
-            overall_metrics[f"category_{category}"] = cat_metrics
+            if multi_category:
+                overall_metrics[f"category_{category}"] = cat_metrics
+            else:
+                overall_metrics.update(cat_metrics)
 
+        if multi_category:
+            # assuming equal weight for each category
+            score_sum = 0
+            se_squared_sum = 0
+            invalid_scores_sum = 0
+            for category in unique_categories:
+                score_sum += overall_metrics[f"category_{category}"]["score"]
+                lower, upper = overall_metrics[f"category_{category}"]["95_CI"]
+                se = (upper - lower) / 2 * 1.96
+                se_squared_sum += se**2
+                invalid_scores_sum += overall_metrics[f"category_{category}"]["invalid_scores"]
+            se = np.sqrt(se_squared_sum)
+            overall_metrics["95_CI"] = (- se * 1.96, se * 1.96)
+            overall_metrics["score"] = score_sum / len(unique_categories)
+            overall_metrics["invalid_scores"] = invalid_scores_sum
+
+        metrics_dict = {}
         metrics_dict[self.agg_mode] = overall_metrics
         # arena metrics have their own confidence estimation, so not doing std metrics here
         return metrics_dict
