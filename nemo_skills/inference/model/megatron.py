@@ -32,10 +32,13 @@ class MegatronModel(BaseModel):
         top_k: int = -1,
         min_p: float = 0.0,
         repetition_penalty: float = 1.0,
+        presence_penalty: float = 0.0,
+        frequency_penalty: float = 0.0,
         random_seed: int = None,
         stop_phrases: list[str] | None = None,
         timeout: int | None = None,
         top_logprobs: int | None = None,
+        response_format=None,
         **kwargs,
     ) -> dict:
         # Validations
@@ -48,6 +51,7 @@ class MegatronModel(BaseModel):
         if top_k != -1:
             raise NotImplementedError("Megatron server does not support top_k parameter.")
         assert kwargs.get("tools") is None, "Megatron server does not support tools parameter."
+        assert response_format is None, "Megatron server does not support response_format parameter."
 
         params = {
             "messages": messages,
@@ -61,8 +65,8 @@ class MegatronModel(BaseModel):
             "echo": False,
             "n": 1,
             "logit_bias": None,
-            "frequency_penalty": 0.0,
-            "presence_penalty": 0.0,
+            "frequency_penalty": frequency_penalty,
+            "presence_penalty": presence_penalty,
             "timeout": timeout,
         }
         return params
@@ -77,10 +81,13 @@ class MegatronModel(BaseModel):
         top_k: int = -1,
         min_p: float = 0.0,
         repetition_penalty: float = 1.0,
+        presence_penalty: float = 0.0,
+        frequency_penalty: float = 0.0,
         random_seed: int = None,
         stop_phrases: list[str] | None = None,
         timeout: int | None = None,
         top_logprobs: int | None = None,
+        response_format=None,
         **kwargs,
     ) -> dict:
         # Parameter validation specific to Megatron
@@ -93,6 +100,7 @@ class MegatronModel(BaseModel):
         if top_k != -1:
             raise NotImplementedError("Megatron server does not support top_k parameter.")
         assert kwargs.get("tools") is None, "Megatron server does not support tools parameter."
+        assert response_format is None, "Megatron server does not support response_format parameter."
 
         return {
             "prompt": prompt,
@@ -106,8 +114,8 @@ class MegatronModel(BaseModel):
             "echo": False,
             "n": 1,
             "logit_bias": None,
-            "frequency_penalty": 0.0,
-            "presence_penalty": 0.0,
+            "frequency_penalty": frequency_penalty,
+            "presence_penalty": presence_penalty,
             "timeout": timeout,
         }
 

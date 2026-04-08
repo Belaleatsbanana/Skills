@@ -24,8 +24,9 @@ if __name__ == "__main__":
         type=str,
         default="docker://swebench/sweb.eval.x86_64.{instance_id}",
         help="Container formatter string. You can download .sif containers and store them in a mounted "
-        "directory which you can reference here to avoid redownloading all the time.",
-    )  # TODO: add download script
+        "directory which you can reference here to avoid redownloading all the time. "
+        "See nemo_skills/dataset/swe-bench/dump_images.py",
+    )
     parser.add_argument("--split", type=str, default="test", help="Swe-Bench dataset split to use")
     parser.add_argument(
         "--setup", type=str, default="default", help="Setup name (used as nemo-skills split parameter)."
@@ -48,4 +49,9 @@ if __name__ == "__main__":
     dataset = dataset.add_column("container_id", list(range(len(dataset))))
     dataset = dataset.add_column("dataset_name", [dataset_name] * len(dataset))
     dataset = dataset.add_column("split", [split] * len(dataset))
+
+    if dataset_name == "princeton-nlp/SWE-bench_Verified":
+        # Add language column for more convenient use with multilingual pipelines
+        dataset = dataset.add_column("language", ["python"] * len(dataset))
+
     dataset.to_json(output_file, orient="records", lines=True)

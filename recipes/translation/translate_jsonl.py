@@ -21,7 +21,11 @@ from typing import List
 import hydra
 import iso639
 
-from nemo_skills.inference.generate import GenerateSolutionsConfig, GenerationTask, InferenceConfig
+from nemo_skills.inference.generate import (
+    GenerationTask,
+    GenerationTaskConfig,
+    InferenceConfig,
+)
 from nemo_skills.utils import nested_dataclass, setup_logging
 
 LOG = logging.getLogger(__name__)
@@ -91,7 +95,8 @@ def full_language_name(lang_code: str) -> str:
 
 
 @nested_dataclass(kw_only=True)
-class TranslationConfig(GenerateSolutionsConfig):
+class TranslationConfig(GenerationTaskConfig):
+    source_lang: str = "en"
     target_lang: str = "zh"
     use_skipme: bool = False
     fields_to_translate: List[str] = field(default_factory=lambda: ["conversations.*.value"])
@@ -219,7 +224,7 @@ class TranslationTask(GenerationTask):
         async_position = 0
         for text in all_translatable_lines:
             translation_data_point = {
-                "source_lang": full_language_name("en"),
+                "source_lang": full_language_name(self.cfg.source_lang),
                 "target_lang": full_language_name(self.cfg.target_lang),
                 "src": text,
                 self.cfg.async_position_key: async_position,
@@ -238,7 +243,7 @@ class TranslationTask(GenerationTask):
                 data[0]
                 if isinstance(data[0], dict) and "src" in data[0]
                 else {
-                    "source_lang": "English",
+                    "source_lang": full_language_name(self.cfg.source_lang),
                     "target_lang": full_language_name(self.cfg.target_lang),
                     "src": "Sample text to translate",
                 }

@@ -27,7 +27,7 @@ from typing import Any
 
 import hydra
 import litellm
-from omegaconf import ListConfig
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
@@ -37,6 +37,7 @@ from nemo_skills.evaluation.evaluator import (
     get_evaluator_class,
     supports_single_eval,
 )
+from nemo_skills.inference.litellm_hybrid_cache import StableLiteLLMCache
 from nemo_skills.inference.model import (
     ParallelThinkingConfig,
     get_code_execution_model,
@@ -46,6 +47,7 @@ from nemo_skills.inference.model import (
     server_params,
 )
 from nemo_skills.inference.model.base import EndpointType
+from nemo_skills.inference.structured_outputs import STRUCTURED_OUTPUTS
 from nemo_skills.prompt.utils import get_prompt, get_token_count
 from nemo_skills.utils import (
     chunk_data,
@@ -69,9 +71,9 @@ class InferenceConfig:
     # You can override tokenizer with tokenizer parameter.
     # "responses": for responses api format.
     endpoint_type: EndpointType = EndpointType.chat
-    temperature: float = 0.0  # Temperature of 0 means greedy decoding
+    temperature: float | None = 0.0  # Temperature of 0 means greedy decoding
     top_k: int = -1
-    top_p: float = 0.95
+    top_p: float | None = 0.95
     min_p: float = 0.0
     random_seed: int = 0
     tokens_to_generate: int | None = None
@@ -79,17 +81,18 @@ class InferenceConfig:
     top_logprobs: int | None = None
     timeout: int | None = 14400  # Timeout for each individual LLM call in seconds
     reasoning_effort: str | None = None
+    stream: bool = False  # Use streaming for tool-calling
 
     extra_body: dict = field(default_factory=dict)  # Any other extra params passed with extra_body argument
 
 
 @nested_dataclass(kw_only=True)
-class GenerateSolutionsConfig:
+class GenerationTaskConfig:
     """Generation parameters."""
 
     input_file: str  # Path to the input file with data
     output_file: str  # Where to save the generations
-    prompt_config: str | None = None  # How to format the data into prompts
+    prompt_config: Any = None  # How to format the data into prompts (str path, dict, or None)
 
     # Deprecated, please use endpoint_type in the InferenceConfig instead
     use_completions_api: bool = False
@@ -102,6 +105,7 @@ class GenerateSolutionsConfig:
     prompt_format: str = "ns"
     prompt_suffix: str = ""  # suffix to add to the prompt, e.g. " /no_think"
     system_message: str | None = None  # can override the default system message in the config
+    user_message: str | None = None  # can override the user message in the prompt config template
     code_tags: str | None = None  # required when using code execution
     examples_type: str | None = None  # to be able to customize few-shot examples
 
@@ -197,6 +201,8 @@ class GenerateSolutionsConfig:
     #      --config-path /path/to/configs --config-name config
     schema_overrides: dict | None = field(default_factory=dict)
 
+    max_tool_calls: int = -1  # If >= 0, will limit the number of tool calls executed during generation to this number
+
     # if True, will move full generation to _full_generation key and keep cfg.generation_key without thinking tokens
     # IMPORTANT: do not set this for non-reasoning models as it will make the generations empty!
     parse_reasoning: bool = False
@@ -205,9 +211,20 @@ class GenerateSolutionsConfig:
     # If True, will enable litellm disk cache (useful for keeping intermediate results in case of job timelimit failures)
     enable_litellm_cache: bool = False
 
+    # List of content types to drop from messages (e.g., base64 audio) to keep output files smaller
+    drop_content_types: list[str] = field(default_factory=lambda: ["audio_url", "input_audio"])
+
+    # Audio configuration - set by benchmarks that need audio processing (mmau-pro, audiobench, etc.)
+    enable_audio: bool = False  # Enable audio preprocessing (set by benchmark configs)
+    enable_audio_chunking: bool = True
+    audio_chunk_task_types: list[str] | None = None  # If None, chunk all task types; if specified, only chunk these
+    chunk_audio_threshold_sec: int = 30  # Duration in seconds for each audio chunk
+
     # Evaluation setup if requested. If eval_type is set to None, evaluation is skipped
     eval_type: str | None = None  # "lean4-proof", "math", etc.
     eval_config: dict = field(default_factory=dict)  # Config for the evaluator
+
+    structured_output: str | None = None
 
     def __post_init__(self):
         self._post_init_validate_data()
@@ -236,10 +253,9 @@ class GenerateSolutionsConfig:
         if self.prompt_format not in ["ns", "openai"]:
             raise ValueError(f"prompt_format must be either 'ns' or 'openai', got '{self.prompt_format}'")
 
-        if self.prompt_format == "openai":
-            assert self.prompt_config is None, "prompt_config is not supported for prompt_format == 'openai'"
-        else:
-            assert self.prompt_config is not None, "prompt_config is required when prompt_format == 'ns'"
+        if self.prompt_format == "ns":
+            if self.prompt_config is None:
+                raise ValueError("prompt_config is required when prompt_format == 'ns'")
         for param, default_value in self._get_disallowed_params():
             if getattr(self, param) != default_value:
                 raise ValueError(f"{param} must be {default_value}")
@@ -254,7 +270,7 @@ class GenerateSolutionsConfig:
 
 
 cs = hydra.core.config_store.ConfigStore.instance()
-cs.store(name="base_generation_config", node=GenerateSolutionsConfig)
+cs.store(name="base_generation_config", node=GenerationTaskConfig)
 
 
 class GenerationTask:
@@ -282,16 +298,25 @@ class GenerationTask:
 
         return get_server_command
 
-    def __init__(self, cfg: GenerateSolutionsConfig):
+    @classmethod
+    def get_generation_requirements(cls) -> list[str] | None:
+        """Return extra requirements for this generation module, if any."""
+        return None
+
+    def __init__(self, cfg: GenerationTaskConfig):
         """
         Class that represents a generation task. It implements a template of steps to generate solutions using LLMs.
         Individual functions can be overriden to customize the behavior of the generation task.
 
         Args:
-            cfg: GenerateSolutionsConfig object with the configuration parameters or subclass.
+            cfg: GenerationTaskConfig object with the configuration parameters or subclass.
         """
         self.cfg = cfg
-        self.cfg.inference.extra_body = dict(self.cfg.inference.extra_body)
+
+        if isinstance(self.cfg.inference.extra_body, DictConfig):
+            self.cfg.inference.extra_body = OmegaConf.to_container(self.cfg.inference.extra_body, resolve=True)
+        else:
+            self.cfg.inference.extra_body = dict(self.cfg.inference.extra_body)
 
         # chat template kwargs goes either into extra body of inference or as a prompt parameter
         if self.cfg.chat_template_kwargs:
@@ -317,8 +342,12 @@ class GenerationTask:
         # Setup tokenizer
         if (
             self.cfg.inference.endpoint_type == EndpointType.text
-            or self.cfg.server.get("enable_soft_fail", False)
+            or (
+                self.cfg.server.get("enable_soft_fail", False)
+                and self.cfg.server.get("context_limit_retry_strategy", None) is not None
+            )
             or self.cfg.count_prompt_tokens
+            or (self.cfg.tool_modules is not None and self.cfg.inference.tokens_to_generate is not None)
         ):
             # These are the only cases where we need a tokenizer
             self.tokenizer = self.cfg.tokenizer or self.cfg.server["model"]
@@ -338,7 +367,7 @@ class GenerationTask:
         # Setup hf_tokenizer for counting prompt tokens
         self.hf_tokenizer = None
         if self.cfg.count_prompt_tokens:
-            self.hf_tokenizer = AutoTokenizer.from_pretrained(self.tokenizer)
+            self.hf_tokenizer = AutoTokenizer.from_pretrained(self.tokenizer, trust_remote_code=True)
 
             if self.hf_tokenizer is None:
                 raise ValueError("Tokenizer could not be initialized. Needed for counting prompt tokens.")
@@ -382,7 +411,8 @@ class GenerationTask:
         self.output_lock = None
 
     def setup_prompt(self):
-        if self.cfg.prompt_format == "openai":
+        if self.cfg.prompt_config is None:
+            # openai format without prompt_config -- messages come from data
             return None
 
         prompt = get_prompt(
@@ -391,6 +421,7 @@ class GenerationTask:
             code_tags=self.cfg.code_tags,
             examples_type=self.cfg.examples_type,
             system_message=self.cfg.system_message,
+            user_message=self.cfg.user_message,
         )
 
         LOG.info("Prompt used: %s", prompt)
@@ -399,19 +430,68 @@ class GenerationTask:
     def setup_llm(self):
         self.sandbox = get_sandbox(**self.cfg.sandbox) if self.cfg.sandbox is not None else None
 
+        # Determine data_dir for resolving relative paths (e.g., images, audio)
+        # Always resolve relative to input file's parent directory
+        if self.cfg.input_file:
+            self.data_dir = str(Path(self.cfg.input_file).parent)
+        else:
+            self.data_dir = None
+
+        output_dir = str(Path(self.cfg.output_file).parent)
+
+        # Determine if audio processing is needed
+        # Benchmarks that need audio set enable_audio=true in their GENERATION_ARGS
+        needs_audio = self.cfg.enable_audio
+
+        # Build server config, potentially switching to vllm_multimodal for audio tasks
+        server_config = dict(self.cfg.server)
+        if needs_audio and server_config.get("server_type") not in ["vllm", "vllm_multimodal"]:
+            LOG.warning(
+                f"enable_audio is set but server_type is '{server_config.get('server_type')}'. "
+                "Audio processing is only supported for vllm_multimodal server types. "
+                "Audio will not be processed."
+            )
+        if needs_audio and server_config.get("server_type") in [
+            "vllm",
+            "vllm_multimodal",
+        ]:  # helps with backward compatibility
+            if server_config.get("server_type") == "vllm":
+                LOG.warning("Auto-switching server_type from 'vllm' to 'vllm_multimodal' for audio processing")
+            server_config["server_type"] = "vllm_multimodal"
+            # Pass audio chunking config
+            server_config.update(
+                {
+                    "enable_audio_chunking": self.cfg.enable_audio_chunking,
+                    "audio_chunk_task_types": self.cfg.audio_chunk_task_types,
+                    "chunk_audio_threshold_sec": self.cfg.chunk_audio_threshold_sec,
+                }
+            )
+
         if self.cfg.code_execution:
-            llm = get_code_execution_model(**self.cfg.server, tokenizer=self.tokenizer, sandbox=self.sandbox)
+            llm = get_code_execution_model(
+                **server_config,
+                tokenizer=self.tokenizer,
+                sandbox=self.sandbox,
+                data_dir=self.data_dir or "",
+                output_dir=output_dir,
+            )
         elif self.cfg.tool_modules is not None:
             llm = get_tool_calling_model(
-                **self.cfg.server,
+                **server_config,
                 tool_modules=self.cfg.tool_modules,
                 tool_overrides=self.cfg.tool_overrides,
                 schema_overrides=self.cfg.schema_overrides,
+                max_tool_calls=self.cfg.max_tool_calls,
                 tokenizer=self.tokenizer,
+                require_tokenizer=self.cfg.inference.tokens_to_generate is not None,
                 additional_config={"sandbox": self.cfg.sandbox},
+                data_dir=self.data_dir or "",
+                output_dir=output_dir,
             )
         else:
-            llm = get_model(**self.cfg.server, tokenizer=self.tokenizer)
+            llm = get_model(
+                **server_config, tokenizer=self.tokenizer, data_dir=self.data_dir or "", output_dir=output_dir
+            )
 
         if self.cfg.parallel_thinking.mode is not None:
             # We don't want to override these key variables which overlap with self.cfg
@@ -508,19 +588,107 @@ class GenerationTask:
 
         return remaining_data
 
-    # TODO: data will not include any samples skipped after restart
-    def fill_prompt(self, data_point, data):
-        """Passing in full data in case it's needed to fill the prompt in subclasses."""
-        if self.cfg.prompt_format == "openai":
-            if self.cfg.prompt_suffix:
-                data_point["messages"][-1]["content"] += self.cfg.prompt_suffix
-            if self.cfg.system_message:
-                if data_point["messages"][0]["role"] != "system":
-                    data_point["messages"].insert(0, {"role": "system", "content": self.cfg.system_message})
-                else:
-                    data_point["messages"][0]["content"] = self.cfg.system_message
-            return data_point["messages"]
+    def _merge_audio_from_data(self, template_filled_messages, data_point):
+        """Copy audio metadata from original data messages into template-generated messages.
 
+        Normalizes to a single "audios" list on each message. Openai-format data always
+        has messages; top-level audio is not used in practice.
+        """
+        if "messages" not in data_point or not isinstance(data_point["messages"], (list, ListConfig)):
+            return
+        original_messages = data_point["messages"]
+        used_original_messages = [False] * len(original_messages)
+        for msg in template_filled_messages:
+            if "audios" in msg:
+                continue
+            for idx, orig_msg in enumerate(original_messages):
+                if used_original_messages[idx]:
+                    continue
+                if orig_msg["role"] != msg["role"]:
+                    continue
+                if "name" in msg and orig_msg.get("name") != msg["name"]:
+                    continue
+
+                audios = orig_msg.get("audios") or ([orig_msg["audio"]] if "audio" in orig_msg else None)
+                if audios:
+                    msg["audios"] = audios
+                used_original_messages[idx] = True
+                break
+
+    @staticmethod
+    def _set_message_text_content(message: dict, text: str) -> None:
+        """Set text content for string or multimodal message content while preserving non-text items."""
+        content = message["content"]
+        if isinstance(content, str):
+            message["content"] = text
+            return
+        if not isinstance(content, list):
+            raise TypeError(f"Unexpected content type: {type(content)}")
+
+        for item in content:
+            if item.get("type") == "text":
+                item["text"] = text
+                return
+        content.insert(0, {"type": "text", "text": text})
+
+    @staticmethod
+    def _append_message_text_suffix(message: dict, suffix: str) -> None:
+        """Append suffix to text content for string or multimodal message content."""
+        content = message["content"]
+        if isinstance(content, str):
+            message["content"] = content + suffix
+            return
+        if not isinstance(content, list):
+            raise TypeError(f"Unexpected content type: {type(content)}")
+
+        for item in content:
+            if item.get("type") == "text":
+                item["text"] += suffix
+                return
+        content.append({"type": "text", "text": suffix})
+
+    # TODO: data will not include any samples skipped after restart
+    def fill_prompt(self, data_point, data, prompt_format=None):
+        """Passing in full data in case it's needed to fill the prompt in subclasses."""
+        prompt_format = prompt_format or self.cfg.prompt_format
+        if prompt_format == "openai":
+            if self.prompt is None:
+                # Pure openai path -- messages come from the data
+                data_point = deepcopy(data_point)
+                if self.cfg.user_message:
+                    user_msgs = [m for m in data_point["messages"] if m["role"] == "user"]
+                    if len(user_msgs) != 1:
+                        raise ValueError(
+                            f"user_message override expects exactly 1 user message, found {len(user_msgs)}"
+                        )
+                    GenerationTask._set_message_text_content(user_msgs[0], self.cfg.user_message)
+                if self.cfg.prompt_suffix:
+                    GenerationTask._append_message_text_suffix(data_point["messages"][-1], self.cfg.prompt_suffix)
+                if self.cfg.system_message:
+                    if data_point["messages"][0]["role"] != "system":
+                        data_point["messages"].insert(0, {"role": "system", "content": self.cfg.system_message})
+                    else:
+                        data_point["messages"][0]["content"] = self.cfg.system_message
+                return data_point["messages"]
+
+            # OpenAI path with prompt_config template -- build prompt from template, merge audio from data.
+            data_point = deepcopy(data_point)
+            filled_prompt = self.prompt.fill(
+                data_point,
+                start_assistant_response_key=self.cfg.start_assistant_response_key,
+                chat_template_kwargs=self.cfg.chat_template_kwargs,
+                format_as_string=(self.cfg.inference.endpoint_type == EndpointType.text),
+            )
+            if isinstance(filled_prompt, list):
+                self._merge_audio_from_data(filled_prompt, data_point)
+            if self.cfg.prompt_suffix:
+                if isinstance(filled_prompt, list):
+                    GenerationTask._append_message_text_suffix(filled_prompt[-1], self.cfg.prompt_suffix)
+                else:
+                    filled_prompt += self.cfg.prompt_suffix
+            return filled_prompt
+
+        # NS path -- always uses prompt template
         total_code_executions_in_prompt = self.cfg.total_code_executions_in_prompt
         if total_code_executions_in_prompt is not None:
             if isinstance(total_code_executions_in_prompt, (list, tuple)):
@@ -536,14 +704,33 @@ class GenerationTask:
         )
         if self.cfg.prompt_suffix:
             if isinstance(filled_prompt, list):
-                filled_prompt[-1]["content"] += self.cfg.prompt_suffix
-            else:
+                GenerationTask._append_message_text_suffix(filled_prompt[-1], self.cfg.prompt_suffix)
+            elif isinstance(filled_prompt, str):
                 filled_prompt += self.cfg.prompt_suffix
         return filled_prompt
 
     def dump_outputs(self, outputs, data_points, fout):
         for output in outputs:
             fout.write(json.dumps(output) + "\n")
+
+    def drop_fields_from_messages(self, output):
+        """Remove specified content types from messages to keep output files smaller.
+
+        Filters out content types listed in drop_content_types config f.e. base64 data.
+        """
+        # Skip if output doesn't have messages (e.g., text completion mode or error cases)
+        if "messages" not in output:
+            return
+
+        for message in output["messages"]:
+            # Skip if content is not a list (e.g., string content in system messages)
+            if not isinstance(message.get("content"), list):
+                continue
+
+            # Filter out content types specified in drop_content_types config
+            message["content"] = [
+                content for content in message["content"] if content["type"] not in self.cfg.drop_content_types
+            ]
 
     async def postprocess_single_output(self, output, original_data_point):
         # to make it easier to follow up with other generations and limit accidental errors, we are adding
@@ -560,6 +747,10 @@ class GenerationTask:
         for key in output:
             original_data_point.pop(key, None)
         output.update(original_data_point)
+
+        # Drop specified content types (f.e base64 audio) from output to reduce file size
+        self.drop_fields_from_messages(output)
+
         if self.cfg.parse_reasoning:
             parse_reasoning(
                 output,
@@ -582,7 +773,7 @@ class GenerationTask:
         # Override this method to customize the prefilling behavior.
         return None
 
-    async def process_single_datapoint(self, data_point, all_data):
+    async def process_single_datapoint(self, data_point, all_data, prompt_format=None):
         # Handle inference config - check if it's a dataclass or already a dict
         if is_dataclass(self.cfg.inference):
             inference_params = asdict(self.cfg.inference)
@@ -593,9 +784,12 @@ class GenerationTask:
         generation_params = {
             **inference_params,
             **self.extra_generate_params,
-            "prompt": self.fill_prompt(data_point, all_data),
+            "prompt": self.fill_prompt(data_point=data_point, data=all_data, prompt_format=prompt_format),
             "stop_phrases": [self.cfg.stop_phrase] if self.cfg.stop_phrase else None,
         }
+
+        if self.cfg.structured_output is not None:
+            generation_params["response_format"] = STRUCTURED_OUTPUTS[self.cfg.structured_output]
 
         if self.cfg.code_execution:
             if self.cfg.override_max_code_executions and self.cfg.total_code_executions_in_prompt is not None:
@@ -617,7 +811,18 @@ class GenerationTask:
         as long as those requests also use this function.
         """
         async with self.semaphore:
-            return await self.llm.generate_async(**generation_params)
+            result = await self.llm.generate_async(**generation_params)
+            # When streaming, generate_async returns an async generator.
+            # Drain it and return only the final result dict.
+            if hasattr(result, "__aiter__"):
+                final = None
+                async for chunk in result:
+                    if isinstance(chunk, dict) and chunk.get("type") == "final":
+                        final = chunk
+                if final is None:
+                    raise RuntimeError("Streaming generation did not produce a final result")
+                return final
+            return result
 
     async def evaluate_single_datapoint(self, data_point):
         eval_start_time = time.time()
@@ -737,10 +942,11 @@ class GenerationTask:
             self.litellm_cache_dir = (
                 Path(self.cfg.output_file).parent / "litellm_cache" / f"{output_file_name}_{self.cfg.chunk_id or 0}"
             )
-            litellm.cache = litellm.Cache(type="disk", disk_cache_dir=self.litellm_cache_dir)
+            litellm.cache = StableLiteLLMCache(cache_file_path=str(self.litellm_cache_dir / "cache.pkl"))
 
     def cleanup_litellm_cache(self):
         if self.cfg.enable_litellm_cache:
+            litellm.cache.cache.force_save()
             shutil.rmtree(self.litellm_cache_dir)
 
     def generate(self):
@@ -780,8 +986,8 @@ GENERATION_TASK_CLASS = GenerationTask
 
 # Update the hydra main to use the class method
 @hydra.main(version_base=None, config_name="base_generation_config")
-def generate(cfg: GenerateSolutionsConfig):
-    cfg = GenerateSolutionsConfig(_init_nested=True, **cfg)
+def generate(cfg: GenerationTaskConfig):
+    cfg = GenerationTaskConfig(_init_nested=True, **cfg)
     LOG.info("Config used: %s", cfg)
 
     task = GenerationTask(cfg)
@@ -789,7 +995,7 @@ def generate(cfg: GenerateSolutionsConfig):
 
 
 HELP_MESSAGE = get_help_message(
-    GenerateSolutionsConfig,
+    GenerationTaskConfig,
     server_params=server_params(),
     sandbox_params=sandbox_params(),
 )

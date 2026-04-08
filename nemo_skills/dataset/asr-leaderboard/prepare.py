@@ -14,12 +14,17 @@
 
 """Prepare ASR Leaderboard datasets for evaluation.
 
-Downloads and formats datasets from the HuggingFace Open ASR Leaderboard.
+Downloads and formats datasets from the official HF Open ASR Leaderboard ESB
+test-only sorted dataset (hf-audio/esb-datasets-test-only-sorted). This is the
+same data source used by the official leaderboard and the offline NeMo eval
+pipeline, ensuring apples-to-apples WER comparison.
+
 Audio paths in JSONL: /dataset/asr-leaderboard/data/{dataset}/{sample_id}.flac
 
 Usage:
     ns prepare_data asr-leaderboard
     ns prepare_data asr-leaderboard --datasets librispeech_clean ami
+    ns prepare_data asr-leaderboard --datasets earnings22
     ns prepare_data asr-leaderboard --no-audio  # skip saving audio files
 """
 
@@ -34,34 +39,33 @@ from tqdm import tqdm
 SYSTEM_MESSAGE = "You are a helpful assistant. /no_think"
 MIN_AUDIO_DURATION = 0.1  # Skip audio shorter than this (causes mel spectrogram errors)
 
-# (hf_dataset, hf_config, hf_split, streaming)
+# (hf_repo, config, split, text_field, id_field)
 DATASET_CONFIGS = {
-    "librispeech_clean": ("librispeech_asr", "clean", "test", False),
-    "librispeech_other": ("librispeech_asr", "other", "test", False),
-    "voxpopuli": ("facebook/voxpopuli", "en", "test", False),
-    "tedlium": ("LIUM/tedlium", "release3", "test", False),
-    "gigaspeech": ("speechcolab/gigaspeech", "xs", "test", False),
-    "spgispeech": ("kensho/spgispeech", "test", "test", True),  # streaming to avoid timeout due to large metadata
-    "earnings22": ("distil-whisper/earnings22", "chunked", "test", False),
-    "ami": ("edinburghcstr/ami", "ihm", "test", False),
+    "librispeech_clean": ("hf-audio/esb-datasets-test-only-sorted", "librispeech", "test.clean", "text", "id"),
+    "librispeech_other": ("hf-audio/esb-datasets-test-only-sorted", "librispeech", "test.other", "text", "id"),
+    "voxpopuli": ("hf-audio/esb-datasets-test-only-sorted", "voxpopuli", "test", "text", "id"),
+    "tedlium": ("hf-audio/esb-datasets-test-only-sorted", "tedlium", "test", "text", "id"),
+    "gigaspeech": ("hf-audio/esb-datasets-test-only-sorted", "gigaspeech", "test", "text", "id"),
+    "spgispeech": ("hf-audio/esb-datasets-test-only-sorted", "spgispeech", "test", "text", "id"),
+    "earnings22": ("hf-audio/esb-datasets-test-only-sorted", "earnings22", "test", "text", "id"),
+    "ami": ("hf-audio/esb-datasets-test-only-sorted", "ami", "test", "text", "id"),
 }
 
 
-def save_audio_and_format_entry(entry, dataset_name, audio_dir, sample_idx, with_audio=True):
+def save_audio_and_format_entry(
+    entry, dataset_name, audio_dir, sample_idx, text_field="text", id_field="id", with_audio=True
+):
     """Format a dataset entry and optionally save audio file."""
-    # Different datasets use different field names for transcription
-    text = (
-        entry.get("text", "")  # ami, LS, gigaspeech, tedlium
-        or entry.get("normalized_text", "")  # voxpopuli
-        or entry.get("transcript", "")  # spgispeech
-        or entry.get("transcription", "")  # earnings22
-    )
-    text = text.strip() if text else ""
+    text = entry[text_field].strip()
 
     system_message = {"role": "system", "content": SYSTEM_MESSAGE}
     user_message = {"role": "user", "content": "Transcribe the following audio."}
 
+    sample_id = str(entry[id_field]).replace("/", "_")
+    audio_filename = f"{Path(sample_id).stem}.flac"
+
     audio_info = entry.get("audio", {})
+    duration = None
     if isinstance(audio_info, dict) and "array" in audio_info and "sampling_rate" in audio_info:
         audio_array = audio_info["array"]
         sampling_rate = audio_info["sampling_rate"]
@@ -70,26 +74,22 @@ def save_audio_and_format_entry(entry, dataset_name, audio_dir, sample_idx, with
         if duration < MIN_AUDIO_DURATION:
             return None
 
-        sample_id = entry.get("id", str(sample_idx))
-        audio_filename = f"{sample_id}.flac"
-
         if with_audio:
             sf.write(str(audio_dir / audio_filename), audio_array, sampling_rate)
 
-        user_message["audio"] = {
-            "path": f"/dataset/asr-leaderboard/data/{dataset_name}/{audio_filename}",
-            "duration": float(duration),
-        }
+    audio_meta = {"path": f"/dataset/asr-leaderboard/data/{dataset_name}/{audio_filename}"}
+    if duration is not None:
+        audio_meta["duration"] = float(duration)
+    user_message["audio"] = audio_meta
 
     formatted_entry = {
-        "task_type": "ASR_LEADERBOARD",
+        "task_type": "ASR",
         "expected_answer": text,
         "messages": [system_message, user_message],
         "subset_for_metrics": dataset_name,
     }
 
-    if "id" in entry:
-        formatted_entry["id"] = entry["id"]
+    formatted_entry["id"] = entry[id_field]
     if "speaker_id" in entry:
         formatted_entry["speaker_id"] = entry["speaker_id"]
 
@@ -101,17 +101,10 @@ def prepare_dataset(dataset_name, output_dir, with_audio=True):
     if dataset_name not in DATASET_CONFIGS:
         raise ValueError(f"Unknown dataset: {dataset_name}. Available: {list(DATASET_CONFIGS.keys())}")
 
-    hf_dataset, hf_config, hf_split, streaming = DATASET_CONFIGS[dataset_name]
+    hf_repo, hf_config, hf_split, text_field, id_field = DATASET_CONFIGS[dataset_name]
 
-    print(f"Loading {dataset_name} from {hf_dataset} (streaming={streaming})...")
-    try:
-        if hf_config:
-            dataset = load_dataset(hf_dataset, hf_config, split=hf_split, trust_remote_code=True, streaming=streaming)
-        else:
-            dataset = load_dataset(hf_dataset, split=hf_split, trust_remote_code=True, streaming=streaming)
-    except Exception as e:
-        print(f"Warning: Failed to load {dataset_name}: {e}")
-        return 0
+    print(f"Loading {dataset_name} from {hf_repo} (config={hf_config}, split={hf_split})...")
+    dataset = load_dataset(hf_repo, hf_config, split=hf_split, trust_remote_code=True)
 
     output_file = output_dir / f"{dataset_name}.jsonl"
     audio_dir = output_dir / "data" / dataset_name
@@ -120,16 +113,15 @@ def prepare_dataset(dataset_name, output_dir, with_audio=True):
         audio_dir.mkdir(parents=True, exist_ok=True)
         print(f"Saving audio files to {audio_dir}")
 
-    if streaming:
-        print(f"Processing {dataset_name} (streaming)...")
-    else:
-        print(f"Processing {len(dataset)} samples from {dataset_name}...")
+    print(f"Processing {len(dataset)} samples from {dataset_name}...")
 
     count = 0
     skipped = 0
     with open(output_file, "w", encoding="utf-8") as fout:
         for idx, entry in enumerate(tqdm(dataset, desc=dataset_name)):
-            formatted = save_audio_and_format_entry(entry, dataset_name, audio_dir, idx, with_audio=with_audio)
+            formatted = save_audio_and_format_entry(
+                entry, dataset_name, audio_dir, idx, text_field=text_field, id_field=id_field, with_audio=with_audio
+            )
             if formatted is None:
                 skipped += 1
                 continue
@@ -160,7 +152,8 @@ def main():
     )
     args = parser.parse_args()
 
-    output_dir = Path(__file__).parent
+    data_dir = Path("/dataset/asr-leaderboard")
+    output_dir = data_dir if data_dir.exists() else Path(__file__).parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with_audio = not args.no_audio

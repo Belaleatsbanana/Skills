@@ -46,6 +46,10 @@ class Sandbox(abc.ABC):
             Can also be specified through NEMO_SKILLS_SSH_SERVER env var.
         ssh_key_path: Optional[str] = None - Path to the ssh key for tunneling.
             Can also be specified through NEMO_SKILLS_SSH_KEY_PATH env var.
+        disable_session_restore: bool = False - When True, skip replaying session history
+            after a sandbox worker restarts. The current code executes on a fresh session
+            and the model receives a warning in stderr.
+            Can also be specified through NEMO_SKILLS_DISABLE_SESSION_RESTORE env var.
     """
 
     def __init__(
@@ -54,6 +58,7 @@ class Sandbox(abc.ABC):
         port: Optional[str] = os.getenv("NEMO_SKILLS_SANDBOX_PORT", "6000"),
         ssh_server: Optional[str] = None,
         ssh_key_path: Optional[str] = None,
+        disable_session_restore: bool = False,
     ):
         self.host = host
         self.port = port
@@ -63,6 +68,9 @@ class Sandbox(abc.ABC):
         )
         self.ssh_server = os.getenv("NEMO_SKILLS_SSH_SERVER", ssh_server)
         self.ssh_key_path = os.getenv("NEMO_SKILLS_SSH_KEY_PATH", ssh_key_path)
+        self.disable_session_restore = disable_session_restore or os.getenv(
+            "NEMO_SKILLS_DISABLE_SESSION_RESTORE", ""
+        ).lower() not in ("", "0", "false")
         self.session_histories = defaultdict(list)  # session_id -> list of generated_code
 
     async def close(self):
@@ -163,7 +171,8 @@ class Sandbox(abc.ABC):
         request["session_id"] = request_session_id_str
         try:
             output = await self._send_request(request, timeout)
-        except httpx.TimeoutException:
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            LOG.warning("Sandbox communication error for session %s: %s", request_session_id, e)
             output = {"process_status": "timeout", "stdout": "", "stderr": "Client timed out\n"}
         new_session_created = output.pop("new_session_created", False)
 
@@ -171,7 +180,12 @@ class Sandbox(abc.ABC):
         # NOTE: Only cells that completed successfully are stored, so we intentionally omit re-running cells that errored
         # or timed out. This means restoration **can diverge** from the original interactive session in those cases, but
         # avoids re-triggering side effects from failing cells while keeping the replay simple.
-        if session_id is not None and new_session_created and output.get("process_status") != "timeout":
+        if (
+            session_id is not None
+            and new_session_created
+            and output.get("process_status") != "timeout"
+            and not self.disable_session_restore
+        ):
             history = list(self.session_histories.get(session_id_str, []))
             if request_session_id_str is not None:
                 try:
@@ -192,7 +206,8 @@ class Sandbox(abc.ABC):
                     restore_request["session_id"] = request_session_id_str
                     try:
                         restore_output = await self._send_request(restore_request, timeout)
-                    except httpx.TimeoutException:
+                    except (httpx.TimeoutException, httpx.TransportError) as e:
+                        LOG.warning("Sandbox communication error for session %s: %s", request_session_id, e)
                         restore_output = {"process_status": "timeout", "stdout": "", "stderr": "Client timed out\n"}
 
                     if restore_output.get("process_status") != "completed":
@@ -233,11 +248,28 @@ class Sandbox(abc.ABC):
             exec_request["session_id"] = request_session_id_str
             try:
                 output = await self._send_request(exec_request, timeout)
-            except httpx.TimeoutException:
+            except (httpx.TimeoutException, httpx.TransportError) as e:
+                LOG.warning("Sandbox communication error for session %s: %s", request_session_id, e)
                 output = {"process_status": "timeout", "stdout": "", "stderr": "Client timed out\n"}
 
-        # Append to history if successful execution (process_status == 'completed')
-        if output.get("process_status") == "completed" and request_session_id_str is not None:
+        elif session_id is not None and new_session_created and self.disable_session_restore:
+            # Session was recreated but restore is disabled — clear stale history and warn the model.
+            self.session_histories.pop(session_id_str, None)
+            self.session_histories.pop(request_session_id_str, None)
+            LOG.warning("Session %s was recreated but restore is disabled; history cleared", session_id)
+            output["stderr"] = (
+                "RuntimeError: Sandbox state restoration failed after the execution worker restarted. "
+                "The interactive session history has been cleared; "
+                "please re-run the last code block without relying on prior state.\n"
+            ) + output.get("stderr", "")
+
+        # Append to history if successful execution (process_status == 'completed').
+        # Skip when restore is disabled — history will never be replayed and would leak memory.
+        if (
+            output.get("process_status") == "completed"
+            and request_session_id_str is not None
+            and not self.disable_session_restore
+        ):
             self.session_histories[request_session_id_str].append(generated_code)
 
         output.pop("new_session_created", None)
@@ -250,7 +282,8 @@ class Sandbox(abc.ABC):
         request = self._prepare_request(TO_EXECUTE, timeout, "lean4")
         try:
             output = await self._send_request(request, timeout)
-        except httpx.TimeoutException:
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            LOG.warning("Sandbox communication error during Lean4 proof check: %s", e)
             return "timeout"
         return determine_proof_status(output)
 
@@ -271,8 +304,11 @@ class Sandbox(abc.ABC):
         except httpx.HTTPError:
             return False
 
-    def wait_for_sandbox(self, timeout: int = 5):
-        while not self._check_ready(timeout=timeout):
+    def wait_for_sandbox(self, wait_timeout: int = 240, http_timeout: int = 5):
+        start_time = time.time()
+        while not self._check_ready(timeout=http_timeout):
+            if time.time() - start_time >= wait_timeout:
+                raise RuntimeError(f"Sandbox at {self.host}:{self.port} did not start within {wait_timeout} seconds")
             time.sleep(1)
 
 
@@ -330,18 +366,17 @@ class LocalSandbox(Sandbox):
                     return
                 response.raise_for_status()
             except (
-                httpx.ReadTimeout,  # retry for other communication errors and statuses
-                httpx.ConnectError,
-                httpx.ConnectTimeout,
-                httpx.RemoteProtocolError,
+                httpx.TransportError,  # Covers ReadError, ConnectError, RemoteProtocolError, etc.
+                httpx.TimeoutException,
                 httpx.HTTPStatusError,
             ) as e:
                 LOG.warning("Retry %d/%d deleting session %s – %s", attempt + 1, max_retries, session_id, e)
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                 else:
-                    LOG.warning(f"Failed to delete session {session_id} after {max_retries} attempts. ")
+                    LOG.warning(f"Failed to delete session {session_id} after {max_retries} attempts.")
             except Exception as e:
+                # Don't crash on delete failures - just log and continue
                 LOG.warning(
                     "Failed to delete session %s: %s (type: %s, repr: %r)\nTraceback:\n%s",
                     session_id,
@@ -350,7 +385,7 @@ class LocalSandbox(Sandbox):
                     e,
                     traceback.format_exc(),
                 )
-                raise  # Re-raise unexpected exceptions
+                return  # Best-effort cleanup, don't crash
 
 
 sandboxes = {

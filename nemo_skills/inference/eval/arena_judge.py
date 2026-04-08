@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import json
 import logging
 import sys
 from copy import deepcopy
@@ -20,15 +21,34 @@ from dataclasses import field
 
 import hydra
 
-from nemo_skills.inference.generate import GenerateSolutionsConfig, GenerationTask, InferenceConfig
+from nemo_skills.inference.generate import (
+    GenerationTask,
+    GenerationTaskConfig,
+    InferenceConfig,
+)
 from nemo_skills.inference.model import server_params
-from nemo_skills.utils import get_help_message, get_logger_name, nested_dataclass, setup_logging
+from nemo_skills.inference.model.base import EndpointType
+from nemo_skills.prompt.utils import get_prompt
+from nemo_skills.utils import (
+    get_help_message,
+    get_logger_name,
+    nested_dataclass,
+    setup_logging,
+)
 
 LOG = logging.getLogger(get_logger_name(__file__))
 
 
+def sanitize_generation(generation: str) -> str:
+    """Sanitize a string for OpenAI API compatibility by handling invalid surrogates and null chars."""
+    s = json.dumps(generation, ensure_ascii=False)
+    s = s.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")
+    s = s.replace("\x00", "")
+    return json.loads(s)
+
+
 @nested_dataclass(kw_only=True)
-class ArenaJudgeConfig(GenerateSolutionsConfig):
+class ArenaJudgeConfig(GenerationTaskConfig):
     """Arena judge parameters.
     For the full list of supported parameters, use 'python -m nemo_skills.inference.generate --help'
     """
@@ -39,8 +59,17 @@ class ArenaJudgeConfig(GenerateSolutionsConfig):
     server: dict = field(default_factory=dict)
 
     # Override the default Generation config here
+    # prompt_config is used as the default for any category not explicitly mapped below
     prompt_config: str = "judge/arena"
     generation_key: str = "judgement"
+
+    # Category-specific prompt config overrides (arena-hard-v2 uses different prompts per category)
+    # Set to None to use the default prompt_config for that category
+    # creative_writing uses a prompt that doesn't ask the judge to generate its own answer first
+    prompt_config_creative: str = "judge/arena_creative"
+
+    # Enable for multilingual benchmarks where generations may contain problematic Unicode
+    sanitize_generations: bool = False
 
 
 cs = hydra.core.config_store.ConfigStore.instance()
@@ -51,6 +80,64 @@ class ArenaJudgeTask(GenerationTask):
     def __init__(self, cfg: ArenaJudgeConfig):
         super().__init__(cfg)
 
+    def setup_prompt(self):
+        if self.cfg.prompt_format == "openai":
+            return None
+
+        # Load the default prompt (used for most categories including hard_prompt, arena-hard-v0.1, etc.)
+        default_prompt = get_prompt(
+            prompt_config=self.cfg.prompt_config,
+            tokenizer=self.tokenizer,
+            code_tags=self.cfg.code_tags,
+            examples_type=self.cfg.examples_type,
+            system_message=self.cfg.system_message,
+        )
+
+        # Load category-specific prompt overrides
+        self.category_prompts = {}
+        if self.cfg.prompt_config_creative:
+            self.category_prompts["creative_writing"] = get_prompt(
+                prompt_config=self.cfg.prompt_config_creative,
+                tokenizer=self.tokenizer,
+                code_tags=self.cfg.code_tags,
+                examples_type=self.cfg.examples_type,
+                system_message=self.cfg.system_message,
+            )
+            LOG.info("Prompt used (creative_writing): %s", self.category_prompts["creative_writing"])
+        # registering default prompt explicitly for hard_prompt
+        self.category_prompts["hard_prompt"] = default_prompt
+
+        LOG.info("Prompt used (default): %s", default_prompt)
+        return default_prompt
+
+    def fill_prompt(self, data_point, data, prompt_format=None):
+        """Fill prompt with category-specific prompt config."""
+        prompt_format = prompt_format or self.cfg.prompt_format
+        if prompt_format == "openai":
+            return super().fill_prompt(data_point=data_point, data=data, prompt_format=prompt_format)
+
+        # Select the appropriate prompt based on category. If not defined, forcing fall-back to default prompt
+        category = data_point.get("category")
+        if not category:
+            prompt = self.prompt
+        else:
+            # will fail if category not in category_prompts as this is unexpected
+            prompt = self.category_prompts[category]
+
+        data_point = deepcopy(data_point)
+        filled_prompt = prompt.fill(
+            data_point,
+            start_assistant_response_key=self.cfg.start_assistant_response_key,
+            chat_template_kwargs=self.cfg.chat_template_kwargs,
+            format_as_string=(self.cfg.inference.endpoint_type == EndpointType.text),
+        )
+        if self.cfg.prompt_suffix:
+            if isinstance(filled_prompt, list):
+                filled_prompt[-1]["content"] += self.cfg.prompt_suffix
+            else:
+                filled_prompt += self.cfg.prompt_suffix
+        return filled_prompt
+
     def log_example_prompt(self, all_data):
         data_point = deepcopy(all_data[0])
 
@@ -59,25 +146,39 @@ class ArenaJudgeTask(GenerationTask):
             LOG.info("Example prompt in OpenAI format: \nData dictionary: %s", data_point)
             return
 
-        data_point["answer_1"] = data_point["generation"]
-        data_point["answer_2"] = data_point["baseline_answer"]
+        if self.cfg.sanitize_generations:
+            data_point["answer_1"] = sanitize_generation(data_point["generation"])
+            data_point["answer_2"] = sanitize_generation(data_point["baseline_answer"])
+        else:
+            data_point["answer_1"] = data_point["generation"]
+            data_point["answer_2"] = data_point["baseline_answer"]
         LOG.info(
             "Example prompt:\nData dictionary: %s\nPrompt: %s", data_point, self.fill_prompt(data_point, all_data)
         )
 
-    async def process_single_datapoint(self, data_point, all_data):
+    async def process_single_datapoint(self, data_point, all_data, prompt_format=None):
         gen_base_data = data_point.copy()
-        gen_base_data["answer_1"] = data_point["generation"]
-        gen_base_data["answer_2"] = data_point["baseline_answer"]
+        answer_gen = (
+            sanitize_generation(data_point["generation"])
+            if self.cfg.sanitize_generations
+            else data_point["generation"]
+        )
+        answer_base = (
+            sanitize_generation(data_point["baseline_answer"])
+            if self.cfg.sanitize_generations
+            else data_point["baseline_answer"]
+        )
+        gen_base_data["answer_1"] = answer_gen
+        gen_base_data["answer_2"] = answer_base
         # reversing the answers
         base_gen_data = data_point.copy()
-        base_gen_data["answer_2"] = data_point["generation"]
-        base_gen_data["answer_1"] = data_point["baseline_answer"]
+        base_gen_data["answer_2"] = answer_gen
+        base_gen_data["answer_1"] = answer_base
 
         # Make two async calls instead of one batch call
         llm_output_1, llm_output_2 = await asyncio.gather(
-            super().process_single_datapoint(gen_base_data, all_data),
-            super().process_single_datapoint(base_gen_data, all_data),
+            super().process_single_datapoint(gen_base_data, all_data, prompt_format),
+            super().process_single_datapoint(base_gen_data, all_data, prompt_format),
         )
 
         return {
