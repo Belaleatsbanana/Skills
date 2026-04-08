@@ -168,6 +168,7 @@ def _create_job_unified(
                 postprocess_cmd=generation_params.get("postprocess_cmd"),
                 wandb_parameters=generation_params.get("wandb_parameters"),
                 with_sandbox=with_sandbox,
+                rerun_ratelimit_errors=generation_params.get("rerun_ratelimit_errors", False),
                 script=generation_params.get("script", "nemo_skills.inference.generate"),
                 requirements=generation_params.get("requirements"),
                 # Multi-server support (works for single and multi-model)
@@ -584,6 +585,7 @@ def generate(
                     "preprocess_cmd": preprocess_cmd,
                     "postprocess_cmd": postprocess_cmd,
                     "wandb_parameters": wandb_parameters if seed_idx == 0 else None,
+                    "rerun_ratelimit_errors": rerun_ratelimit_errors,
                     "script": generation_module,
                     "requirements": generation_requirements,
                     # Multi-model specific fields

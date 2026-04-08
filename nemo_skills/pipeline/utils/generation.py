@@ -187,7 +187,7 @@ def get_remaining_jobs(cluster_config, output_dir, random_seeds, chunk_ids, reru
     Determines which jobs still need to be run based on missing .done files.
     Returns a mapping from random_seed to list of chunk_ids that need processing.
     """
-    if rerun_done:
+    if rerun_done or rerun_ratelimit_errors:
         return {seed: copy.deepcopy(chunk_ids) for seed in random_seeds}
 
     status_dir = get_unmounted_path(cluster_config, output_dir)
@@ -259,38 +259,6 @@ def get_remaining_jobs(cluster_config, output_dir, random_seeds, chunk_ids, reru
         if chunk_id not in missing_jobs.get(seed, []):
             done_jobs[seed].append(chunk_id)
 
-    if rerun_ratelimit_errors:
-        for seed in random_seeds:
-            for chunk_id in list(missing_jobs.get(seed, [])):
-                # for partially done seed/chunk_id combo rewrite the current -async file by simply dropping ratelimit error rows
-                output_file = get_chunked_rs_filename(status_dir, random_seed=seed, chunk_id=chunk_id)
-                _rewrite_async_resume_file_if_needed(output_file)
-
-        for seed in random_seeds:
-            for chunk_id in list(done_jobs[seed]):
-                # for fully done seed/chunk_id combo - of the chunks have been merged, there is no easy way to rerun just the ratelimit error rows so raise and ask user to --rerun-done
-                if chunk_id is not None and len(chunk_ids) > 1:
-                    merged_output_file = get_chunked_rs_filename(status_dir, random_seed=seed, chunk_id=None)
-                    if Path(merged_output_file).exists():
-                        raise ValueError(
-                            "Cannot use --rerun-rate-limit-error for completed chunked outputs because "
-                            f"`{merged_output_file}` has already been merged. Use --rerun-done to fully rerun the seed."
-                        )
-                # for fully done seed/chunk_id combo - if the chunks have not been merged, rewrite the .jsonl to .jsonl-async file by dropping ratelimit error rows and remove .done files
-                output_file = get_chunked_rs_filename(status_dir, random_seed=seed, chunk_id=chunk_id)
-                if _rewrite_async_resume_file_if_needed(output_file):
-                    done_file = Path(expected_files[(seed, chunk_id)])
-                    if done_file.exists():
-                        done_file.unlink()
-                    missing_jobs[seed].append(chunk_id)
-                    done_jobs[seed].remove(chunk_id)
-
-        missing_job_keys = [(seed, chunk_id) for seed in random_seeds for chunk_id in missing_jobs.get(seed, [])]
-        if len(missing_job_keys) != len(set(missing_job_keys)):
-            raise RuntimeError(
-                "Internal error: duplicate jobs were scheduled for rerun under --rerun-rate-limit-error - this should never happen"
-            )
-
     done_jobs_str = ", ".join(
         [
             (
@@ -344,6 +312,32 @@ def _is_rerunnable_ratelimit_error(output_row: dict) -> bool:
     return False
 
 
+def _prepare_rerun_ratelimit_resume_if_needed(
+    output_file: str,
+    merged_output_file: str | None = None,
+    num_chunks: int | None = None,
+    async_position_key: str = "_async_position",
+) -> bool:
+    if (
+        merged_output_file is not None
+        and num_chunks is not None
+        and num_chunks > 1
+        and Path(merged_output_file).exists()
+    ):
+        raise ValueError(
+            "Cannot use --rerun-rate-limit-error for completed chunked outputs because "
+            f"`{merged_output_file}` has already been merged. Use --rerun-done to fully rerun the seed."
+        )
+
+    if not _rewrite_async_resume_file_if_needed(output_file, async_position_key=async_position_key):
+        return False
+
+    done_file = Path(f"{output_file}.done")
+    if done_file.exists():
+        done_file.unlink()
+    return True
+
+
 def _rewrite_async_resume_file_if_needed(output_file: str, async_position_key: str = "_async_position") -> bool:
     output_path = Path(output_file)
     async_output_path = Path(f"{output_file}-async")
@@ -371,9 +365,13 @@ def _rewrite_async_resume_file_if_needed(output_file: str, async_position_key: s
     if not rerunnable_found:
         return False
 
-    with open(async_output_path, "wt", encoding="utf-8") as fout:
+    temp_output_path = async_output_path.with_name(f"{async_output_path.name}.{os.getpid()}.tmp")
+    with open(temp_output_path, "wt", encoding="utf-8") as fout:
         for row in preserved_rows:
             fout.write(json.dumps(row) + "\n")
+        fout.flush()
+        os.fsync(fout.fileno())
+    temp_output_path.replace(async_output_path)
     if not rewriting_existing_async:
         output_path.unlink()
     LOG.info(
@@ -382,6 +380,21 @@ def _rewrite_async_resume_file_if_needed(output_file: str, async_position_key: s
         len(preserved_rows),
     )
     return True
+
+
+def _get_rerun_ratelimit_preprocess_cmd(
+    output_file: str,
+    merged_output_file: str | None = None,
+    num_chunks: int | None = None,
+    async_position_key: str = "_async_position",
+) -> str:
+    script = (
+        "from nemo_skills.pipeline.utils.generation import _prepare_rerun_ratelimit_resume_if_needed; "
+        f"_prepare_rerun_ratelimit_resume_if_needed(output_file={output_file!r}, "
+        f"merged_output_file={merged_output_file!r}, num_chunks={num_chunks!r}, "
+        f"async_position_key={async_position_key!r})"
+    )
+    return f"python -c {shlex.quote(script)}"
 
 
 def separate_hydra_args(extra_arguments: str) -> tuple[str, str]:
@@ -502,6 +515,7 @@ def get_generation_cmd(
     postprocess_cmd=None,
     wandb_parameters=None,
     with_sandbox: bool = False,
+    rerun_ratelimit_errors: bool = False,
     script: str = "nemo_skills.inference.generate",
     requirements: Optional[list[str]] = None,
     # Optional: for multi-model generation
@@ -537,6 +551,8 @@ def get_generation_cmd(
         output_dir=output_dir,
         random_seed=random_seed,
     )
+    chunk_output_file = output_file
+    merged_output_file = None
     # Preamble for generation commands: added at executor/declarative level
     cmd = "export HYDRA_FULL_ERROR=1 && "
 
@@ -582,7 +598,7 @@ def get_generation_cmd(
 
     if chunk_id is not None:
         cmd += f" ++num_chunks={num_chunks} ++chunk_id={chunk_id} "
-        output_file = get_chunked_rs_filename(output_dir, random_seed=random_seed, chunk_id=chunk_id)
+        chunk_output_file = get_chunked_rs_filename(output_dir, random_seed=random_seed, chunk_id=chunk_id)
         donefiles = []
         # we are always waiting for all chunks in num_chunks, no matter chunk_ids in
         # the current run (as we don't want to merge partial jobs)
@@ -597,7 +613,7 @@ def get_generation_cmd(
             job_end_cmd = f"touch {donefiles[chunk_id]} "
 
         # getting file name as if there is no chunking since that's where we want to merge
-        merged_output_file = get_chunked_rs_filename(output_dir=output_dir, random_seed=random_seed)
+        merged_output_file = output_file
         merge_cmd = (
             f"python -m nemo_skills.inference.merge_chunks {merged_output_file} "
             f"{' '.join([f[:-5] for f in donefiles])}"
@@ -609,9 +625,9 @@ def get_generation_cmd(
 
     else:  # only writing a single status file
         if job_end_cmd:
-            job_end_cmd += f" && touch {output_file}.done "
+            job_end_cmd += f" && touch {chunk_output_file}.done "
         else:
-            job_end_cmd = f"touch {output_file}.done "
+            job_end_cmd = f"touch {chunk_output_file}.done "
 
         if postprocess_cmd:
             postprocess_cmd = f"{job_end_cmd} && {postprocess_cmd}"
@@ -620,6 +636,14 @@ def get_generation_cmd(
 
     if override_args:
         cmd += f" {override_args} "
+
+    if rerun_ratelimit_errors:
+        rerun_preprocess_cmd = _get_rerun_ratelimit_preprocess_cmd(
+            output_file=chunk_output_file,
+            merged_output_file=merged_output_file,
+            num_chunks=num_chunks,
+        )
+        preprocess_cmd = f"{rerun_preprocess_cmd} && {preprocess_cmd}" if preprocess_cmd else rerun_preprocess_cmd
 
     if requirements:
         requirements_cmd = build_requirements_venv_cmd(requirements)
