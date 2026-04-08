@@ -107,6 +107,15 @@ RUN update-alternatives --install /usr/bin/java java "$JAVA_HOME"/bin/java 100 &
     update-alternatives --install /usr/bin/pypy2 pypy2 /usr/local/pypy2.7-v7.3.9-linux64/bin/pypy2 100 && \
     update-alternatives --install /usr/bin/pypy3 pypy3 /usr/local/pypy3.9-v7.3.9-linux64/bin/pypy3 100
 
+# Smoke check: binaries for SAFIM-aligned ExecEval runtimes (PyPy 3, GNU C++17, Java 17, Mono C#).
+RUN set -eux; \
+    command -v pypy3 g++ javac java csc mono; \
+    pypy3 -V; \
+    g++ --version | head -n1; \
+    javac -version; \
+    java -version 2>&1 | head -n1; \
+    mono --version | head -n1
+
 RUN apt-get install -y python3-pip gperf
 # tree-sitter (Python bindings) + SAFIM-pinned grammars (same commits as upstream SAFIM):
 # https://github.com/gonglinyuan/safim/blob/main/setup_tree_sitter.bash

@@ -124,13 +124,24 @@ class HumanEvalInfillingMetrics(BaseMetrics):
 
 
 class SafimMetrics(BaseMetrics):
-    """Metrics for SAFIM rows after ExecEval (``execeval_passed``)."""
+    """Metrics for SAFIM rows after ExecEval (same pass@k path as LiveCodeBench).
+
+    Rows use ``graded_list[0]`` as the binary score (see ``evaluator/safim.py``);
+    ``execeval_*`` fields remain for debugging.
+    """
 
     def _get_score_dict(self, prediction: dict) -> dict[str, bool | int | float]:
+        gl = prediction.get("graded_list")
+        if isinstance(gl, list) and len(gl) > 0:
+            return {"accuracy": bool(gl[0])}
         return {"accuracy": prediction.get("execeval_passed", False)}
 
     def get_incorrect_sample(self, prediction: dict) -> dict:
-        return {"execeval_passed": False}
+        return {
+            "graded_list": [False],
+            "execeval_passed": False,
+            "safim_eval_result": "RUNTIME_ERROR",
+        }
 
     def update(self, predictions):
         super().update(predictions)

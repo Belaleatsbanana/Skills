@@ -18,6 +18,6 @@ METRICS_TYPE = "safim"
 # Pipeline default input: nemo_skills/dataset/safim/{EVAL_SPLIT}.jsonl (see prepare.py).
 # Use split=api|block|control when launching eval for each subset.
 EVAL_SPLIT = "api"
-GENERATION_ARGS = "++prompt_config=generic/fim ++eval_type=safim"
-GENERATION_MODULE = "nemo_skills.inference.eval.safim"
+# ``eval_config.subset`` must match the HuggingFace subset passed to ``safim.evaluate``.
+GENERATION_ARGS = f"++prompt_config=generic/fim ++eval_type=safim ++eval_config.subset={EVAL_SPLIT}"
 REQUIRES_SANDBOX = True

@@ -46,6 +46,7 @@ def process_safim_subset(subset_name: str, output_dir: Path) -> int:
             "prefix": prefix,
             "suffix": suffix,
             "language": example["lang"],
+            "subset_for_metrics": example["lang"],
             "comment_delimiter": comment_delimiter,
         }
 
