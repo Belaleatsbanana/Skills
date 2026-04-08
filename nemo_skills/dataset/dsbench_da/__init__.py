@@ -15,11 +15,12 @@
 # settings that define how evaluation should be done by default (all can be changed from cmdline)
 EVAL_SPLIT = "test"
 METRICS_TYPE = "math"
-
+REQUIRES_SANDBOX = True
+KEEP_MOUNTS_FOR_SANDBOX = True
 # Use DSBench evaluator (extends MathEvaluator) with relaxed extraction and case-insensitive MCQ and handling of dict and list.
 GENERATION_ARGS = "++prompt_config=generic/dsbench-da ++eval_type=dsbench ++eval_config.relaxed_extraction=true"
 
-# Recommend running LLM judge to verify dicts and lists correctly
+# For highest accuracy, recommend running LLM judge to verify dicts and lists correctly - not required for quick evals
 # JUDGE_PIPELINE_ARGS = {
 #     "generation_type": "math_judge",
 #     "model": "gpt-4.1",

@@ -62,6 +62,26 @@ def format_paths_for_prompt(paths: list[Path], actual_root: Path, display_root: 
     return " ".join(formatted)
 
 
+def build_prompt_excel_section(excel_paths: str) -> str:
+    """Text inserted into dsbench-da.yaml via {prompt_excel_section} (Python str.format).
+
+    When there is no workbook, tells the model not to ask for paths while still allowing
+    the Python tool for non-file work (calculations, checks, etc.).
+    """
+    paths = (excel_paths or "").strip()
+    if paths:
+        return (
+            f"The workbook file(s) for this question are at:\n{paths}\n\n"
+            "Avoid mistakes: first explore the file(s) to understand structure and schema "
+            "(sheet names, column names, missing values) before computing your answer."
+        )
+    return (
+        "There is no supporting files (spreadsheets, images, csvs, etc.) for this question. "
+        "Answer using only the information given in the problem above. You may still use the Python tool for "
+        "calculations, quick checks, or small simulations if helpful."
+    )
+
+
 def save_data(split: str, data_dir: str | Path, display_root: str | Path | None, incontext_data: bool) -> None:
     """Download and prepare DSBench data."""
     print(f"Preparing DSBench data for {split} split and saving to {data_dir}...")
@@ -145,6 +165,7 @@ def save_data(split: str, data_dir: str | Path, display_root: str | Path | None,
 
         # Format paths for tool mode (relative to data directory)
         excel_paths = format_paths_for_prompt(excel_files, actual_root=extracted_data_dir, display_root=display_root)
+        prompt_excel_section = build_prompt_excel_section(excel_paths)
 
         # Uncomment to get image files and csv files (for future multimodal and agentic support)
         # image_files = []
@@ -175,6 +196,7 @@ def save_data(split: str, data_dir: str | Path, display_root: str | Path | None,
                 "expected_answer": task["answers"][idx],
                 # For tool mode
                 "excel_paths": excel_paths,
+                "prompt_excel_section": prompt_excel_section,
                 # Metadata
                 "task_id": task_id,
                 "question_id": question_name,
