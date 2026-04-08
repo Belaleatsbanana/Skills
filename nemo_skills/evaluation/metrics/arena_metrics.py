@@ -162,12 +162,13 @@ class ArenaMetrics(BaseMetrics):
                     self.scores[-1].append(possible_score)
                     best_id = judge_scores.index(possible_score)
                     self.lengths += predictions[best_id].get("num_generated_tokens", 0)
-                    self.style_features.append(
-                        self.get_style_features(
-                            predictions[best_id]["baseline_answer"],
-                            predictions[best_id]["generation"],
+                    if "baseline_answer" in predictions[best_id] and "generation" in predictions[best_id]:
+                        self.style_features.append(
+                            self.get_style_features(
+                                predictions[best_id]["baseline_answer"],
+                                predictions[best_id]["generation"],
+                            )
                         )
-                    )
                     break
             else:
                 self.scores[-1].append(None)  # in case judge didn't generate a valid score
@@ -180,23 +181,25 @@ class ArenaMetrics(BaseMetrics):
                     self.scores[-1].append(possible_score)
                     best_id = judge_scores.index(possible_score)
                     self.lengths += predictions[best_id].get("num_generated_tokens", 0)
-                    self.style_features.append(
-                        self.get_style_features(
-                            predictions[best_id]["baseline_answer"],
-                            predictions[best_id]["generation"],
+                    if "baseline_answer" in predictions[best_id] and "generation" in predictions[best_id]:
+                        self.style_features.append(
+                            self.get_style_features(
+                                predictions[best_id]["baseline_answer"],
+                                predictions[best_id]["generation"],
+                            )
                         )
-                    )
                     break
             else:
                 self.scores[-1].append(None)  # in case judge didn't generate a valid score
         else:
             self.lengths += predictions[0].get("num_generated_tokens", 0)
-            self.style_features.append(
-                self.get_style_features(
-                    predictions[0]["baseline_answer"],
-                    predictions[0]["generation"],
+            if "baseline_answer" in predictions[0] and "generation" in predictions[0]:
+                self.style_features.append(
+                    self.get_style_features(
+                        predictions[0]["baseline_answer"],
+                        predictions[0]["generation"],
+                    )
                 )
-            )
             self.scores[-1] = [
                 self._get_judge_score(predictions[0]["judgement-gen-base"]),
                 self._get_judge_score(predictions[0]["judgement-base-gen"]),
@@ -233,14 +236,14 @@ class ArenaMetrics(BaseMetrics):
             )
             style_control = False
 
+        if len(self.style_features) == 0:
+            LOG.info("No style features found, disabling style control.")
+            style_control = False
+
         # Group by category
         category_scores = defaultdict(list)
         for score, category in zip(self.scores, self.categories, strict=True):
             category_scores[category].append(score)
-
-        category_style_features = defaultdict(list)
-        for style_feature, category in zip(self.style_features, self.categories, strict=True):
-            category_style_features[category].append(style_feature)
 
         overall_metrics = {"num_entries": self.total}
         self.update_common_metrics(overall_metrics)
@@ -252,6 +255,10 @@ class ArenaMetrics(BaseMetrics):
 
         category_style_features_mean_std = {}
         if style_control:
+            category_style_features = defaultdict(list)
+            for style_feature, category in zip(self.style_features, self.categories, strict=True):
+                category_style_features[category].append(style_feature)
+
             for category in unique_categories:
                 raw_features = np.array(category_style_features[category])
                 if category_style_control_normalization_factors is not None:
@@ -295,10 +302,10 @@ class ArenaMetrics(BaseMetrics):
             for category in unique_categories:
                 score_sum += overall_metrics[f"category_{category}"]["score"]
                 lower, upper = overall_metrics[f"category_{category}"]["95_CI"]
-                se = (upper - lower) / 2 * 1.96
+                se = (upper - lower) / (2 * 1.96)
                 se_squared_sum += se**2
                 invalid_scores_sum += overall_metrics[f"category_{category}"]["invalid_scores"]
-            se = np.sqrt(se_squared_sum)
+            se = np.sqrt(se_squared_sum) / len(unique_categories)
             overall_metrics["95_CI"] = (-se * 1.96, se * 1.96)
             overall_metrics["score"] = score_sum / len(unique_categories)
             overall_metrics["invalid_scores"] = invalid_scores_sum
