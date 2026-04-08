@@ -299,7 +299,7 @@ class ArenaMetrics(BaseMetrics):
                 se_squared_sum += se**2
                 invalid_scores_sum += overall_metrics[f"category_{category}"]["invalid_scores"]
             se = np.sqrt(se_squared_sum)
-            overall_metrics["95_CI"] = (- se * 1.96, se * 1.96)
+            overall_metrics["95_CI"] = (-se * 1.96, se * 1.96)
             overall_metrics["score"] = score_sum / len(unique_categories)
             overall_metrics["invalid_scores"] = invalid_scores_sum
 

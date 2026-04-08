@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
 import random
+
+import numpy as np
 
 from nemo_skills.evaluation.metrics.arena_metrics import ArenaMetrics
 
@@ -225,6 +226,11 @@ def test_arena_metrics_style_control_norm():
         category_style_control_coefs=None,
     )
 
+    assert "score" in with_empirical["pass@1"]
+    assert "95_CI" in with_empirical["pass@1"]
+    assert "category_hard_prompt" in with_empirical["pass@1"]
+    assert "category_creative_writing" in with_empirical["pass@1"]
+
     # with fixed normalization factors
     fixed_norm = {
         "hard_prompt": {
@@ -241,6 +247,11 @@ def test_arena_metrics_style_control_norm():
         category_style_control_normalization_factors=fixed_norm,
         category_style_control_coefs=None,
     )
+
+    assert "score" in with_fixed_norm["pass@1"]
+    assert "95_CI" in with_fixed_norm["pass@1"]
+    assert "category_hard_prompt" in with_fixed_norm["pass@1"]
+    assert "category_creative_writing" in with_fixed_norm["pass@1"]
 
 
 def test_arena_metrics_style_std_zero():
@@ -275,7 +286,6 @@ def test_arena_metrics_style_std_zero():
         category_style_control_normalization_factors=None,
         category_style_control_coefs=None,
     )
-    p1 = metrics["pass@1"]
 
     assert "score" in metrics["pass@1"]
     assert "95_CI" in metrics["pass@1"]
@@ -296,7 +306,7 @@ def test_arena_metrics_style_control_coefs():
         category_style_control_normalization_factors=None,
         category_style_control_coefs=fixed_coefs,
     )
-    p1 = with_fixed_coefs["pass@1"]
+
     assert "score" in with_fixed_coefs["pass@1"]
     assert "invalid_scores" in with_fixed_coefs["pass@1"]
     assert "category_hard_prompt" in with_fixed_coefs["pass@1"]
