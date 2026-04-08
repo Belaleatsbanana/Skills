@@ -81,14 +81,14 @@ def _fill_two_categories(m):
 
 def test_arena_metrics_per_category_scoring_v2():
     """Test that arena-hard-v2 with multiple categories produces per-category scores."""
-    m = ArenaMetrics()
+    m = ArenaMetrics(style_control=False)
 
     _fill_two_categories(m)
 
     assert m.total == 75
     assert set(m.categories) == {"hard_prompt", "creative_writing"}
 
-    metrics = m.get_metrics(style_control=False)
+    metrics = m.get_metrics()
 
     # Check overall metrics exist
     assert "pass@1" in metrics
@@ -111,7 +111,7 @@ def test_arena_metrics_per_category_scoring_v2():
 
 def test_arena_metrics_single_category_v1():
     """Test that arena-hard-v1 with single category does not produce per-category breakdown."""
-    m = ArenaMetrics()
+    m = ArenaMetrics(style_control=False)
 
     random.seed(42)
 
@@ -123,7 +123,7 @@ def test_arena_metrics_single_category_v1():
     assert m.total == 50
     assert set(m.categories) == {"arena-hard-v0.1"}
 
-    metrics = m.get_metrics(style_control=False)
+    metrics = m.get_metrics()
 
     # Check overall metrics exist
     assert "pass@1" in metrics
@@ -138,7 +138,7 @@ def test_arena_metrics_single_category_v1():
 
 def test_arena_metrics_legacy_data_no_category():
     """Test that legacy data without category field works correctly."""
-    m = ArenaMetrics()
+    m = ArenaMetrics(style_control=False)
 
     random.seed(42)
 
@@ -150,7 +150,7 @@ def test_arena_metrics_legacy_data_no_category():
     assert m.total == 30
     assert set(m.categories) == {None}
 
-    metrics = m.get_metrics(style_control=False)
+    metrics = m.get_metrics()
 
     # Check overall metrics exist
     assert "pass@1" in metrics
@@ -215,16 +215,15 @@ def test_arena_metrics_style_control_default():
 
 def test_arena_metrics_style_control_norm():
     """Test that arena-metrics handles style control normalization factors correctly."""
-    m = ArenaMetrics()
-
-    _fill_two_categories(m)
-
-    # with empirical normalization factors
-    with_empirical = m.get_metrics(
+    m_empirical = ArenaMetrics(
         style_control=True,
         category_style_control_normalization_factors=None,
         category_style_control_coefs=None,
     )
+    _fill_two_categories(m_empirical)
+
+    # with empirical normalization factors
+    with_empirical = m_empirical.get_metrics()
 
     assert "score" in with_empirical["pass@1"]
     assert "95_CI" in with_empirical["pass@1"]
@@ -242,11 +241,13 @@ def test_arena_metrics_style_control_norm():
             "std": np.array([1.0, 1.0, 1.0, 1.0]),
         },
     }
-    with_fixed_norm = m.get_metrics(
+    m_fixed = ArenaMetrics(
         style_control=True,
         category_style_control_normalization_factors=fixed_norm,
         category_style_control_coefs=None,
     )
+    _fill_two_categories(m_fixed)
+    with_fixed_norm = m_fixed.get_metrics()
 
     assert "score" in with_fixed_norm["pass@1"]
     assert "95_CI" in with_fixed_norm["pass@1"]
@@ -256,7 +257,11 @@ def test_arena_metrics_style_control_norm():
 
 def test_arena_metrics_style_std_zero():
     """Test that arena-metrics handles standard deviation of 0 correctly."""
-    m = ArenaMetrics()
+    m = ArenaMetrics(
+        style_control=True,
+        category_style_control_normalization_factors=None,
+        category_style_control_coefs=None,
+    )
 
     random.seed(42)
     for _ in range(50):
@@ -281,11 +286,7 @@ def test_arena_metrics_style_std_zero():
                 )
             ]
         )
-    metrics = m.get_metrics(
-        style_control=True,
-        category_style_control_normalization_factors=None,
-        category_style_control_coefs=None,
-    )
+    metrics = m.get_metrics()
 
     assert "score" in metrics["pass@1"]
     assert "95_CI" in metrics["pass@1"]
@@ -293,19 +294,19 @@ def test_arena_metrics_style_std_zero():
 
 def test_arena_metrics_style_control_coefs():
     """Test that arena-metrics handles style control coefficients correctly."""
-    m = ArenaMetrics()
-
-    _fill_two_categories(m)
-
     fixed_coefs = {
         "hard_prompt": np.array([0.1, 0.2, 0.3, 0.4]),
         "creative_writing": np.array([0.5, 0.4, 0.3, 0.2]),
     }
-    with_fixed_coefs = m.get_metrics(
+    m = ArenaMetrics(
         style_control=True,
         category_style_control_normalization_factors=None,
         category_style_control_coefs=fixed_coefs,
     )
+
+    _fill_two_categories(m)
+
+    with_fixed_coefs = m.get_metrics()
 
     assert "score" in with_fixed_coefs["pass@1"]
     assert "invalid_scores" in with_fixed_coefs["pass@1"]
@@ -315,10 +316,6 @@ def test_arena_metrics_style_control_coefs():
 
 def test_arena_metrics_style_control_norm_and_coefs():
     """Test that arena-metrics handles style control normalization factors and coefficients correctly."""
-    m = ArenaMetrics()
-
-    _fill_two_categories(m)
-
     fixed_norm = {
         "hard_prompt": {
             "mean": np.array([0.1, 0.0, 0.0, 0.0]),
@@ -333,10 +330,14 @@ def test_arena_metrics_style_control_norm_and_coefs():
         "hard_prompt": np.array([0.1, 0.2, -0.1, 0.05]),
         "creative_writing": np.array([0.2, -0.1, 0.1, 0.0]),
     }
-    with_fixed_norm_and_coefs = m.get_metrics(
+    m = ArenaMetrics(
         style_control=True,
         category_style_control_normalization_factors=fixed_norm,
         category_style_control_coefs=fixed_coefs,
     )
+
+    _fill_two_categories(m)
+
+    with_fixed_norm_and_coefs = m.get_metrics()
     assert "score" in with_fixed_norm_and_coefs["pass@1"]
     assert with_fixed_norm_and_coefs["pass@1"]["invalid_scores"] == 0

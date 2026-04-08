@@ -222,7 +222,7 @@ def get_aggregate_score(scores, control_features=None, control_feature_coefs=Non
         float(round((candidate_stats["upper"] - candidate_stats["score"]).iloc[0], 2)),
     )
     metrics = {
-        "score": candidate_stats["score"].iloc[0],
+        "score": float(candidate_stats["score"].iloc[0]),
         "95_CI": interval,
         "invalid_scores": num_invalid,
     }

@@ -52,7 +52,7 @@ pass@1          | 500         | 94.82% | (-0.67, 0.69) | 0              | 3878  
 
 - Benchmark is defined in [`nemo_skills/dataset/arena-hard-v2/__init__.py`](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/arena-hard-v2/__init__.py)
 - Original benchmark source is [here](https://github.com/lmarena/arena-hard-auto).
-- Uses `gpt-4.1` as the default judge model for evaluation.
+- Uses `gpt-4.1` as the default judge model for evaluation. Consider switching to stronger judges such as claude-opus-4-6 or gemini-3.1-pro for better correlation with the official LM Arena leaderboard.
 - Uses `o3-mini-2025-01-31` model's responses as reference answers (baseline answers) for comparison.
 
 #### Data Preparation
@@ -87,40 +87,82 @@ ns eval \
         ++max_concurrent_requests=16"
 ```
 
+Controlling for style features (lenght and markdown) is enabled by default for arena-hard-v2. To turn it off, use `--metrics_kwargs='{"style_control": false}'`.
+
 #### Verifying Results
 
 After all jobs are complete, you can check the results in `<OUTPUT_DIR>/eval-results/arena-hard-v2/metrics.json`.
 
+Note, the pass@1 score is now reported as the unweighted average of hard prompt and creative writing.
+
+Without style control:
 ```json
 {
   "arena-hard-v2": {
     "pass@1": {
       "num_entries": 750,
-      "score": 70.25,
+      "score": 69.34,
       "95_CI": [
-        -1.58,
-        1.15
+        -1.62,
+        1.62
       ],
-      "invalid_scores": 1,
-      "avg_tokens": 4197,
-      "gen_seconds": 1371,
+      "invalid_scores": 2,
+      "avg_tokens": 4279,
+      "gen_seconds": 1932,
       "category_hard_prompt": {
         "num_entries": 500,
-        "score": 74.02,
+        "score": 78.5,
         "95_CI": [
-          -1.88,
-          1.66
+          -1.48,
+          1.23
         ],
-        "invalid_scores": 0
+        "invalid_scores": 2
       },
       "category_creative_writing": {
         "num_entries": 250,
-        "score": 63.56,
+        "score": 60.17,
         "95_CI": [
-          -2.72,
-          2.8
+          -2.89,
+          3.0
         ],
-        "invalid_scores": 1
+        "invalid_scores": 0
+      }
+    }
+  }
+}
+```
+
+With style control:
+```json
+{
+  "arena-hard-v2": {
+    "pass@1": {
+      "num_entries": 750,
+      "score": 59.01,
+      "95_CI": [
+        -1.81,
+        1.81
+      ],
+      "invalid_scores": 2,
+      "avg_tokens": 4279,
+      "gen_seconds": 1932,
+      "category_hard_prompt": {
+        "num_entries": 500,
+        "score": 68.6,
+        "95_CI": [
+          -1.94,
+          1.7
+        ],
+        "invalid_scores": 2
+      },
+      "category_creative_writing": {
+        "num_entries": 250,
+        "score": 49.41,
+        "95_CI": [
+          -3.2,
+          3.04
+        ],
+        "invalid_scores": 0
       }
     }
   }

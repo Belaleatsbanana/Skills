@@ -50,8 +50,26 @@ def categories_covered_for_style_control(categories, norm_factors, coefs):
 
 
 class ArenaMetrics(BaseMetrics):
-    def __init__(self):
-        self.reset()
+    """Arena-Hard judge metrics with optional length/markdown style control.
+
+    Args:
+        style_control (bool): If True, control for length and markdown features.
+            Legacy categories (e.g. missing ``category``, ``arena-hard-v0.1``) don't use style control.
+        category_style_control_normalization_factors (dict | None): Per-category mean/std for features;
+            ``None`` uses empirical mean/std from the evaluated data.
+        category_style_control_coefs (dict | None): Per-category regression coefficients; ``None`` fits from data.
+    """
+
+    def __init__(
+        self,
+        style_control=True,
+        category_style_control_normalization_factors=DEFAULT_CATEGORY_STYLE_CONTROL_NORMALIZATION_FACTORS,
+        category_style_control_coefs=DEFAULT_CATEGORY_STYLE_CONTROL_COEFS,
+    ):
+        self.style_control = style_control
+        self.category_style_control_normalization_factors = category_style_control_normalization_factors
+        self.category_style_control_coefs = category_style_control_coefs
+        super().__init__()
 
     def _get_judge_score(self, judgment):
         # adapted from https://github.com/lm-sys/arena-hard-auto/blob/main/gen_judgment.py
@@ -206,23 +224,12 @@ class ArenaMetrics(BaseMetrics):
                 self._get_judge_score(predictions[0]["judgement-base-gen"]),
             ]
 
-    def get_metrics(
-        self,
-        style_control=True,
-        category_style_control_normalization_factors=DEFAULT_CATEGORY_STYLE_CONTROL_NORMALIZATION_FACTORS,
-        category_style_control_coefs=DEFAULT_CATEGORY_STYLE_CONTROL_COEFS,
-    ):
-        """
-        Args:
-            style_control (bool): Whether to use style (length and markdown) control.
-                Legacy categories (e.g. missing ``category``, ``arena-hard-v0.1``) don't use style
-                control.
-            category_style_control_normalization_factors (dict | None): Per-category mean/std for
-                style features. If None, uses empirical mean/std from the current data.
-            category_style_control_coefs (dict | None): Per-category fixed regression coefficients.
-                If None, fits coefficients from the current data.
-        """
+    def get_metrics(self):
         from nemo_skills.evaluation.evaluator.arena import get_aggregate_score
+
+        style_control = self.style_control
+        category_style_control_normalization_factors = self.category_style_control_normalization_factors
+        category_style_control_coefs = self.category_style_control_coefs
 
         unique_categories = sorted(set(self.categories))
         if style_control and not categories_covered_for_style_control(
@@ -306,7 +313,7 @@ class ArenaMetrics(BaseMetrics):
                 se = (upper - lower) / (2 * 1.96)
                 se_squared_sum += se**2
                 invalid_scores_sum += overall_metrics[f"category_{category}"]["invalid_scores"]
-            se = np.sqrt(se_squared_sum) / len(unique_categories)
+            se = float(np.sqrt(se_squared_sum) / len(unique_categories))
             overall_metrics["95_CI"] = (-se * 1.96, se * 1.96)
             overall_metrics["score"] = score_sum / len(unique_categories)
             overall_metrics["invalid_scores"] = invalid_scores_sum
