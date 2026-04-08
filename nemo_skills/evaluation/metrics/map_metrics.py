@@ -24,9 +24,8 @@ from nemo_skills.evaluation.metrics.bfcl_metrics import BFCLMetrics
 from nemo_skills.evaluation.metrics.code_metrics import (
     BigCodeBenchMetrics,
     EvalPlusMetrics,
-    HumanEvalInfillingMetrics,
+    InfillingMetrics,
     LiveCodeBenchMetrics,
-    SafimMetrics,
     SciCodeMetrics,
     SweBenchMetrics,
 )
@@ -66,8 +65,7 @@ METRICS_MAP = {
     "aalcr": AALCRMetrics,
     "livebench_coding": LiveCodeBenchMetrics,
     "translation": TranslationMetrics,
-    "human_eval_infilling": HumanEvalInfillingMetrics,
-    "safim": SafimMetrics,
+    "infilling": InfillingMetrics,
     "mmau_pro_closed_form": MMAUProMetrics,
     "mmau_pro_open_ended": MMAUProMetrics,
     "mmau_pro_instruction_following": MMAUProMetrics,

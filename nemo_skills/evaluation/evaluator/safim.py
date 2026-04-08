@@ -16,8 +16,9 @@
 
 Follows the same flow as ``livecodebench.py``: preprocess JSONL in place, install
 ``safim`` from git if needed, run ``safim.evaluate.evaluate`` (uses ExecEval at
-``http://localhost:{port}`` inside the environment), merge ``graded_list`` into
-rows, rename harness output to ``*_eval_results-saved.json``.
+``http://localhost:{port}`` inside the environment), merge ``passed`` and
+``graded_list`` into rows (same convention as Human Eval Infilling), rename harness
+output to ``*_eval_results-saved.json``.
 
 **Data expectations (JSONL after generation)**
 
@@ -179,6 +180,7 @@ def _postprocess_safim_results(jsonl_file: str, samples: list[dict]) -> None:
             if isinstance(entry, list) and entry:
                 passed = bool(entry[0].get("passed", False))
                 result = str(entry[0].get("result", ""))
+            s["passed"] = passed
             s["graded_list"] = [passed]
             s["safim_eval_result"] = result
             s["execeval_passed"] = passed
