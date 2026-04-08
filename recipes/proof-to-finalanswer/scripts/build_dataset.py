@@ -53,8 +53,9 @@ def build_final_dataset(
                 total_rows += 1
                 row = json.loads(line)
 
-                fa_problem = row.get("final_answer_problem")
-                fa_answer = row.get("final_answer_expected_answer")
+                final_output = row.get("final_output") or {}
+                fa_problem = final_output.get("problem", row.get("final_answer_problem"))
+                fa_answer = final_output.get("expected_answer", row.get("final_answer_expected_answer"))
                 eq_score = row.get("equivalence_score")
 
                 if fa_problem is None or fa_answer is None or eq_score is None:
@@ -77,7 +78,10 @@ def build_final_dataset(
                     "metadata": {
                         "proof_reference_solution_source": row.get("proof_reference_solution_source"),
                         "transform_explanation": row.get("transformation", {}).get("equivalency_explanation"),
-                        "comparison_explanation": row.get("comparison", {}).get("analysis"),
+                        "answer_verification_status": (row.get("answer_verification") or {}).get("status"),
+                        "answer_verification_analysis": (row.get("answer_verification") or {}).get("analysis"),
+                        "transform_expected_answer": row.get("final_answer_expected_answer"),
+                        "solver_predicted_answer": row.get("final_answer_predicted_answer"),
                     },
                 }
                 best_by_key[str(original_problem)] = _choose_best(best_by_key.get(str(original_problem)), dataset_row)

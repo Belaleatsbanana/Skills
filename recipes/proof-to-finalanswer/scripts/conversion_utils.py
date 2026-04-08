@@ -14,16 +14,18 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import numpy as np
 from omegaconf import OmegaConf
 
-from nemo_skills.evaluation.math_grader import extract_answer
+from nemo_skills.evaluation.math_grader import extract_answer, math_equal
 from nemo_skills.inference.model import BaseModel
 
 GENERATE_SOLUTION_SOL_HEADER = "## Solution"
 GENERATE_SOLUTION_EVAL_HEADER = "## Self Evaluation"
+GENERATE_SOLUTION_FINAL_ANSWER_PREFIX = "FINAL_ANSWER:"
 TRANSFORM_PROBLEM_HEADER = "## Final Answer Problem Statement"
 TRANSFORM_EXPLANATION_HEADER = "## EQUIVALENCY EXPLANATION"
 TRANSFORM_FINAL_ANSWER_MARKER = "The unique final answer for the problem statement above is:"
@@ -77,6 +79,78 @@ def _extract_boxed_from_text(text: str) -> str | None:
     return extract_answer(text, extract_from_boxed=True)
 
 
+def _clean_explicit_final_answer_value(value: str) -> str | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+
+    if cleaned.upper() == "NONE":
+        return None
+
+    boxed_match = re.fullmatch(r"\\boxed\{(.+)\}", cleaned)
+    if boxed_match is not None:
+        cleaned = boxed_match.group(1).strip()
+
+    if cleaned.startswith("$") and cleaned.endswith("$") and len(cleaned) >= 2:
+        cleaned = cleaned[1:-1].strip()
+    cleaned = cleaned.rstrip(".")
+    return cleaned or None
+
+
+def extract_explicit_final_answer(text: str | None) -> str | None:
+    """Extract explicit `FINAL_ANSWER: ...` field from generation text."""
+    if text is None:
+        return None
+    clean_text = remove_thinking_trace(text)
+    matches = re.findall(rf"(?im)^\s*{GENERATE_SOLUTION_FINAL_ANSWER_PREFIX}\s*(.+?)\s*$", clean_text)
+    if not matches:
+        return None
+    return _clean_explicit_final_answer_value(matches[-1])
+
+
+def verify_final_answer_match(expected_answer: str | None, predicted_answer: str | None) -> dict[str, Any]:
+    """Verify transformed expected answer against solved final-answer prediction."""
+    if expected_answer is None:
+        return {
+            "status": "missing_expected_answer",
+            "is_match": False,
+            "analysis": "Transformation output does not contain an expected answer.",
+            "expected_answer": None,
+            "predicted_answer": predicted_answer,
+        }
+
+    if predicted_answer is None:
+        return {
+            "status": "missing_predicted_answer",
+            "is_match": False,
+            "analysis": "Solved final-answer solution does not contain FINAL_ANSWER.",
+            "expected_answer": expected_answer,
+            "predicted_answer": None,
+        }
+
+    try:
+        is_match = bool(math_equal(expected_answer, predicted_answer))
+    except Exception:
+        is_match = str(expected_answer).strip() == str(predicted_answer).strip()
+
+    if is_match:
+        return {
+            "status": "match",
+            "is_match": True,
+            "analysis": "Transformed expected answer matches solved final-answer prediction.",
+            "expected_answer": expected_answer,
+            "predicted_answer": predicted_answer,
+        }
+
+    return {
+        "status": "mismatch",
+        "is_match": False,
+        "analysis": "Transformed expected answer does not match solved final-answer prediction.",
+        "expected_answer": expected_answer,
+        "predicted_answer": predicted_answer,
+    }
+
+
 def normalize_equivalence_score(raw_score: str | None) -> float | None:
     """Normalize score text into one of {0, 0.5, 1}."""
     if raw_score is None:
@@ -118,14 +192,16 @@ def normalize_equivalence_score(raw_score: str | None) -> float | None:
 def parse_generate_solution_response(response_text: str) -> dict[str, Any]:
     """Parse solution-generation response into solution/evaluation/score fields."""
     clean_text = remove_thinking_trace(response_text)
-    boxed_score = _extract_boxed_from_text(clean_text)
-    score = normalize_equivalence_score(boxed_score)
     solution_section = extract_markdown_section(clean_text, GENERATE_SOLUTION_SOL_HEADER)
     self_eval_section = extract_markdown_section(clean_text, GENERATE_SOLUTION_EVAL_HEADER)
+    boxed_score = _extract_boxed_from_text(self_eval_section or "")
+    score = normalize_equivalence_score(boxed_score)
+    final_answer = extract_explicit_final_answer(clean_text)
     parsed_solution = solution_section or clean_text
     return {
         "clean_generation": response_text,
         "solution": parsed_solution,
+        "final_answer": final_answer,
         "self_evaluation": self_eval_section,
         "self_score_raw": boxed_score,
         "self_score": score,
@@ -241,6 +317,7 @@ async def find_single_correct_solution(
     prompt = prompt_template.format(problem=problem)
     attempts: list[dict[str, Any]] = []
     selected_solution: str | None = None
+    selected_final_answer: str | None = None
     selected_idx: int | None = None
 
     for attempt_idx in range(max_attempts):
@@ -259,6 +336,7 @@ async def find_single_correct_solution(
             "self_score_raw": parsed["self_score_raw"],
             "is_correct": parsed["is_correct"],
             "solution": parsed["solution"],
+            "final_answer": parsed["final_answer"],
         }
         if keep_attempt_generations:
             attempt["generation"] = parsed["clean_generation"]
@@ -267,6 +345,7 @@ async def find_single_correct_solution(
 
         if parsed["is_correct"]:
             selected_solution = parsed["solution"]
+            selected_final_answer = parsed["final_answer"]
             selected_idx = attempt_idx
             break
 
@@ -274,12 +353,14 @@ async def find_single_correct_solution(
         return {
             "status": "pass_0",
             "selected_solution": None,
+            "selected_final_answer": None,
             "selected_attempt_idx": None,
             "attempts": attempts,
         }
     return {
         "status": "success",
         "selected_solution": selected_solution,
+        "selected_final_answer": selected_final_answer,
         "selected_attempt_idx": selected_idx,
         "attempts": attempts,
     }

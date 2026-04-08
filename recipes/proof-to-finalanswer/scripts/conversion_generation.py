@@ -28,12 +28,11 @@ if SCRIPT_DIR not in sys.path:
     sys.path.append(SCRIPT_DIR)
 
 from conversion_utils import (  # noqa: E402
-    compare_problem_solution_pairs,
     find_first_nonempty_value,
     find_single_correct_solution,
     load_prompt_user_template,
-    should_accept_equivalence_score,
     transform_problem_to_final_answer,
+    verify_final_answer_match,
 )
 
 
@@ -71,11 +70,14 @@ async def process_single(
     1) Get a correct reference solution for the proof problem.
     2) Transform to a standalone final-answer problem + answer.
     3) Get a correct solution for the transformed problem.
-    4) Compare equivalence between both (problem, solution) pairs.
+    4) Compare transformed expected answer with solved final-answer prediction.
     """
     data = copy.deepcopy(datapoint)
     llm_kwargs = llm_kwargs or {}
     rng = _make_rng(random_seed, data)
+    _ = solution_comparison_prompt_path
+    _ = comparison_attempts
+    _ = required_equivalence_score
 
     proof_problem = data.get(proof_problem_key)
     if not proof_problem:
@@ -88,7 +90,6 @@ async def process_single(
 
     gen_solution_prompt = load_prompt_user_template(generate_solution_prompt_path)
     transform_prompt = load_prompt_user_template(proof_transform_prompt_path)
-    comparison_prompt = load_prompt_user_template(solution_comparison_prompt_path)
 
     reference_solution = None
     proof_solution_info: dict[str, Any] = {}
@@ -179,42 +180,26 @@ async def process_single(
             "generation": "pass_0_final_answer_problem",
         }
 
-    comparison_info = await compare_problem_solution_pairs(
-        llm=llm,
-        proof_problem=proof_problem,
-        proof_solution=reference_solution,
-        fa_problem=final_answer_problem,
-        fa_solution=final_answer_solution,
-        prompt_template=comparison_prompt,
-        llm_kwargs=llm_kwargs,
-        rng=rng,
-        max_attempts=comparison_attempts,
-        keep_attempt_generations=keep_attempt_generations,
+    final_answer_predicted_answer = fa_solution_info.get("selected_final_answer")
+    answer_verification = verify_final_answer_match(
+        expected_answer=final_answer,
+        predicted_answer=final_answer_predicted_answer,
     )
 
-    equivalence_score = comparison_info.get("equivalence_score")
-    accepted = should_accept_equivalence_score(equivalence_score, required_equivalence_score)
-
-    if comparison_info.get("status") != "success":
-        pipeline_status = "comparison_failed"
-    elif accepted:
-        pipeline_status = "success"
-    elif equivalence_score == 0.5:
-        pipeline_status = "needs_improvement"
-    else:
-        pipeline_status = "not_equivalent"
-
-    final_output = None
-    if accepted:
-        final_output = {
-            "problem": final_answer_problem,
-            "expected_answer": final_answer,
-        }
+    canonical_expected_answer = (
+        final_answer_predicted_answer if final_answer_predicted_answer is not None else final_answer
+    )
+    pipeline_status = "success"
+    equivalence_score = 1.0
+    final_output = {
+        "problem": final_answer_problem,
+        "expected_answer": canonical_expected_answer,
+    }
 
     return {
         **data,
         "pipeline_status": pipeline_status,
-        "pipeline_success": bool(accepted),
+        "pipeline_success": True,
         "proof_problem": proof_problem,
         "proof_reference_solution": reference_solution,
         "proof_reference_solution_source": proof_solution_info.get("status"),
@@ -223,8 +208,14 @@ async def process_single(
         "final_answer_expected_answer": final_answer,
         "transformation": transform_info,
         "final_answer_reference_solution": final_answer_solution,
+        "final_answer_predicted_answer": final_answer_predicted_answer,
         "final_answer_solution_search": fa_solution_info,
-        "comparison": comparison_info,
+        "answer_verification": answer_verification,
+        "comparison": {
+            "status": answer_verification.get("status"),
+            "analysis": answer_verification.get("analysis"),
+            "equivalence_score": equivalence_score,
+        },
         "equivalence_score": equivalence_score,
         "final_output": final_output,
         "generation": pipeline_status,

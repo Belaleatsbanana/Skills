@@ -28,6 +28,8 @@ user: |-
   ## Solution // Your final solution should start with this exact same markdown title
   ... // Your final solution to the problem here. You should try your best to optimize the quality of your solution according to the evaluation instruction above before finalizing it here.
 
+  FINAL_ANSWER: ... // Provide the exact final answer if the problem asks for one. Use a single explicit value or expression. If the problem is proof-only and does not ask for a final numeric/algebraic answer, write FINAL_ANSWER: NONE exactly.
+
   ## Self Evaluation // Your evaluation of your own solution above should start with this exact same markdown title
 
   Here is my evaluation of the solution: // Your analysis should start with this exact same phrase

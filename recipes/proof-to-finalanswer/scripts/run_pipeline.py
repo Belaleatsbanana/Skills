@@ -25,7 +25,7 @@ ALL_STAGES = [GEN_STAGE, BUILD_STAGE]
 
 DEFAULT_PROMPT_ROOT = "/nemo_run/code/recipes/proof-to-finalanswer/prompts"
 DEFAULT_INLINE_ARGS = (
-    "++inference.tokens_to_generate=100000 "
+    "++inference.tokens_to_generate=128000 "
     "++inference.temperature=1.0 "
     "++inference.top_p=0.95"
 )
@@ -78,6 +78,7 @@ def run_generation_stage(args, run_after: list[str] | None):
         server_args=args.server_args,
         run_after=run_after,
         exclusive=True,
+        partition="interactive",
     )
     return expname
 
@@ -103,17 +104,18 @@ def run_build_stage(args, run_after: list[str] | None):
 def main():
     cluster = "dfw"
     model = "/hf_models/DeepSeek-V3.2-Speciale"
-    input = "ultra_proof_problems_subset"
+    input = "single_easy"
     expname = f"transform_{input}"
     input_file = f"/workspace/finalanswer/data/{input}.jsonl"
     output_dir = f"/workspace/finalanswer/{expname}"
     server_gpus = 8
     server_nodes = 2
-    num_chunks = 16
-    proof_attempts = 2
-    finalanswer_attempts = 2
+    num_chunks = 1
+    proof_attempts = 8
+    finalanswer_attempts = 8
     transform_attempts = 1
     comparison_attempts = 1
+    max_concurrent_requests = 256
 
     parser = argparse.ArgumentParser(description="Proof-to-finalanswer pipeline runner.")
     parser.add_argument(
