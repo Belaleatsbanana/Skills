@@ -96,10 +96,7 @@ class ArenaMetrics(BaseMetrics):
             return counters
 
         def remove_pattern(answer, pattern):
-            blocks = pattern.findall(answer)
-            for block in blocks:
-                answer = answer.replace(block, "")
-            return answer
+            return pattern.sub("", answer)
 
         def get_num_tokens(answer):
             import tiktoken
@@ -109,7 +106,7 @@ class ArenaMetrics(BaseMetrics):
 
         metadata = {"token_len": get_num_tokens(answer)}
         return metadata | count_markdown_elements(
-            remove_pattern(answer, re.compile("```([^`]*)```")),
+            remove_pattern(answer, re.compile(r"```[^`]*```")),
             suffix="",
         )
 
@@ -153,6 +150,7 @@ class ArenaMetrics(BaseMetrics):
         self.categories.append(category)
 
         if len(predictions) > 1:
+            list_style_features = []  # pass@k may pick different generations; take the mean for control features
             judge_scores = [self._get_judge_score(elem["judgement-gen-base"]) for elem in predictions]
             # adding the best score out of all the generations
             possible_scores = ["A>>B", "A>B", "A=B", "B>A", "B>>A"]
@@ -163,7 +161,7 @@ class ArenaMetrics(BaseMetrics):
                     best_id = judge_scores.index(possible_score)
                     self.lengths += predictions[best_id].get("num_generated_tokens", 0)
                     if "baseline_answer" in predictions[best_id] and "generation" in predictions[best_id]:
-                        self.style_features.append(
+                        list_style_features.append(
                             self.get_style_features(
                                 predictions[best_id]["baseline_answer"],
                                 predictions[best_id]["generation"],
@@ -182,7 +180,7 @@ class ArenaMetrics(BaseMetrics):
                     best_id = judge_scores.index(possible_score)
                     self.lengths += predictions[best_id].get("num_generated_tokens", 0)
                     if "baseline_answer" in predictions[best_id] and "generation" in predictions[best_id]:
-                        self.style_features.append(
+                        list_style_features.append(
                             self.get_style_features(
                                 predictions[best_id]["baseline_answer"],
                                 predictions[best_id]["generation"],
@@ -191,6 +189,9 @@ class ArenaMetrics(BaseMetrics):
                     break
             else:
                 self.scores[-1].append(None)  # in case judge didn't generate a valid score
+
+            if list_style_features:
+                self.style_features.append(np.mean(np.stack(list_style_features, axis=0), axis=0))
         else:
             self.lengths += predictions[0].get("num_generated_tokens", 0)
             if "baseline_answer" in predictions[0] and "generation" in predictions[0]:

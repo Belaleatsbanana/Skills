@@ -168,13 +168,13 @@
   "arena-hard": {
     "pass@1": {
       "num_entries": 10,
-      "score": 21.28,
+      "avg_tokens": 2502,
+      "score": 32.98,
       "95_CI": [
-        -10.64,
-        8.51
+        -10.08,
+        11.44
       ],
-      "invalid_scores": 3,
-      "avg_tokens": 98
+      "invalid_scores": 0
     }
   },
   "gpqa": {
