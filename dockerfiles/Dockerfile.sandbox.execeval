@@ -119,8 +119,8 @@ RUN set -eux; \
 RUN apt-get install -y python3-pip gperf
 # tree-sitter (Python bindings) + SAFIM-pinned grammars (same commits as upstream SAFIM):
 # https://github.com/gonglinyuan/safim/blob/main/setup_tree_sitter.bash
-# tree-sitter: use 0.21.x — Language.build_library is gone in 0.22+ (see tree-sitter/py-tree-sitter releases).
-RUN pip install flask gunicorn flask-cors gmpy2 Cython jsonlines fire tree-sitter==0.21.3
+# tree-sitter: pin to SAFIM requirements.txt (tree-sitter==0.20.4). Language.build_library is gone in 0.22+.
+RUN pip install flask gunicorn flask-cors gmpy2 Cython jsonlines fire tree-sitter==0.20.4
 
 ENV SAFIM_TREE_SITTER_ROOT=/opt/safim-tree-sitter
 ENV SAFIM_TREE_SITTER_LIB=/opt/safim-tree-sitter/safim-languages.so

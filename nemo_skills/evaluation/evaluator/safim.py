@@ -12,33 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""SAFIM evaluation via the ``safim`` package (install-on-the-fly), LiveCodeBench-style.
-
-Follows the same flow as ``livecodebench.py``: preprocess JSONL in place, install
-``safim`` from git if needed, run ``safim.evaluate.evaluate`` (uses ExecEval at
-``http://localhost:{port}`` inside the environment), merge ``passed`` and
-``graded_list`` into rows (same convention as Human Eval Infilling), rename harness
-output to ``*_eval_results-saved.json``.
-
-**Data expectations (JSONL after generation)**
-
-- ``prefix``, ``suffix``, ``language``, ``task_id``, ``generation`` / ``completion``.
-- The upstream ``safim.evaluate`` API loads completions by ``task_id``; this file
-  must contain **at most one row per ``task_id``** (same constraint as the
-  reference ``safim/evaluate.py`` dict merge).  Use separate seed files for pass@k.
-
-**Config**
-
-- ``subset``: HuggingFace subset name passed as ``completion_type`` (e.g.
-  ``api``, ``block``, ``control``).
-- ``execeval_port``: ExecEval port (default ``5000``); the ``safim`` client uses
-  ``localhost`` only.
-- ``sandbox``: **Required** — NeMo code sandbox (shell). Evaluation does not run
-  on the driver machine if the sandbox is unreachable.
-
-See also: https://github.com/wasiahmad/safim (library usage in README).
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -62,7 +35,6 @@ from nemo_skills.utils import get_logger_name, nested_dataclass
 
 LOG = logging.getLogger(get_logger_name(__file__))
 
-# Default matches SAFIM README (execution-based fork).
 SAFIM_GIT_URL = "git+https://github.com/wasiahmad/safim.git"
 
 
@@ -104,10 +76,9 @@ def _fence_language(dataset_language: str) -> str:
 
 @nested_dataclass(kw_only=True)
 class SafimEvaluatorConfig(BaseEvaluatorConfig):
-    """Configuration for SAFIM via ``safim.evaluate`` (LiveCodeBench-style)."""
+    """Configuration for SAFIM via ``safim.evaluate`` in the sandbox."""
 
     sandbox: dict = field(default_factory=lambda: {"sandbox_type": "local"})
-    interpreter: str = "python"
     # HuggingFace subset: api | block | control (passed to ``safim.evaluate``).
     subset: str = "api"
     # Optional filter; ``None`` evaluates all languages in the subset.
@@ -164,35 +135,32 @@ def _preprocess_safim_jsonl(jsonl_file: str, fim_postprocess: bool) -> list[dict
 
 
 def _postprocess_safim_results(jsonl_file: str, samples: list[dict]) -> None:
-    """Merge ``safim`` harness output into JSONL and rename to ``*_eval_results-saved.json``."""
-    results_file = jsonl_file[:-6] + "_eval_results.json"
-    with open(results_file, encoding="utf-8") as fh:
+    """Merge ``safim`` harness ``eval[task_id][0].passed`` into JSONL; rename harness file."""
+    jsonl_path = Path(jsonl_file)
+    results_path = jsonl_path.with_name(jsonl_path.stem + "_eval_results.json")
+    saved_path = jsonl_path.with_name(jsonl_path.stem + "_eval_results-saved.json")
+
+    with open(results_path, encoding="utf-8") as fh:
         eval_payload = json.load(fh)
 
     eval_block = eval_payload.get("eval") or {}
 
-    with open(jsonl_file, "w", encoding="utf-8") as fh:
+    with open(jsonl_path, "w", encoding="utf-8") as fh:
         for s in samples:
             tid = str(s["task_id"])
             entry = eval_block.get(tid)
             passed = False
-            result = "MISSING"
             if isinstance(entry, list) and entry:
                 passed = bool(entry[0].get("passed", False))
-                result = str(entry[0].get("result", ""))
             s["passed"] = passed
-            s["graded_list"] = [passed]
-            s["safim_eval_result"] = result
-            s["execeval_passed"] = passed
             fh.write(json.dumps(s) + "\n")
 
-    shutil.move(results_file, jsonl_file[:-6] + "_eval_results-saved.json")
+    shutil.move(str(results_path), str(saved_path))
     LOG.info("Finished processing %s, results saved.", jsonl_file)
 
 
 async def _install_safim_in_sandbox(sandbox, eval_config: SafimEvaluatorConfig) -> bool:
-    pip_cmd = "pip" if eval_config.interpreter == "python" else "pypy3 -m pip"
-    cmd = f"{pip_cmd} install {eval_config.safim_git_url}"
+    cmd = f"python -m pip install {eval_config.safim_git_url}"
     out, _ = await execute_in_sandbox_with_retries(
         sandbox, eval_config.num_retries, cmd, language="shell", timeout=300
     )
@@ -215,7 +183,8 @@ async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
             LOG.error("%s", e)
             return
 
-        output_json = jsonl_file[:-6] + "_eval_results.json"
+        jsonl_path = Path(jsonl_file)
+        output_json = str(jsonl_path.with_name(jsonl_path.stem + "_eval_results.json"))
         lang_repr = "None" if eval_config.language is None else repr(eval_config.language)
         eval_code = textwrap.dedent(
             f"""
@@ -230,7 +199,7 @@ async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
             """
         )
 
-        cmd = f"{eval_config.interpreter} -c {shlex.quote(eval_code)}"
+        cmd = f"python -c {shlex.quote(eval_code)}"
         timeout_s = max(300.0, len(samples) * 30.0 + eval_config.eval_timeout_buffer_s)
         output, _ = await execute_in_sandbox_with_retries(
             sandbox,
@@ -253,7 +222,7 @@ async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
 
 
 def eval_safim(cfg: dict) -> dict[str, Any]:
-    """Install ``safim`` if needed and run ``safim.evaluate.evaluate`` (LiveCodeBench-style)."""
+    """Require a reachable sandbox, install ``safim`` there, and run evaluation."""
     try:
         from omegaconf import OmegaConf
 
@@ -269,9 +238,6 @@ def eval_safim(cfg: dict) -> dict[str, Any]:
 
     if not eval_cfg.input_file:
         raise ValueError("eval_safim requires input_file in eval config.")
-
-    if eval_cfg.interpreter not in ("python", "pypy3"):
-        raise ValueError("SAFIM interpreter must be 'python' or 'pypy3'.")
 
     sandbox_is_ready = asyncio.run(is_sandbox_available(eval_cfg.sandbox))
     if not sandbox_is_ready:
