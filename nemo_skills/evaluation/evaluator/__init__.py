@@ -39,6 +39,7 @@ from nemo_skills.evaluation.evaluator.mcq import eval_mcq
 from nemo_skills.evaluation.evaluator.mmau_pro import eval_mmau_pro
 from nemo_skills.evaluation.evaluator.mrcr import eval_mrcr
 from nemo_skills.evaluation.evaluator.ruler import eval_ruler
+from nemo_skills.evaluation.evaluator.safim import eval_safim
 from nemo_skills.evaluation.evaluator.scicode import eval_scicode
 
 EVALUATOR_MAP = {
@@ -56,6 +57,7 @@ EVALUATOR_MAP = {
     "mrcr": eval_mrcr,
     "bigcodebench": eval_bigcodebench,
     "human_eval_infilling": eval_human_eval_infilling,
+    "safim": eval_safim,
     "mmau-pro": eval_mmau_pro,
 }
 

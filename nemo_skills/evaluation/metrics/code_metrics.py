@@ -121,3 +121,17 @@ class HumanEvalInfillingMetrics(BaseMetrics):
     def update(self, predictions):
         super().update(predictions)
         self._compute_pass_at_k(predictions=predictions)
+
+
+class SafimMetrics(BaseMetrics):
+    """Metrics for SAFIM rows after ExecEval (``execeval_passed``)."""
+
+    def _get_score_dict(self, prediction: dict) -> dict[str, bool | int | float]:
+        return {"accuracy": prediction.get("execeval_passed", False)}
+
+    def get_incorrect_sample(self, prediction: dict) -> dict:
+        return {"execeval_passed": False}
+
+    def update(self, predictions):
+        super().update(predictions)
+        self._compute_pass_at_k(predictions=predictions)

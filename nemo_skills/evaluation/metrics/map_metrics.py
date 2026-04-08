@@ -26,6 +26,7 @@ from nemo_skills.evaluation.metrics.code_metrics import (
     EvalPlusMetrics,
     HumanEvalInfillingMetrics,
     LiveCodeBenchMetrics,
+    SafimMetrics,
     SciCodeMetrics,
     SweBenchMetrics,
 )
@@ -66,6 +67,7 @@ METRICS_MAP = {
     "livebench_coding": LiveCodeBenchMetrics,
     "translation": TranslationMetrics,
     "human_eval_infilling": HumanEvalInfillingMetrics,
+    "safim": SafimMetrics,
     "mmau_pro_closed_form": MMAUProMetrics,
     "mmau_pro_open_ended": MMAUProMetrics,
     "mmau_pro_instruction_following": MMAUProMetrics,

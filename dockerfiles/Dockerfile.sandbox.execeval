@@ -108,7 +108,35 @@ RUN update-alternatives --install /usr/bin/java java "$JAVA_HOME"/bin/java 100 &
     update-alternatives --install /usr/bin/pypy3 pypy3 /usr/local/pypy3.9-v7.3.9-linux64/bin/pypy3 100
 
 RUN apt-get install -y python3-pip gperf
-RUN pip install flask gunicorn flask-cors gmpy2 Cython jsonlines fire
+# tree-sitter (Python bindings) + SAFIM-pinned grammars (same commits as upstream SAFIM):
+# https://github.com/gonglinyuan/safim/blob/main/setup_tree_sitter.bash
+# tree-sitter: use 0.21.x — Language.build_library is gone in 0.22+ (see tree-sitter/py-tree-sitter releases).
+RUN pip install flask gunicorn flask-cors gmpy2 Cython jsonlines fire tree-sitter==0.21.3
+
+ENV SAFIM_TREE_SITTER_ROOT=/opt/safim-tree-sitter
+ENV SAFIM_TREE_SITTER_LIB=/opt/safim-tree-sitter/safim-languages.so
+COPY dockerfiles/sandbox/safim_setup_tree_sitter.bash /tmp/safim_setup_tree_sitter.bash
+RUN chmod +x /tmp/safim_setup_tree_sitter.bash && bash /tmp/safim_setup_tree_sitter.bash \
+    && rm -f /tmp/safim_setup_tree_sitter.bash
+
+# Single shared library for py-tree-sitter (Language(path, name) per grammar name in each grammar.json).
+RUN python3 <<'PY'
+from tree_sitter import Language
+
+root = "/opt/safim-tree-sitter"
+grammar_paths = [
+    f"{root}/tree-sitter-python",
+    f"{root}/tree-sitter-java",
+    f"{root}/tree-sitter-cpp",
+    f"{root}/tree-sitter-c-sharp",
+]
+out = f"{root}/safim-languages.so"
+Language.build_library(out, grammar_paths)
+print("SAFIM tree-sitter library:", out)
+for name in ("python", "java", "cpp", "c_sharp"):
+    Language(out, name)
+    print("  ok:", name)
+PY
 
 RUN curl -o libseccomp.tar.gz -L https://github.com/seccomp/libseccomp/releases/download/v2.5.4/libseccomp-2.5.4.tar.gz && \
     tar -xzvf libseccomp.tar.gz && chmod +x libseccomp-2.5.4/configure
