@@ -13,8 +13,10 @@
 # limitations under the License.
 import copy
 import hashlib
+import json
 import logging
 import os
+import re
 import shlex
 import subprocess
 from collections import defaultdict
@@ -180,7 +182,7 @@ def get_expected_done_files(output_dir, random_seeds, chunk_ids):
     return file_map
 
 
-def get_remaining_jobs(cluster_config, output_dir, random_seeds, chunk_ids, rerun_done):
+def get_remaining_jobs(cluster_config, output_dir, random_seeds, chunk_ids, rerun_done, rerun_ratelimit_errors=False):
     """
     Determines which jobs still need to be run based on missing .done files.
     Returns a mapping from random_seed to list of chunk_ids that need processing.
@@ -189,14 +191,13 @@ def get_remaining_jobs(cluster_config, output_dir, random_seeds, chunk_ids, reru
         return {seed: copy.deepcopy(chunk_ids) for seed in random_seeds}
 
     status_dir = get_unmounted_path(cluster_config, output_dir)
-    expected_files = get_expected_done_files(output_dir, random_seeds, chunk_ids)
+    expected_files = get_expected_done_files(status_dir, random_seeds, chunk_ids)
     check_commands = []
     for (seed, chunk_id), filepath in expected_files.items():
-        unmounted_path = filepath.replace(output_dir, status_dir)
         # Create identifiers that can be parsed from output
         seed_str = "NONE" if seed is None else str(seed)
         chunk_str = "NONE" if chunk_id is None else str(chunk_id)
-        check_commands.append(f'if [ ! -f "{unmounted_path}" ]; then echo "MISSING:{seed_str}:{chunk_str}"; fi')
+        check_commands.append(f'if [ ! -f "{filepath}" ]; then echo "MISSING:{seed_str}:{chunk_str}"; fi')
 
     # Process commands in batches to avoid "Argument list too long" error
     # Use a conservative batch size that works well even with long paths
@@ -255,8 +256,40 @@ def get_remaining_jobs(cluster_config, output_dir, random_seeds, chunk_ids, reru
 
     done_jobs = defaultdict(list)
     for seed, chunk_id in expected_files.keys():
-        if chunk_id not in missing_jobs[seed]:
+        if chunk_id not in missing_jobs.get(seed, []):
             done_jobs[seed].append(chunk_id)
+
+    if rerun_ratelimit_errors:
+        for seed in random_seeds:
+            for chunk_id in list(missing_jobs.get(seed, [])):
+                # for partially done seed/chunk_id combo rewrite the current -async file by simply dropping ratelimit error rows
+                output_file = get_chunked_rs_filename(status_dir, random_seed=seed, chunk_id=chunk_id)
+                _rewrite_async_resume_file_if_needed(output_file)
+
+        for seed in random_seeds:
+            for chunk_id in list(done_jobs[seed]):
+                # for fully done seed/chunk_id combo - of the chunks have been merged, there is no easy way to rerun just the ratelimit error rows so raise and ask user to --rerun-done
+                if chunk_id is not None and len(chunk_ids) > 1:
+                    merged_output_file = get_chunked_rs_filename(status_dir, random_seed=seed, chunk_id=None)
+                    if Path(merged_output_file).exists():
+                        raise ValueError(
+                            "Cannot use --rerun-rate-limit-error for completed chunked outputs because "
+                            f"`{merged_output_file}` has already been merged. Use --rerun-done to fully rerun the seed."
+                        )
+                # for fully done seed/chunk_id combo - if the chunks have not been merged, rewrite the .jsonl to .jsonl-async file by dropping ratelimit error rows and remove .done files
+                output_file = get_chunked_rs_filename(status_dir, random_seed=seed, chunk_id=chunk_id)
+                if _rewrite_async_resume_file_if_needed(output_file):
+                    done_file = Path(expected_files[(seed, chunk_id)])
+                    if done_file.exists():
+                        done_file.unlink()
+                    missing_jobs[seed].append(chunk_id)
+                    done_jobs[seed].remove(chunk_id)
+
+        missing_job_keys = [(seed, chunk_id) for seed in random_seeds for chunk_id in missing_jobs.get(seed, [])]
+        if len(missing_job_keys) != len(set(missing_job_keys)):
+            raise RuntimeError(
+                "Internal error: duplicate jobs were scheduled for rerun under --rerun-rate-limit-error - this should never happen"
+            )
 
     done_jobs_str = ", ".join(
         [
@@ -296,6 +329,59 @@ def get_remaining_jobs(cluster_config, output_dir, random_seeds, chunk_ids, reru
         LOG.warning("All jobs are completed. No jobs will be launched (to override set --rerun_done).")
 
     return missing_jobs
+
+
+def _is_rerunnable_ratelimit_error(output_row: dict) -> bool:
+    values_to_check = [output_row.get("detailed_error"), output_row.get("error")]
+
+    while values_to_check:
+        value = values_to_check.pop()
+        if isinstance(value, str) and "ratelimit" in re.sub(r"[\s_-]+", "", value.lower()):
+            return True
+        if isinstance(value, list):
+            values_to_check.extend(value)
+
+    return False
+
+
+def _rewrite_async_resume_file_if_needed(output_file: str, async_position_key: str = "_async_position") -> bool:
+    output_path = Path(output_file)
+    async_output_path = Path(f"{output_file}-async")
+    if output_path.exists():
+        source_path = output_path
+        rewriting_existing_async = False
+    elif async_output_path.exists():
+        source_path = async_output_path
+        rewriting_existing_async = True
+    else:
+        return False
+
+    preserved_rows = []
+    rerunnable_found = False
+    with open(source_path, "rt", encoding="utf-8") as fin:
+        for idx, line in enumerate(fin):
+            row = json.loads(line)
+            if _is_rerunnable_ratelimit_error(row):
+                rerunnable_found = True
+                continue
+            if not rewriting_existing_async or async_position_key not in row:
+                row[async_position_key] = idx
+            preserved_rows.append(row)
+
+    if not rerunnable_found:
+        return False
+
+    with open(async_output_path, "wt", encoding="utf-8") as fout:
+        for row in preserved_rows:
+            fout.write(json.dumps(row) + "\n")
+    if not rewriting_existing_async:
+        output_path.unlink()
+    LOG.info(
+        "Prepared `%s` for resume by preserving %d completed rows and removing rate-limit failures",
+        source_path,
+        len(preserved_rows),
+    )
+    return True
 
 
 def separate_hydra_args(extra_arguments: str) -> tuple[str, str]:
