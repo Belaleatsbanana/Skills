@@ -15,6 +15,7 @@ import copy
 import hashlib
 import logging
 import os
+import re
 import shlex
 import subprocess
 from collections import defaultdict
@@ -610,7 +611,14 @@ def configure_client(
     extra_arguments = server_type_arg + extra_arguments
 
     if server_gpus:  # we need to host the model
-        server_port = get_free_port(strategy="random") if get_random_port else 5000
+        # When server_gpus==8, get_random_port is False and we would default to 5000 for the
+        # vLLM subprocess; user ++server.port=... only affected Hydra client overrides, not
+        # server_config. Respect an explicit port in extra_arguments (last wins, Hydra-style).
+        port_overrides = re.findall(r"\+\+server\.port=(\d+)", extra_arguments)
+        if port_overrides:
+            server_port = int(port_overrides[-1])
+        else:
+            server_port = get_free_port(strategy="random") if get_random_port else 5000
         assert server_gpus is not None, "Need to specify server_gpus if hosting the model"
         server_address = f"localhost:{server_port}"
 
