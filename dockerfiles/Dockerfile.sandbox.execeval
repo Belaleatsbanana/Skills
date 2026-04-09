@@ -158,6 +158,7 @@ RUN rm -rf libseccomp*
 ENV RUN_UID=1586
 ENV RUN_GID=1586
 ENV NUM_WORKERS=16
+# Default bind when LISTEN_PORT/NGINX_PORT are unset (local docker). Pipeline sets LISTEN_PORT (e.g. 6000).
 ENV GUNICORN_PORT=5000
 ENV WORKER_CFG_DB=/root/worker_cfg_db.csv
 ENV LOG_LEVEL=info

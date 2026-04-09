@@ -1,7 +1,8 @@
 #!/bin/bash
 # ExecEval gunicorn entry (ntunlp/ExecEval execution_engine).
-# NeMo pipeline sets NGINX_PORT and LISTEN_PORT for the sandbox sidecar; map them to Gunicorn's bind port.
-export GUNICORN_PORT="${GUNICORN_PORT:-${NGINX_PORT:-${LISTEN_PORT:-5000}}}"
+# NeMo pipeline sets LISTEN_PORT/NGINX_PORT on the sidecar (e.g. 6000). The image may set
+# GUNICORN_PORT=5000 for local runs; pipeline env must win or wait_for_sandbox probes the wrong port.
+export GUNICORN_PORT="${LISTEN_PORT:-${NGINX_PORT:-${GUNICORN_PORT:-5000}}}"
 set -euo pipefail
 
 for ((i = 0; i < NUM_WORKERS; i++)); do
