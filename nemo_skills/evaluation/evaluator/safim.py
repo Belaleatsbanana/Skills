@@ -38,6 +38,12 @@ LOG = logging.getLogger(get_logger_name(__file__))
 
 SAFIM_GIT_URL = "git+https://github.com/wasiahmad/safim.git"
 
+# Avoid OpenBLAS thread explosion inside the sandbox (often triggers "Memory allocation still failed").
+_SAFIM_EVAL_ENV = (
+    "env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 "
+    "NUMEXPR_NUM_THREADS=1 GOTO_NUM_THREADS=1 BLIS_NUM_THREADS=1 "
+)
+
 
 def _remove_overlap(preceding_text: str, following_text: str, *, truncate_from: str = "following") -> str:
     """Trim overlap between infill and prefix/suffix (same idea as human-eval-infilling)."""
@@ -201,7 +207,7 @@ async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
             """
         )
 
-        cmd = f"python -c {shlex.quote(eval_code)}"
+        cmd = f"{_SAFIM_EVAL_ENV}python -c {shlex.quote(eval_code)}"
         timeout_s = max(300.0, len(samples) * 30.0 + eval_config.eval_timeout_buffer_s)
         output, _ = await execute_in_sandbox_with_retries(
             sandbox,
