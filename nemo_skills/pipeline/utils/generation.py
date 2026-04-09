@@ -582,6 +582,7 @@ def configure_client(
     get_random_port: bool,
     extra_arguments: str,
     server_container: str | None = None,
+    server_listen_port: Optional[int] = None,
 ):
     """
     Utility function to configure a client for the model inference server.
@@ -597,6 +598,8 @@ def configure_client(
         get_random_port: Whether to get a random port for the server.
         extra_arguments: Extra arguments to pass to the command.
         server_container: Container to use for the server.
+        server_listen_port: If set and ``server_gpus`` is non-zero, bind the self-hosted server
+            to this TCP port (and set ``++server.port``). If ``None``, port follows ``get_random_port``.
 
     Returns:
         A tuple containing:
@@ -610,7 +613,10 @@ def configure_client(
     extra_arguments = server_type_arg + extra_arguments
 
     if server_gpus:  # we need to host the model
-        server_port = get_free_port(strategy="random") if get_random_port else 5000
+        if server_listen_port is not None:
+            server_port = server_listen_port
+        else:
+            server_port = get_free_port(strategy="random") if get_random_port else 5000
         assert server_gpus is not None, "Need to specify server_gpus if hosting the model"
         server_address = f"localhost:{server_port}"
 
