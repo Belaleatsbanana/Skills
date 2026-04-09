@@ -104,7 +104,7 @@ def run_build_stage(args, run_after: list[str] | None):
 def main():
     cluster = "dfw"
     model = "/hf_models/DeepSeek-V3.2-Speciale"
-    input = "single_easy"
+    input = "ultra_proof_problems_subset"
     expname = f"transform_{input}"
     input_file = f"/workspace/finalanswer/data/{input}.jsonl"
     output_dir = f"/workspace/finalanswer/{expname}"
