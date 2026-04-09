@@ -44,6 +44,10 @@ _SAFIM_EVAL_ENV = (
     "NUMEXPR_NUM_THREADS=1 GOTO_NUM_THREADS=1 BLIS_NUM_THREADS=1 "
 )
 
+# ExecEval workers often have cwd=/root/execution_engine; a local unittest.py shadows stdlib and
+# breaks huggingface datasets (ModuleNotFoundError: unittest.mock). Use a clean working directory.
+_SAFIM_SANDBOX_CWD = "/tmp"
+
 
 def _remove_overlap(preceding_text: str, following_text: str, *, truncate_from: str = "following") -> str:
     """Trim overlap between infill and prefix/suffix (same idea as human-eval-infilling)."""
@@ -168,7 +172,7 @@ def _postprocess_safim_results(jsonl_file: str, samples: list[dict]) -> None:
 
 
 async def _install_safim_in_sandbox(sandbox, eval_config: SafimEvaluatorConfig) -> bool:
-    cmd = f"python -m pip install {eval_config.safim_git_url}"
+    cmd = f"cd {_SAFIM_SANDBOX_CWD} && python -m pip install {eval_config.safim_git_url}"
     out, _ = await execute_in_sandbox_with_retries(
         sandbox, eval_config.num_retries, cmd, language="shell", timeout=300
     )
@@ -207,7 +211,7 @@ async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
             """
         )
 
-        cmd = f"{_SAFIM_EVAL_ENV}python -c {shlex.quote(eval_code)}"
+        cmd = f"cd {_SAFIM_SANDBOX_CWD} && {_SAFIM_EVAL_ENV}python -c {shlex.quote(eval_code)}"
         timeout_s = max(300.0, len(samples) * 30.0 + eval_config.eval_timeout_buffer_s)
         output, _ = await execute_in_sandbox_with_retries(
             sandbox,
