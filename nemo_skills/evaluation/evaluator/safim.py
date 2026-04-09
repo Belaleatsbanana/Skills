@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shlex
 import shutil
 import textwrap
@@ -83,7 +84,8 @@ class SafimEvaluatorConfig(BaseEvaluatorConfig):
     subset: str = "api"
     # Optional filter; ``None`` evaluates all languages in the subset.
     language: str | None = None
-    execeval_port: int = 5000
+    # ExecEval HTTP API port inside the sandbox (must match gunicorn LISTEN_PORT; pipeline sets NEMO_SKILLS_SANDBOX_PORT).
+    execeval_port: int = field(default_factory=lambda: int(os.environ.get("NEMO_SKILLS_SANDBOX_PORT", "6000")))
     num_retries: int = 3
     eval_timeout_buffer_s: float = 120.0
     fim_postprocess: bool = True
