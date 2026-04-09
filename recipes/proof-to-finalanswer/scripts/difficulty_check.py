@@ -7,7 +7,7 @@ generate(
     ctx=wrap_arguments(
         f"++prompt_config={prompt} "
         "++inference.reasoning_effort=high "
-        "++server.enable_soft_fail=True "
+        # "++server.enable_soft_fail=True "
 
     ),
     model=f'{model}',
