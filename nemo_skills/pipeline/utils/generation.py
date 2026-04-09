@@ -595,8 +595,7 @@ def configure_client(
         server_nodes: Number of nodes to use for the server.
         server_args: Additional arguments for the server.
         server_entrypoint: Entry point for the server command (will use default if None).
-        get_random_port: Kept for call-site compatibility; hosted listen port is always
-            ephemeral (random free) unless ``++server.port=`` appears in extra_arguments.
+        get_random_port: Whether to get a random port for the server.
         extra_arguments: Extra arguments to pass to the command.
         server_container: Container to use for the server.
 
@@ -612,14 +611,14 @@ def configure_client(
     extra_arguments = server_type_arg + extra_arguments
 
     if server_gpus:  # we need to host the model
-        # Respect ++server.port= in extra_arguments for both vLLM and Hydra (last match wins).
-        # Otherwise always pick a free port: fixed 5000 collides on shared nodes and common
-        # alternates (e.g. 8080) are often taken by proxies or prior jobs.
+        # When server_gpus==8, get_random_port is False and we would default to 5000 for the
+        # vLLM subprocess; user ++server.port=... only affected Hydra client overrides, not
+        # server_config. Respect an explicit port in extra_arguments (last wins, Hydra-style).
         port_overrides = re.findall(r"\+\+server\.port=(\d+)", extra_arguments)
         if port_overrides:
             server_port = int(port_overrides[-1])
         else:
-            server_port = get_free_port(strategy="random")
+            server_port = get_free_port(strategy="random") if get_random_port else 5000
         assert server_gpus is not None, "Need to specify server_gpus if hosting the model"
         server_address = f"localhost:{server_port}"
 
