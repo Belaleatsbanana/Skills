@@ -512,7 +512,7 @@ def _run_stdio_custom_profile(
     )
     n = len(tests)
     if binary_id is None:
-        _log_first_cpp_compile_failure(cerr or "(no stderr)")
+        _log_first_cpp_compile_failure(cerr or "(no stderr)", client=client)
         return [False] * n, {
             **_empty_go_judge_run_summary(n),
             "compile_go_judge": compile_meta,
@@ -562,7 +562,7 @@ def run_stdio_tests_with_go_judge(
     if lang == "cpp":
         binary_id, cerr, compile_meta = _compile_cpp(client, code, compile_timeout_s)
         if binary_id is None:
-            _log_first_cpp_compile_failure(cerr or "(no stderr)")
+            _log_first_cpp_compile_failure(cerr or "(no stderr)", client=client)
             return [False] * n, {
                 **_empty_go_judge_run_summary(n),
                 "compile_go_judge": compile_meta,
@@ -720,16 +720,27 @@ def _reset_lcb_pro_compile_fail_log() -> None:
         _compile_fail_logged = False
 
 
-def _log_first_cpp_compile_failure(msg: str) -> None:
+def _log_first_cpp_compile_failure(msg: str, *, client: GoJudgeClient | None = None) -> None:
     global _compile_fail_logged
     with _compile_fail_lock:
         if _compile_fail_logged:
             return
         _compile_fail_logged = True
+    truncated = _truncatefn(msg, 1500)
+    conn_hint = ""
+    if "Connection refused" in msg or "Errno 111" in msg:
+        ep = client.base_url if client is not None else "http://127.0.0.1:5050"
+        conn_hint = (
+            f" Connection refused to {ep}: go-judge is not running or not reachable from this job. "
+            "Start go-judge (e.g. docker run --privileged ... criyle/go-judge) on a host the eval task can reach; "
+            "set NEMO_SKILLS_GO_JUDGE_HOST / _PORT or ++eval_config.go_judge.host if not localhost. "
+            "With REQUIRES_SANDBOX=False, NeMo-Skills does not start go-judge for you."
+        )
     LOG.warning(
         "LiveCodeBench-Pro: first C++ compile failure via go-judge "
-        "(check g++ in judge env, empty code, or wrong language). stderr: %s",
-        _truncatefn(msg, 1500),
+        "(check g++ in judge env, empty code, wrong language, or judge unreachable). stderr: %s%s",
+        truncated,
+        conn_hint,
     )
 
 

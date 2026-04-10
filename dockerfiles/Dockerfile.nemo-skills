@@ -65,3 +65,19 @@ ARG CACHEBUST=4
 RUN pip install --no-cache-dir -r /opt/NeMo-Skills/core/requirements.txt -r /opt/NeMo-Skills/requirements/pipeline.txt
 # Fix http mismatch between lepton and dggs by manually downloading dggs here
 RUN pip install ddgs
+
+# go-judge (LiveCodeBench-Pro grading via HTTP). Started before eval by INSTALLATION_COMMAND on the benchmark.
+ARG GO_JUDGE_VERSION=1.9.0
+RUN set -eux; \
+    apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) gj_asset="go-judge_${GO_JUDGE_VERSION}_linux_amd64v3.tar.gz" ;; \
+        arm64) gj_asset="go-judge_${GO_JUDGE_VERSION}_linux_arm64.tar.gz" ;; \
+        *) echo "unsupported arch for go-judge: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/gj.tgz "https://github.com/criyle/go-judge/releases/download/v${GO_JUDGE_VERSION}/${gj_asset}"; \
+    tar -xzf /tmp/gj.tgz -C /usr/local/bin go-judge; \
+    chmod +x /usr/local/bin/go-judge; \
+    rm -f /tmp/gj.tgz && \
+    rm -rf /var/lib/apt/lists/*

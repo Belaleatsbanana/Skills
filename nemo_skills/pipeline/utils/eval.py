@@ -50,6 +50,8 @@ class BenchmarkArgs:
     remaining_jobs: list[dict] = field(default_factory=list)
     # Per-benchmark sandbox environment overrides in KEY=VALUE form
     sandbox_env_overrides: list[str] = field(default_factory=list)
+    # Optional shell snippet run before the main command (main task only); merged across benchmarks in a job
+    installation_command: str | None = None
 
     @property
     def requires_judge(self):
@@ -186,6 +188,11 @@ def get_benchmark_args_from_module(
         os.environ["NEMO_SKILLS_PRIVILEGED_DOCKER"] = "1"
 
     metrics_type = get_arg_from_module_or_dict(benchmark_module, "METRICS_TYPE", None, override_dict)
+    installation_command_raw = get_arg_from_module_or_dict(benchmark_module, "INSTALLATION_COMMAND", "", override_dict)
+    if installation_command_raw in (None, ""):
+        installation_command = None
+    else:
+        installation_command = str(installation_command_raw).strip() or None
 
     return BenchmarkArgs(
         name=benchmark,
@@ -202,6 +209,7 @@ def get_benchmark_args_from_module(
         benchmark_group=benchmark_group,
         metrics_type=metrics_type,
         sandbox_env_overrides=sandbox_env_overrides,
+        installation_command=installation_command,
     )
 
 
@@ -504,6 +512,15 @@ def prepare_eval_commands(
                             env_source[key] = b
                     job_sandbox_env_overrides = [f"{k}={v}" for k, v in env_map.items()]
 
+                    install_parts: list[str] = []
+                    seen_install: set[str] = set()
+                    for b in ordered_benchmarks:
+                        inst = benchmarks_dict[b].installation_command
+                        if inst and inst not in seen_install:
+                            seen_install.add(inst)
+                            install_parts.append(inst)
+                    job_installation_command = " && ".join(install_parts) if install_parts else None
+
                     # TODO: move to a dataclass
                     job_batches.append(
                         (
@@ -516,6 +533,7 @@ def prepare_eval_commands(
                             # a check above guarantees that this is the same for all tasks in a job
                             generation_task.get_server_command_fn(),
                             job_sandbox_env_overrides,
+                            job_installation_command,
                         )
                     )
                     job_server_config, job_server_address, job_extra_arguments = pipeline_utils.configure_client(

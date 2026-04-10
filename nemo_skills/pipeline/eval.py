@@ -434,8 +434,12 @@ def eval(
                 job_server_address,
                 job_server_command,
                 job_sandbox_env_overrides,
+                job_installation_command,
             ) = job_args
             prev_tasks = _task_dependencies
+
+            install_parts = [p for p in (job_installation_command, installation_command) if p]
+            merged_installation_command = " && ".join(install_parts) if install_parts else None
 
             for _ in range(dependent_jobs + 1):
                 has_tasks = True
@@ -462,7 +466,7 @@ def eval(
                     ),
                     get_server_command=job_server_command,
                     sbatch_kwargs=sbatch_kwargs,
-                    installation_command=installation_command,
+                    installation_command=merged_installation_command,
                     skip_hf_home_check=skip_hf_home_check,
                 )
                 prev_tasks = [new_task]
