@@ -607,7 +607,17 @@ def add_task(
         for cur_idx, (cur_cmd, cur_container, cur_tasks) in enumerate(zip(cmd, container, num_tasks)):
             if cluster_config["executor"] != "slurm" and cur_tasks > 1:
                 cur_cmd = f"mpirun --allow-run-as-root -np {cur_tasks} bash -c {shlex.quote(cur_cmd)}"
-            with temporary_env_update(cluster_config, {"NEMO_SKILLS_SANDBOX_PORT": sandbox_port}):
+            main_env = {"NEMO_SKILLS_SANDBOX_PORT": sandbox_port}
+            # Sandbox is always the next het group after main (see block below). Match
+            # GenerationClientScript / BaseJobScript.hostname_ref() so eval/ns paths reach
+            # go-judge in the sandbox sidecar when with_sandbox=True.
+            if with_sandbox:
+                sandbox_het_group = het_group + 1
+                main_env["NEMO_SKILLS_GO_JUDGE_HOST"] = (
+                    f"${{SLURM_MASTER_NODE_HET_GROUP_{sandbox_het_group}:-localhost}}"
+                )
+                main_env["NEMO_SKILLS_GO_JUDGE_PORT"] = os.environ.get("NEMO_SKILLS_SANDBOX_GO_JUDGE_PORT", "5050")
+            with temporary_env_update(cluster_config, main_env):
                 cur_cmd = install_packages_wrap(cur_cmd, installation_command)
                 commands.append(cur_cmd)
                 client_num_gpus = num_gpus if (server_config is None or num_nodes > 1) else 0

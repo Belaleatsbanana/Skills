@@ -314,6 +314,27 @@ else
 fi
 
 # =============================================================================
+# go-judge (LiveCodeBench-Pro /run API) — master node only; see NEMO_SKILLS_SANDBOX_ENABLE_GO_JUDGE
+# =============================================================================
+GO_JUDGE_PID=""
+if [ "${NEMO_SKILLS_SANDBOX_ENABLE_GO_JUDGE:-1}" != "0" ] && [ "$IS_MASTER" = "1" ] && [ -x /usr/local/bin/go-judge ]; then
+    GJP="${GO_JUDGE_HTTP_PORT:-5050}"
+    touch /var/log/go-judge.log
+    chmod 644 /var/log/go-judge.log
+    echo "[$_H] Starting go-judge on 0.0.0.0:${GJP}..."
+    /usr/local/bin/go-judge -http-addr "0.0.0.0:${GJP}" >> /var/log/go-judge.log 2>&1 &
+    GO_JUDGE_PID=$!
+    tail -f /var/log/go-judge.log &> /dev/stderr &
+    for _w in $(seq 1 60); do
+        if curl -s -f --connect-timeout 1 --max-time 2 "http://127.0.0.1:${GJP}/version" >/dev/null 2>&1; then
+            echo "[$_H] go-judge ready (pid=${GO_JUDGE_PID})"
+            break
+        fi
+        sleep 1
+    done
+fi
+
+# =============================================================================
 # Port coordination setup
 # =============================================================================
 SANDBOX_WORKER_BASE_PORT=${SANDBOX_WORKER_BASE_PORT:-50001}
@@ -411,6 +432,9 @@ WORKER_PIDS=()
 
 cleanup() {
     echo "Shutting down workers and nginx..."
+    if [ -n "${GO_JUDGE_PID:-}" ] && kill -0 "${GO_JUDGE_PID}" 2>/dev/null; then
+        kill -TERM "${GO_JUDGE_PID}" 2>/dev/null || true
+    fi
     for pid in "${WORKER_PIDS[@]}"; do
         if kill -0 "$pid" 2>/dev/null; then
             kill -TERM "$pid" 2>/dev/null || true
