@@ -110,6 +110,12 @@ except ImportError:
                 self.error_cnt += 1
 
     def get_parser(lang: str):
+        language = _ts_lang_map()[lang]
         parser = Parser()
-        parser.set_language(_ts_lang_map()[lang])
+        # tree-sitter>=0.22: use .language; older py-tree-sitter: set_language()
+        set_lang = getattr(parser, "set_language", None)
+        if callable(set_lang):
+            set_lang(language)
+        else:
+            parser.language = language
         return parser

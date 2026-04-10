@@ -21,3 +21,11 @@ EVAL_SPLIT = "api"
 # ``eval_config.subset`` must match the HuggingFace subset passed to ``safim.evaluate``.
 GENERATION_ARGS = f"++prompt_config=generic/fim ++eval_type=safim ++eval_config.subset={EVAL_SPLIT}"
 REQUIRES_SANDBOX = True
+# Advanced postprocess uses tree-sitter in ``safim_utils``; the main nemo-skills image usually has no
+# ``SAFIM_TREE_SITTER_LIB``. Eval falls back to preprocessing inside the execeval sandbox when needed;
+# mounts must be shared so the sandbox can read the JSONL and ``/nemo_run/code``.
+KEEP_MOUNTS_FOR_SANDBOX = True
+# ExecEval (inside the sandbox image) uses prlimit for RSS limits. On Slurm+Pyxis, if you see
+# "prlimit: failed to set the RSS resource limit: Operation not permitted", set
+# ``sandbox_extra_srun_args`` in cluster YAML (site-specific) or use a sandbox policy with
+# CAP_SYS_RESOURCE. Local Docker eval sets privileged automatically for safim.

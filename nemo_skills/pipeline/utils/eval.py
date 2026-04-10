@@ -189,6 +189,13 @@ def get_benchmark_args_from_module(
             benchmark,
         )
         os.environ["NEMO_SKILLS_PRIVILEGED_DOCKER"] = "1"
+    elif cluster_config["executor"] == "slurm" and benchmark == "safim":
+        LOG.info(
+            "SAFIM sandbox runs ExecEval, which uses prlimit (RLIMIT_RSS). If you see "
+            "'prlimit: ... RSS ... Operation not permitted', add site-specific flags under "
+            "`sandbox_extra_srun_args` in your cluster YAML (e.g. extra Pyxis/enroot capabilities); "
+            "local runs use NEMO_SKILLS_PRIVILEGED_DOCKER=1 automatically."
+        )
 
     metrics_type = get_arg_from_module_or_dict(benchmark_module, "METRICS_TYPE", None, override_dict)
 

@@ -235,6 +235,17 @@ def _safim_cfg_subset(cfg: dict) -> dict:
     return {k: v for k, v in cfg.items() if k in allowed}
 
 
+def _safim_advanced_preprocess_needs_tree_sitter(postprocess: str | None, subset: str) -> bool:
+    """True when JSONL preprocessing will call tree-sitter (needs grammar .so or ``ast_utils``)."""
+    try:
+        pp = _normalize_safim_postprocess(postprocess)
+    except (TypeError, ValueError):
+        return True
+    if pp != "advanced":
+        return False
+    return subset in ("api", "block", "control")
+
+
 def _normalize_safim_postprocess(mode: str | None) -> str | None:
     """Return ``None``, ``basic``, or ``advanced``; raise if invalid."""
     if mode is None:
@@ -343,14 +354,68 @@ async def _install_safim_in_sandbox(sandbox, eval_config: SafimEvaluatorConfig) 
     return True
 
 
+async def _preprocess_safim_jsonl_in_sandbox(
+    sandbox,
+    jsonl_file: str,
+    postprocess: str | None,
+    subset: str,
+    num_retries: int,
+    timeout: float,
+) -> list[dict] | None:
+    """Run :func:`_preprocess_safim_jsonl` inside the sandbox (tree-sitter + ``/nemo_run/code``).
+
+    Requires ``keep_mounts_for_sandbox`` so the sandbox sees the JSONL path and packaged NeMo-Skills code.
+    """
+    py = (
+        "from nemo_skills.evaluation.evaluator.safim import _preprocess_safim_jsonl as _p; "
+        f"_p({json.dumps(jsonl_file)}, {repr(postprocess)}, {repr(subset)})"
+    )
+    cmd = (
+        f"cd {_SAFIM_SANDBOX_CWD} && export PYTHONPATH=/nemo_run/code:${{PYTHONPATH:-}} && python -c {shlex.quote(py)}"
+    )
+    out, _ = await execute_in_sandbox_with_retries(sandbox, num_retries, cmd, language="shell", timeout=timeout)
+    if out.get("process_status") != "completed":
+        LOG.error(
+            "SAFIM preprocessing in sandbox failed (stderr): %s",
+            out.get("stderr", "")[:8000],
+        )
+        return None
+    samples: list[dict] = []
+    with open(jsonl_file, encoding="utf-8") as fh:
+        for line in fh:
+            samples.append(json.loads(line))
+    return samples
+
+
 async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
     async with sandbox_context(eval_config.sandbox) as sandbox:
         if not await _install_safim_in_sandbox(sandbox, eval_config):
             return
 
         jsonl_file = str(Path(eval_config.input_file).resolve())
+        preprocess_timeout = max(300.0, eval_config.eval_timeout_buffer_s * 2)
         try:
             samples = _preprocess_safim_jsonl(jsonl_file, eval_config.postprocess, eval_config.subset)
+        except ImportError as err:
+            if _safim_advanced_preprocess_needs_tree_sitter(eval_config.postprocess, eval_config.subset):
+                LOG.warning(
+                    "SAFIM preprocessing needs tree-sitter on the main task (%s). "
+                    "Retrying preprocessing inside the sandbox (needs keep_mounts_for_sandbox / shared JSONL path).",
+                    err,
+                )
+                samples = await _preprocess_safim_jsonl_in_sandbox(
+                    sandbox,
+                    jsonl_file,
+                    eval_config.postprocess,
+                    eval_config.subset,
+                    eval_config.num_retries,
+                    preprocess_timeout,
+                )
+                if samples is None:
+                    return
+            else:
+                LOG.error("%s", err)
+                return
         except (TypeError, ValueError) as e:
             LOG.error("%s", e)
             return

@@ -689,7 +689,11 @@ def add_task(
                 # (e.g., SIGILL from native libraries) as fatal and cancel the
                 # entire step. Overriding --mpi=none avoids PMIx involvement for
                 # this sidecar step.
-                extra_srun_args=["--kill-on-bad-exit=0", "--mpi=none"],
+                extra_srun_args=[
+                    "--kill-on-bad-exit=0",
+                    "--mpi=none",
+                    *(cluster_config.get("sandbox_extra_srun_args") or []),
+                ],
             )
             executors.append(sandbox_executor)
             het_group_indices.append(het_group)

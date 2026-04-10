@@ -57,3 +57,11 @@ job_name_prefix: "nemo_skills:"
 # define any environment variables. Note that HF_HOME is required by default and needs to be a mounted path!
 # env_vars:
 #   - HF_HOME=/models/hf-cache
+
+# Extra srun flags appended only to the *sandbox* Slurm step (e.g. SAFIM / ExecEval).
+# ExecEval calls prlimit(RLIMIT_RSS); without CAP_SYS_RESOURCE (or equivalent) you may see:
+#   prlimit: failed to set the RSS resource limit: Operation not permitted
+# The exact fix depends on your Pyxis/enroot version and site policy—ask cluster admins or try
+# options your site documents (capability / privileged sandbox), e.g. one string per list entry:
+# sandbox_extra_srun_args:
+#   - "--container-options=..."

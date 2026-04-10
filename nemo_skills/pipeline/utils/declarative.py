@@ -594,7 +594,11 @@ class Pipeline:
             # (e.g., SIGILL from native libraries) as fatal and cancel the
             # entire step. Overriding --mpi=none avoids PMIx involvement for
             # this sidecar step.
-            extra_srun_args = ["--kill-on-bad-exit=0", "--mpi=none"]
+            extra_srun_args = [
+                "--kill-on-bad-exit=0",
+                "--mpi=none",
+                *(cluster_config.get("sandbox_extra_srun_args") or []),
+            ]
 
         with env_context:
             return get_executor(
