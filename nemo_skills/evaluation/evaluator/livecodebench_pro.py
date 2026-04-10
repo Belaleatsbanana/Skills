@@ -24,7 +24,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from dataclasses import dataclass, field
+from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -325,8 +326,65 @@ def _run_one_go_judge_case(
     return (files.get("stdout") or ""), r0
 
 
+def _go_judge_exit_ok(exit_status: Any) -> bool:
+    """True if process exit code is zero (go-judge may encode as int, str, or float in JSON)."""
+    if exit_status is None:
+        return False
+    try:
+        return int(exit_status) == 0
+    except (TypeError, ValueError):
+        try:
+            return float(exit_status) == 0.0
+        except (TypeError, ValueError):
+            return False
+
+
 def _go_judge_run_ok(r0: dict) -> bool:
-    return r0.get("status") == "Accepted" and r0.get("exitStatus", 1) == 0
+    return r0.get("status") == "Accepted" and _go_judge_exit_ok(r0.get("exitStatus"))
+
+
+def _go_judge_result_meta(r0: dict) -> dict[str, Any]:
+    """Subset of go-judge ``Result`` for logging/metadata (see go-judge README *Return Status*)."""
+    meta: dict[str, Any] = {
+        "status": r0.get("status"),
+        "exitStatus": r0.get("exitStatus"),
+    }
+    err = r0.get("error")
+    if err:
+        meta["error"] = err
+    return meta
+
+
+def _summarize_return_status(meta: dict[str, Any]) -> str:
+    """One-line summary of go-judge *Return Status* (README) for the problem."""
+    err = meta.get("error")
+    if err:
+        return f"eval_error: {err}"
+    cg = meta.get("compile_go_judge")
+    if isinstance(cg, dict) and cg.get("status") is not None:
+        if cg.get("status") != "Accepted" or not _go_judge_exit_ok(cg.get("exitStatus")):
+            st = cg.get("status")
+            es = cg.get("exitStatus")
+            extra = f" ({cg['error']})" if cg.get("error") else ""
+            return f"compile: {st} (exitStatus={es}){extra}"
+    fn = meta.get("first_non_accepted")
+    if isinstance(fn, dict) and fn.get("status") is not None:
+        return f"run: {fn.get('status')} (exitStatus={fn.get('exitStatus')}, test_index={fn.get('test_index')})"
+    fw = meta.get("first_wrong_answer")
+    if isinstance(fw, dict):
+        return f"wrong_answer (test_index={fw.get('test_index')})"
+    if not meta.get("num_tests"):
+        return "no_tests"
+    return "Accepted"
+
+
+def _empty_go_judge_run_summary(num_tests: int) -> dict[str, Any]:
+    return {
+        "num_tests": num_tests,
+        "run_status_histogram": {},
+        "first_non_accepted": None,
+        "first_wrong_answer": None,
+    }
 
 
 def _grade_stdio_tests_with_copy_in(
@@ -336,17 +394,36 @@ def _grade_stdio_tests_with_copy_in(
     mem_bytes: int,
     copy_in: dict,
     run_args: list[str],
-) -> list[bool]:
+) -> tuple[list[bool], dict[str, Any]]:
     """Run the same cached binary (or static copyIn) against every test case."""
     out: list[bool] = []
-    for tc in tests:
+    hist: Counter[str] = Counter()
+    first_non_accepted: dict[str, Any] | None = None
+    first_wrong_answer: dict[str, Any] | None = None
+    for i, tc in enumerate(tests):
         stdout, r0 = _run_one_go_judge_case(client, tc.input, time_limit_s, mem_bytes, copy_in, run_args)
+        st = r0.get("status")
+        hist[str(st) if st is not None else "null"] += 1
         if not _go_judge_run_ok(r0):
             out.append(False)
+            if first_non_accepted is None:
+                files = r0.get("files") or {}
+                first_non_accepted = {
+                    "test_index": i,
+                    **_go_judge_result_meta(r0),
+                    "stderr_preview": _truncatefn((files.get("stderr") or ""), 400),
+                }
             continue
         ok, _ = compare_stdio_to_expected(stdout, tc.output)
         out.append(ok)
-    return out
+        if not ok and first_wrong_answer is None:
+            first_wrong_answer = {"test_index": i, **_go_judge_result_meta(r0)}
+    summary = {
+        "run_status_histogram": dict(hist),
+        "first_non_accepted": first_non_accepted,
+        "first_wrong_answer": first_wrong_answer,
+    }
+    return out, summary
 
 
 def _compile_with_copy_out_cached(
@@ -356,7 +433,7 @@ def _compile_with_copy_out_cached(
     compile_args: list[str],
     artifact_key: str,
     compile_timeout_s: float,
-) -> tuple[str | None, str]:
+) -> tuple[str | None, str, dict[str, Any]]:
     ns = seconds_to_go_judge_duration_ns(compile_timeout_s)
     payload = {
         "cmd": [
@@ -378,23 +455,30 @@ def _compile_with_copy_out_cached(
             }
         ]
     }
+    err_meta = {"status": None, "exitStatus": None, "error": ""}
     try:
         results = client.run_cmd(payload)
     except Exception as e:
-        return None, str(e)
+        err_meta["error"] = str(e)
+        return None, str(e), err_meta
     if not results:
-        return None, "empty go-judge response"
+        err_meta["error"] = "empty go-judge response"
+        return None, "empty go-judge response", err_meta
     r0 = results[0]
+    result_meta = _go_judge_result_meta(r0)
     stderr = ((r0.get("files") or {}).get("stderr") or "").strip()
-    if r0.get("status") != "Accepted" or r0.get("exitStatus", 1) != 0:
-        return None, stderr or (r0.get("error") or r0.get("status") or "compile failed")
+    if r0.get("status") != "Accepted" or not _go_judge_exit_ok(r0.get("exitStatus")):
+        return None, stderr or (r0.get("error") or r0.get("status") or "compile failed"), result_meta
     fid = (r0.get("fileIds") or {}).get(artifact_key)
     if not fid:
-        return None, stderr or "missing artifact fileId after compile"
-    return fid, stderr
+        fail_meta = {**result_meta, "error": result_meta.get("error") or "missing artifact fileId after compile"}
+        return None, stderr or "missing artifact fileId after compile", fail_meta
+    return fid, stderr, result_meta
 
 
-def _compile_cpp(client: GoJudgeClient, source: str, compile_timeout_s: float) -> tuple[str | None, str]:
+def _compile_cpp(
+    client: GoJudgeClient, source: str, compile_timeout_s: float
+) -> tuple[str | None, str, dict[str, Any]]:
     return _compile_with_copy_out_cached(
         client,
         "solution.cpp",
@@ -423,14 +507,20 @@ def _run_stdio_custom_profile(
     compile_args = list(profile["compile_args"])
     artifact_key = str(profile["artifact_key"])
     run_args = list(profile["run_args"])
-    binary_id, _ = _compile_with_copy_out_cached(
+    binary_id, cerr, compile_meta = _compile_with_copy_out_cached(
         client, source_key, code, compile_args, artifact_key, compile_timeout_s
     )
+    n = len(tests)
     if binary_id is None:
-        return [False] * len(tests)
+        _log_first_cpp_compile_failure(cerr or "(no stderr)")
+        return [False] * n, {
+            **_empty_go_judge_run_summary(n),
+            "compile_go_judge": compile_meta,
+            "compile_stderr_preview": _truncatefn(cerr, 800),
+        }
     copy_key = str(profile.get("run_copy_in_key", artifact_key))
     try:
-        return _grade_stdio_tests_with_copy_in(
+        per_test, run_summary = _grade_stdio_tests_with_copy_in(
             client,
             tests,
             time_limit_s,
@@ -440,6 +530,11 @@ def _run_stdio_custom_profile(
         )
     finally:
         client.delete_file(binary_id)
+    return per_test, {
+        "num_tests": n,
+        "compile_go_judge": compile_meta,
+        **run_summary,
+    }
 
 
 def run_stdio_tests_with_go_judge(
@@ -451,10 +546,11 @@ def run_stdio_tests_with_go_judge(
     memory_limit_mb: int,
     compile_timeout_s: float,
     language_profiles: dict[str, dict[str, Any]] | None = None,
-) -> list[bool]:
-    """Run every zip test case; return pass/fail per case (bool)."""
+) -> tuple[list[bool], dict[str, Any]]:
+    """Run every zip test case; return pass/fail per case and go-judge metadata."""
+    n = len(tests)
     if not tests:
-        return []
+        return [], {**_empty_go_judge_run_summary(0), "compile_go_judge": None}
     lang = _normalize_language(language)
     mem_bytes = min(client.run_memory_bytes, max(16 * 1024**2, int(memory_limit_mb) * 1024 * 1024))
     profiles = language_profiles or {}
@@ -464,11 +560,16 @@ def run_stdio_tests_with_go_judge(
         )
 
     if lang == "cpp":
-        binary_id, _ = _compile_cpp(client, code, compile_timeout_s)
+        binary_id, cerr, compile_meta = _compile_cpp(client, code, compile_timeout_s)
         if binary_id is None:
-            return [False] * len(tests)
+            _log_first_cpp_compile_failure(cerr or "(no stderr)")
+            return [False] * n, {
+                **_empty_go_judge_run_summary(n),
+                "compile_go_judge": compile_meta,
+                "compile_stderr_preview": _truncatefn(cerr, 800),
+            }
         try:
-            return _grade_stdio_tests_with_copy_in(
+            per_test, run_summary = _grade_stdio_tests_with_copy_in(
                 client,
                 tests,
                 time_limit_s,
@@ -478,10 +579,18 @@ def run_stdio_tests_with_go_judge(
             )
         finally:
             client.delete_file(binary_id)
+        return per_test, {
+            "num_tests": n,
+            "compile_go_judge": compile_meta,
+            **run_summary,
+        }
 
     if lang == "python":
         out: list[bool] = []
-        for tc in tests:
+        hist: Counter[str] = Counter()
+        first_non_accepted: dict[str, Any] | None = None
+        first_wrong_answer: dict[str, Any] | None = None
+        for i, tc in enumerate(tests):
             stdout, r0 = _run_one_go_judge_case(
                 client,
                 tc.input,
@@ -490,12 +599,29 @@ def run_stdio_tests_with_go_judge(
                 {"solution.py": {"content": code}},
                 [client.python_path, "solution.py"],
             )
+            st = r0.get("status")
+            hist[str(st) if st is not None else "null"] += 1
             if not _go_judge_run_ok(r0):
                 out.append(False)
+                if first_non_accepted is None:
+                    files = r0.get("files") or {}
+                    first_non_accepted = {
+                        "test_index": i,
+                        **_go_judge_result_meta(r0),
+                        "stderr_preview": _truncatefn((files.get("stderr") or ""), 400),
+                    }
                 continue
             ok, _ = compare_stdio_to_expected(stdout, tc.output)
             out.append(ok)
-        return out
+            if not ok and first_wrong_answer is None:
+                first_wrong_answer = {"test_index": i, **_go_judge_result_meta(r0)}
+        return out, {
+            "num_tests": n,
+            "compile_go_judge": None,
+            "run_status_histogram": dict(hist),
+            "first_non_accepted": first_non_accepted,
+            "first_wrong_answer": first_wrong_answer,
+        }
 
     raise ValueError(
         f"Unsupported LiveCodeBench-Pro language {language!r}. "
@@ -555,7 +681,8 @@ def _build_eval_row(
     row: dict,
     code_list: list[str],
     graded_per_generation: list[bool],
-    metadata: list[str],
+    return_status: str,
+    num_tests: int,
 ) -> dict[str, Any]:
     difficulty = row.get("difficulty", "medium")
     if hasattr(difficulty, "value"):
@@ -563,7 +690,7 @@ def _build_eval_row(
     platform = row.get("platform", "codeforces")
     if hasattr(platform, "value"):
         platform = platform.value
-    base = {
+    return {
         "platform": platform,
         "problem_id": row["problem_id"],
         "problem_title": row.get("problem_title", ""),
@@ -577,13 +704,33 @@ def _build_eval_row(
         "language": row.get("language", "cpp"),
         "graded_list": graded_per_generation,
         "pass@1": graded_per_generation.count(True) / len(graded_per_generation) if graded_per_generation else 0.0,
+        "return_status": return_status,
+        "metadata": [json.dumps({"num_tests": num_tests})],
     }
-    if metadata:
-        base["metadata"] = metadata
-    return base
 
 
 _tls = threading.local()
+_compile_fail_lock = threading.Lock()
+_compile_fail_logged = False
+
+
+def _reset_lcb_pro_compile_fail_log() -> None:
+    global _compile_fail_logged
+    with _compile_fail_lock:
+        _compile_fail_logged = False
+
+
+def _log_first_cpp_compile_failure(msg: str) -> None:
+    global _compile_fail_logged
+    with _compile_fail_lock:
+        if _compile_fail_logged:
+            return
+        _compile_fail_logged = True
+    LOG.warning(
+        "LiveCodeBench-Pro: first C++ compile failure via go-judge "
+        "(check g++ in judge env, empty code, or wrong language). stderr: %s",
+        _truncatefn(msg, 1500),
+    )
 
 
 def _thread_local_client(cfg: dict) -> GoJudgeClient:
@@ -608,6 +755,7 @@ def run_livecodebench_pro_evaluation(
     """Load zips + generations JSONL, grade via go-judge, write ``<stem>_eval_results.json``."""
     k_list = k_list or [1]
     gj_cfg = dict(go_judge or {})
+    _reset_lcb_pro_compile_fail_log()
     zip_index = index_zip_files(Path(test_dir))
 
     benchmark_rows: list[dict] = []
@@ -644,12 +792,14 @@ def run_livecodebench_pro_evaluation(
     LOG.info("Evaluating %d LiveCodeBench-Pro problems (go-judge)", len(benchmark_rows))
 
     results_linear: dict[int, list[list[Any]]] = {}
-    metas_linear: dict[int, list[str]] = {}
+    return_status_linear: dict[int, str] = {}
+    num_tests_linear: dict[int, int] = {}
     language_profiles = gj_cfg.get("language_profiles") or {}
 
     def work(item: tuple[int, dict]) -> None:
         idx, row = item
         pid = str(row["problem_id"])
+        tests: list[StdioTestCase] = []
         try:
             code_list = row.get("code_list") or [row.get("completion", "")]
             code = code_list[0] if code_list else ""
@@ -658,10 +808,11 @@ def run_livecodebench_pro_evaluation(
             tl = min(int(row.get("time_limit", timeout)), int(timeout))
             mem_mb = int(row.get("memory_limit", 256))
             client = _thread_local_client(gj_cfg)
-            per_test = run_stdio_tests_with_go_judge(
+            row_lang = _normalize_language(str(row.get("language") or language))
+            per_test, judge_meta = run_stdio_tests_with_go_judge(
                 client,
                 code,
-                language,
+                row_lang,
                 tests,
                 float(tl),
                 mem_mb,
@@ -669,11 +820,13 @@ def run_livecodebench_pro_evaluation(
                 language_profiles=language_profiles,
             )
             results_linear[idx] = [per_test]
-            metas_linear[idx] = [json.dumps({"num_tests": len(tests)})]
+            num_tests_linear[idx] = len(tests)
+            return_status_linear[idx] = _summarize_return_status(judge_meta)
         except Exception as e:
             LOG.exception("LCB-Pro go-judge eval failed for problem_id=%s", pid)
             results_linear[idx] = [[False]]
-            metas_linear[idx] = [json.dumps({"error": str(e)})]
+            num_tests_linear[idx] = len(tests)
+            return_status_linear[idx] = _summarize_return_status({"error": str(e), "num_tests": len(tests)})
 
     with tqdm(total=len(benchmark_rows), desc="LCB-Pro (go-judge)") as pbar:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, num_workers)) as ex:
@@ -691,8 +844,9 @@ def run_livecodebench_pro_evaluation(
     for i, row in enumerate(benchmark_rows):
         code_list = row.get("code_list") or [row.get("completion", "")]
         gl = graded_rows[i]
-        meta = metas_linear.get(i, [json.dumps({})])
-        save_eval.append(_build_eval_row(row, code_list, gl, meta))
+        rs = return_status_linear.get(i, "unknown")
+        nt = num_tests_linear.get(i, 0)
+        save_eval.append(_build_eval_row(row, code_list, gl, rs, nt))
 
     output_results: dict[str, Any] = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -729,7 +883,6 @@ def clear_thread_local_go_judge_client() -> None:
 
 @nested_dataclass(kw_only=True)
 class LiveCodeBenchProEvaluatorConfig(BaseEvaluatorConfig):
-    sandbox: dict = field(default_factory=lambda: {"sandbox_type": "local"})
     go_judge: dict | None = None
     language: str = "cpp"
     test_dir: str = None
@@ -738,19 +891,20 @@ class LiveCodeBenchProEvaluatorConfig(BaseEvaluatorConfig):
     compile_timeout_s: float = 60.0
 
 
-def _merged_go_judge_config_for_lcb_pro(cfg: LiveCodeBenchProEvaluatorConfig) -> dict:
-    """Merge eval_config.go_judge and optional sandbox_type=go_judge into one client config."""
+def _as_plain_dict(obj: Any) -> dict:
+    if obj is None:
+        return {}
+    if OmegaConf.is_config(obj):
+        return OmegaConf.to_container(obj, resolve=True)
+    return dict(obj)
 
-    def _as_plain_dict(obj) -> dict:
-        if obj is None:
-            return {}
-        if OmegaConf.is_config(obj):
-            return OmegaConf.to_container(obj, resolve=True)
-        return dict(obj)
+
+def _merged_go_judge_client_config(go_judge: Any, sandbox: Any) -> dict:
+    """Merge ``go_judge`` with optional legacy ``sandbox`` block (``sandbox_type: go_judge``)."""
 
     merged: dict = {}
-    merged.update(_as_plain_dict(cfg.go_judge))
-    sb = _as_plain_dict(cfg.sandbox)
+    merged.update(_as_plain_dict(go_judge))
+    sb = _as_plain_dict(sandbox)
     if str(sb.get("sandbox_type", "")).lower() == "go_judge":
         merged.update({k: v for k, v in sb.items() if k != "sandbox_type"})
     if merged.get("enabled") is False:
@@ -759,13 +913,23 @@ def _merged_go_judge_config_for_lcb_pro(cfg: LiveCodeBenchProEvaluatorConfig) ->
 
 
 def eval_livecodebench_pro(cfg):
-    cfg = LiveCodeBenchProEvaluatorConfig(**cfg)
+    raw = OmegaConf.to_container(cfg, resolve=True) if OmegaConf.is_config(cfg) else dict(cfg)
+    raw["go_judge"] = _merged_go_judge_client_config(raw.get("go_judge"), raw.pop("sandbox", None))
+    cfg = LiveCodeBenchProEvaluatorConfig(**raw)
     jsonl_file = cfg.input_file
     samples = []
     with open(jsonl_file, encoding="utf-8") as f:
         for line in f:
             sample = json.loads(line)
-            sample = preprocess_code(sample, language=cfg.language, strip_whitespace=True)
+            # preprocess_code only reads "generation"; backfill from "completion" for this benchmark only.
+            gen = sample.get("generation")
+            if not isinstance(gen, str) or not gen.strip():
+                comp = sample.get("completion")
+                if isinstance(comp, str) and comp.strip():
+                    sample = dict(sample)
+                    sample["generation"] = comp
+            fence_lang = _normalize_language(str(sample.get("language") or cfg.language))
+            sample = preprocess_code(sample, language=fence_lang, strip_whitespace=True)
             sample["code_list"] = [sample["completion"]]
             samples.append(sample)
 
@@ -773,7 +937,7 @@ def eval_livecodebench_pro(cfg):
         for sample in samples:
             f.write(json.dumps(sample) + "\n")
 
-    go_judge_cfg = _merged_go_judge_config_for_lcb_pro(cfg)
+    go_judge_cfg = dict(cfg.go_judge or {})
     results_path = _eval_results_json_path(jsonl_file)
     saved_path = results_path[:-5] + "-saved.json" if results_path.endswith(".json") else results_path + "-saved"
 
@@ -796,7 +960,10 @@ def eval_livecodebench_pro(cfg):
     with open(jsonl_file, "wt", encoding="utf-8") as f:
         for sample in samples:
             if sample["problem_id"] in eval_grades["eval"]:
-                sample["graded_list"] = eval_grades["eval"][sample["problem_id"]]["graded_list"]
+                ev = eval_grades["eval"][sample["problem_id"]]
+                sample["graded_list"] = ev["graded_list"]
+                sample["return_status"] = ev.get("return_status", "")
+                sample["metadata"] = ev.get("metadata", [json.dumps({"num_tests": 0})])
                 f.write(json.dumps(sample) + "\n")
 
     shutil.move(results_path, saved_path)
