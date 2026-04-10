@@ -35,7 +35,7 @@ _EVALUATOR_MAP_PATHS = {
     "ruler2": "nemo_skills.evaluation.evaluator.ruler:eval_ruler2",
     "livecodebench": "nemo_skills.evaluation.evaluator.livecodebench:eval_livecodebench",
     "livebench_coding": "nemo_skills.evaluation.evaluator.code:eval_livebench_coding",
-    "livecodebench_pro": "nemo_skills.evaluation.evaluator.code:eval_livecodebench_pro",
+    "livecodebench_pro": "nemo_skills.evaluation.evaluator.livecodebench_pro:eval_livecodebench_pro",
     "scicode": "nemo_skills.evaluation.evaluator.scicode:eval_scicode",
     "mrcr": "nemo_skills.evaluation.evaluator.mrcr:eval_mrcr",
     "bigcodebench": "nemo_skills.evaluation.evaluator.code:eval_bigcodebench",

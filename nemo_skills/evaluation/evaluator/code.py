@@ -236,64 +236,6 @@ def install_requirements(url):
         print(f"Error during installation: {e}")
 
 
-@nested_dataclass(kw_only=True)
-class LiveCodeBenchProEvaluatorConfig(BaseEvaluatorConfig):
-    sandbox: dict = field(default_factory=lambda: {"sandbox_type": "local"})
-    language: str = "cpp"  # use either "python" or "cpp"
-    test_file: str = None
-    test_dir: str = None  # path to the unit tests directory
-    timeout: int = 6
-    num_processes: int = 12
-
-
-def eval_livecodebench_pro(cfg):
-    cfg = LiveCodeBenchProEvaluatorConfig(**cfg)
-    try:
-        from livecodebench.evaluate import evaluate
-    except ImportError:
-        LOG.info("Package 'livecodebench' not found. Attempting to install...")
-        install_from_git("git+https://github.com/wasiahmad/livecodebench.git@livecodebench_pro")
-        try:
-            from livecodebench.evaluate import evaluate
-        except ImportError:
-            LOG.info("Failed to install 'livecodebench'. Please install it manually.")
-            raise
-
-    jsonl_file = cfg.input_file
-    samples = []
-    with open(jsonl_file) as f:
-        for line in f:
-            sample = json.loads(line)
-            sample = preprocess_code(sample, language=cfg.language, strip_whitespace=True)
-            sample["code_list"] = [sample["completion"]]
-            samples.append(sample)
-
-    with open(jsonl_file, "wt", encoding="utf-8") as f:
-        for sample in samples:
-            f.write(json.dumps(sample) + "\n")
-
-    evaluate(
-        custom_output_file=jsonl_file,
-        language=cfg.language,
-        test_file=cfg.test_file,
-        test_dir=cfg.test_dir,
-        k_list=[1],
-        num_process_evaluate=cfg.num_processes,
-        timeout=cfg.timeout,
-    )
-
-    with open(jsonl_file[:-6] + "_eval_results.json", "rt", encoding="utf-8") as fin:
-        eval_grades = json.load(fin)
-    with open(jsonl_file, "wt", encoding="utf-8") as f:
-        for sample in samples:
-            if sample["problem_id"] in eval_grades["eval"]:
-                sample["graded_list"] = eval_grades["eval"][sample["problem_id"]]["graded_list"]
-                f.write(json.dumps(sample) + "\n")
-
-    # moving eval file to ensure metrics are recomputed
-    shutil.move(jsonl_file[:-6] + "_eval_results.json", jsonl_file[:-6] + "_eval_results-saved.json")
-
-
 def eval_livebench_coding(cfg):
     cfg = BaseEvaluatorConfig(**cfg)
     try:

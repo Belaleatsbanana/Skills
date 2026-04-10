@@ -15,4 +15,9 @@
 # settings that define how evaluation should be done by default (all can be changed from cmdline)
 METRICS_TYPE = "livecodebench_pro"
 EVAL_SPLIT = "test_25q2"
+# Prepended to generation args; override with ++eval_config.go_judge.* or NEMO_SKILLS_GO_JUDGE_* env vars.
+EVAL_ARGS = (
+    "++eval_config.go_judge.host=127.0.0.1 ++eval_config.go_judge.port=5050 ++eval_config.go_judge.http_timeout=120.0"
+)
 GENERATION_ARGS = "++prompt_config=eval/livecodebench/default_reasoning ++eval_type=livecodebench_pro"
+REQUIRES_SANDBOX = True
