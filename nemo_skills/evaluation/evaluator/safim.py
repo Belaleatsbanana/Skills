@@ -96,6 +96,8 @@ class SafimEvaluatorConfig(BaseEvaluatorConfig):
     language: str | None = None
     # ExecEval HTTP API port inside the sandbox (must match gunicorn LISTEN_PORT; pipeline sets NEMO_SKILLS_SANDBOX_PORT).
     execeval_port: int = field(default_factory=lambda: int(os.environ.get("NEMO_SKILLS_SANDBOX_PORT", "6000")))
+    # Passed to ``safim.evaluate`` (parallelism against ExecEval).
+    max_workers: int = 16
     num_retries: int = 3
     eval_timeout_buffer_s: float = 120.0
     fim_postprocess: bool = True
@@ -207,6 +209,7 @@ async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
                 {repr(output_json)},
                 language={lang_repr},
                 port={int(eval_config.execeval_port)},
+                max_workers={int(eval_config.max_workers)},
             )
             """
         )
