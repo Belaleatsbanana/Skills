@@ -255,17 +255,20 @@ def get_env_variables(cluster_config):
                 LOG.info(f"Optional environment variable {env_var_name} not found in user environment; skipping.")
                 _logged_optional_env_vars.add(env_var_name)
 
-    # replace placeholders with actual env var values from the environment where
-    # the job is being launched, not where its being run.
+    # Replace $VAR / ${VAR} using the submit host's os.environ. References that are
+    # unset here (e.g. ${SLURM_MASTER_NODE_HET_GROUP_N:-localhost} for het jobs) are
+    # left unchanged so the batch script / compute node can expand them at runtime.
     for key, value in env_vars.items():
         if isinstance(value, str) and "$" in value:
-            if key in os.environ:
-                env_vars[key] = os.path.expandvars(value)
+            expanded = os.path.expandvars(value)
+            env_vars[key] = expanded
+            if expanded != value:
                 LOG.info(
-                    f"Resolved environment variable {key} inside the placeholder value: {value} with {env_vars[key]}"
+                    "Resolved environment variable references inside %s: %r -> %r",
+                    key,
+                    value,
+                    expanded,
                 )
-            else:
-                raise ValueError(f"Cannot resolve environment variable {key} inside the placeholder value: {value}")
 
     # Unless NGC_API_KEY is explicitly set we will populate it to be equal to NVIDIA_API_KEY
     if "NGC_API_KEY" not in env_vars:
