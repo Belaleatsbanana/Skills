@@ -15,8 +15,10 @@
 # settings that define how evaluation should be done by default (all can be changed from cmdline)
 METRICS_TYPE = "livecodebench_pro"
 EVAL_SPLIT = "test_25q2"
-# Code execution and go-judge run in the sandbox sidecar; eval sets NEMO_SKILLS_GO_JUDGE_* when scheduled.
-REQUIRES_SANDBOX = True
-# Prepended to generation args. Host defaults from NEMO_SKILLS_GO_JUDGE_* (set when with_sandbox) or 127.0.0.1.
+# Grading uses go-judge over HTTP, not the NeMo sandbox container. Run go-judge where cgroups work
+# (e.g. separate host/VM with Docker --privileged) and set NEMO_SKILLS_GO_JUDGE_HOST / _PORT, or use 127.0.0.1
+# if go-judge runs on the same node as the eval step.
+REQUIRES_SANDBOX = False
+# Prepended to generation args. Host: os.environ NEMO_SKILLS_GO_JUDGE_HOST or Hydra go_judge.host, else 127.0.0.1.
 EVAL_ARGS = "++eval_config.go_judge.port=5050 ++eval_config.go_judge.http_timeout=120.0"
 GENERATION_ARGS = "++prompt_config=eval/livecodebench/default_reasoning ++eval_type=livecodebench_pro"

@@ -392,7 +392,7 @@ class GenerationClientScript(BaseJobScript):
             # Add sandbox port to environment if sandbox is referenced
             if self.sandbox:
                 env_vars["NEMO_SKILLS_SANDBOX_PORT"] = str(self.sandbox.port)
-            # LiveCodeBench-Pro / go-judge runs inside the sandbox image (see dockerfiles/sandbox).
+            # Optional: when using a sandbox sidecar, point go-judge at it (LCB-Pro defaults to no sandbox).
             if self.with_sandbox and self.sandbox:
                 env_vars["NEMO_SKILLS_GO_JUDGE_HOST"] = self.sandbox.hostname_ref()
                 env_vars["NEMO_SKILLS_GO_JUDGE_PORT"] = os.environ.get("NEMO_SKILLS_SANDBOX_GO_JUDGE_PORT", "5050")

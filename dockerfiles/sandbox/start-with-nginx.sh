@@ -316,22 +316,43 @@ fi
 # =============================================================================
 # go-judge (LiveCodeBench-Pro /run API) — master node only; see NEMO_SKILLS_SANDBOX_ENABLE_GO_JUDGE
 # =============================================================================
+# go-judge needs to create cgroups (e.g. .../cpu/gojudge). Many Slurm/Pyxis containers
+# mount cgroup controllers read-only; then go-judge fails with "read-only file system".
+# Fix is site-specific: cgroup delegation, or sandbox_extra_srun_args in cluster YAML, or
+# run go-judge outside the container. See https://docs.goj.ac/install (Docker: --privileged).
+# =============================================================================
+_go_judge_cgroup_likely_writable() {
+    if [ -d /sys/fs/cgroup/cpu ]; then
+        [ -w /sys/fs/cgroup/cpu ] && return 0
+        return 1
+    fi
+    # cgroup v2-only layout: no separate cpu dir; cannot cheaply test mkdir without side effects
+    return 0
+}
+
 GO_JUDGE_PID=""
 if [ "${NEMO_SKILLS_SANDBOX_ENABLE_GO_JUDGE:-1}" != "0" ] && [ "$IS_MASTER" = "1" ] && [ -x /usr/local/bin/go-judge ]; then
     GJP="${GO_JUDGE_HTTP_PORT:-5050}"
-    touch /var/log/go-judge.log
-    chmod 644 /var/log/go-judge.log
-    echo "[$_H] Starting go-judge on 0.0.0.0:${GJP}..."
-    /usr/local/bin/go-judge -http-addr "0.0.0.0:${GJP}" >> /var/log/go-judge.log 2>&1 &
-    GO_JUDGE_PID=$!
-    tail -f /var/log/go-judge.log &> /dev/stderr &
-    for _w in $(seq 1 60); do
-        if curl -s -f --connect-timeout 1 --max-time 2 "http://127.0.0.1:${GJP}/version" >/dev/null 2>&1; then
-            echo "[$_H] go-judge ready (pid=${GO_JUDGE_PID})"
-            break
-        fi
-        sleep 1
-    done
+    if ! _go_judge_cgroup_likely_writable; then
+        echo "[$_H] ERROR: /sys/fs/cgroup/cpu exists but is not writable — go-judge cannot start (cgroup mkdir will fail)." >&2
+        echo "[$_H] LiveCodeBench-Pro needs a cgroup-capable sandbox step. Ask your admins about cgroup delegation for Enroot/Pyxis," >&2
+        echo "[$_H] or set cluster_config sandbox_extra_srun_args (site-specific), or run a separate go-judge service and set NEMO_SKILLS_GO_JUDGE_* on the client." >&2
+        echo "[$_H] To silence: NEMO_SKILLS_SANDBOX_ENABLE_GO_JUDGE=0" >&2
+    else
+        touch /var/log/go-judge.log
+        chmod 644 /var/log/go-judge.log
+        echo "[$_H] Starting go-judge on 0.0.0.0:${GJP}..."
+        /usr/local/bin/go-judge -http-addr "0.0.0.0:${GJP}" >> /var/log/go-judge.log 2>&1 &
+        GO_JUDGE_PID=$!
+        tail -f /var/log/go-judge.log &> /dev/stderr &
+        for _w in $(seq 1 60); do
+            if curl -s -f --connect-timeout 1 --max-time 2 "http://127.0.0.1:${GJP}/version" >/dev/null 2>&1; then
+                echo "[$_H] go-judge ready (pid=${GO_JUDGE_PID})"
+                break
+            fi
+            sleep 1
+        done
+    fi
 fi
 
 # =============================================================================
