@@ -124,6 +124,8 @@ RUN pip install flask gunicorn flask-cors gmpy2 Cython jsonlines fire tree-sitte
 
 ENV SAFIM_TREE_SITTER_ROOT=/opt/safim-tree-sitter
 ENV SAFIM_TREE_SITTER_LIB=/opt/safim-tree-sitter/safim-languages.so
+# New safim ``ast_utils`` reads ``SAFIM_TREE_SITTER_SO`` (same combined .so as ``SAFIM_TREE_SITTER_LIB``).
+ENV SAFIM_TREE_SITTER_SO=/opt/safim-tree-sitter/safim-languages.so
 COPY dockerfiles/sandbox/safim_setup_tree_sitter.bash /tmp/safim_setup_tree_sitter.bash
 RUN chmod +x /tmp/safim_setup_tree_sitter.bash && bash /tmp/safim_setup_tree_sitter.bash \
     && rm -f /tmp/safim_setup_tree_sitter.bash

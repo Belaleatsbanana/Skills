@@ -38,11 +38,8 @@ LOG = logging.getLogger(get_logger_name(__file__))
 
 SAFIM_GIT_URL = "git+https://github.com/wasiahmad/safim.git"
 
-# Avoid OpenBLAS thread explosion inside the sandbox (often triggers "Memory allocation still failed").
-_SAFIM_EVAL_ENV = (
-    "env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 "
-    "NUMEXPR_NUM_THREADS=1 GOTO_NUM_THREADS=1 BLIS_NUM_THREADS=1 "
-)
+# Combined grammars built in Dockerfile.sandbox.execeval; safim ``ast_utils`` uses SAFIM_TREE_SITTER_SO.
+_SAFIM_DEFAULT_TREE_SITTER_SO = "/opt/safim-tree-sitter/safim-languages.so"
 
 # ExecEval workers often have cwd=/root/execution_engine; a local unittest.py shadows stdlib and
 # breaks huggingface datasets (ModuleNotFoundError: unittest.mock). Use a clean working directory.
@@ -103,7 +100,21 @@ class SafimEvaluatorConfig(BaseEvaluatorConfig):
     # ``None``: fence/thinking cleanup only. ``basic``: FIM overlap trim (NeMo-side). ``advanced``:
     # pass ``post_process=True`` into ``safim.evaluate`` (subset-specific rules in installed safim).
     postprocess: str | None = None
+    # Path to combined tree-sitter ``.so`` inside the sandbox (``block`` + ``post_process``). Default matches
+    # NeMo execeval image (``Dockerfile.sandbox.execeval``); image ENV ``SAFIM_TREE_SITTER_SO`` also sets this.
+    tree_sitter_so: str | None = None
     safim_git_url: str = SAFIM_GIT_URL
+
+
+def _safim_eval_subprocess_env(eval_config: SafimEvaluatorConfig) -> str:
+    """``env`` prefix for the sandbox ``python -c`` that runs ``safim.evaluate`` (tree-sitter + BLAS caps)."""
+    # Paths are inside the sandbox container (not the Slurm driver); override via ``eval_config.tree_sitter_so``.
+    so = eval_config.tree_sitter_so or _SAFIM_DEFAULT_TREE_SITTER_SO
+    return (
+        f"env SAFIM_TREE_SITTER_SO={shlex.quote(so)} "
+        "OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 "
+        "NUMEXPR_NUM_THREADS=1 GOTO_NUM_THREADS=1 BLIS_NUM_THREADS=1 "
+    )
 
 
 def _safim_cfg_subset(cfg: dict) -> dict:
@@ -252,7 +263,7 @@ async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
             """
         )
 
-        cmd = f"cd {_SAFIM_SANDBOX_CWD} && {_SAFIM_EVAL_ENV}python -c {shlex.quote(eval_code)}"
+        cmd = f"cd {_SAFIM_SANDBOX_CWD} && {_safim_eval_subprocess_env(eval_config)}python -c {shlex.quote(eval_code)}"
         timeout_s = max(300.0, len(samples) * 30.0 + eval_config.eval_timeout_buffer_s)
         output, _ = await execute_in_sandbox_with_retries(
             sandbox,

@@ -22,7 +22,8 @@ EVAL_SPLIT = "api"
 GENERATION_ARGS = f"++prompt_config=generic/fim ++eval_type=safim ++eval_config.subset={EVAL_SPLIT}"
 REQUIRES_SANDBOX = True
 # With ``eval_config.postprocess=advanced``, truncation runs inside installed ``safim`` (``post_process=True``).
-# The execeval sandbox image should provide tree-sitter (``SAFIM_TREE_SITTER_SO`` / grammar .so) for ``block``.
+# For ``block``, safim needs a combined grammar .so: default ``/opt/safim-tree-sitter/safim-languages.so``
+# (set as ``SAFIM_TREE_SITTER_SO`` in execeval Docker) or ``++eval_config.tree_sitter_so=...`` for custom images.
 # Mounts must be shared so the sandbox can read the JSONL path from the main job.
 KEEP_MOUNTS_FOR_SANDBOX = True
 # ExecEval (inside the sandbox image) uses prlimit for RSS limits. On Slurm+Pyxis, if you see
