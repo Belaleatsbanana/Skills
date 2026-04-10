@@ -111,6 +111,8 @@ class GenerationTaskConfig:
 
     # Inference server configuration {server_params}
     server: dict = field(default_factory=dict)
+    # If set, copied into ``server["port"]`` for self-hosted / wait_for_server (Hydra: ``++server_listen_port=``).
+    server_listen_port: int | None = None
     # Sandbox configuration {sandbox_params}
     sandbox: dict = field(default_factory=dict)
     wait_for_sandbox: bool = False  # whether we need to wait for sandbox
@@ -312,6 +314,14 @@ class GenerationTask:
             cfg: GenerationTaskConfig object with the configuration parameters or subclass.
         """
         self.cfg = cfg
+
+        if self.cfg.server_listen_port is not None:
+            server = self.cfg.server
+            if isinstance(server, DictConfig):
+                server = OmegaConf.to_container(server, resolve=True)
+            server = dict(server)
+            server["port"] = self.cfg.server_listen_port
+            self.cfg.server = server
 
         if isinstance(self.cfg.inference.extra_body, DictConfig):
             self.cfg.inference.extra_body = OmegaConf.to_container(self.cfg.inference.extra_body, resolve=True)

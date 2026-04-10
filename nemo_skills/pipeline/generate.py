@@ -266,6 +266,10 @@ def generate(
         help="Server arguments per model. CLI: space-separated. Python API: string or list. "
         "Single value broadcasts to all models.",
     ),
+    server_listen_port: int | None = typer.Option(
+        None,
+        help="TCP port for self-hosted inference server when server_gpus is set. If omitted, uses random or 5000.",
+    ),
     server_entrypoint: List[str] = typer.Option(
         None,
         help="Server entrypoint(s). CLI: space-separated. Python API: string or list. "
@@ -418,6 +422,7 @@ def generate(
     server_args_list = pipeline_utils.normalize_parameter(server_args, num_models, "server_args")
     server_entrypoints_list = pipeline_utils.normalize_parameter(server_entrypoint, num_models, "server_entrypoint")
     server_containers_list = pipeline_utils.normalize_parameter(server_container, num_models, "server_container")
+    server_listen_ports_list = pipeline_utils.normalize_parameter(server_listen_port, num_models, "server_listen_port")
 
     if server_address is not None:
         server_addresses_list = pipeline_utils.normalize_parameter(server_address, num_models, "server_address")
@@ -545,6 +550,7 @@ def generate(
                     server_args=server_args_list[model_idx],
                     server_entrypoint=server_entrypoints_list[model_idx],
                     server_container=server_containers_list[model_idx],
+                    server_listen_port=server_listen_ports_list[model_idx],
                     extra_arguments=extra_arguments_original if model_idx == 0 else "",
                     get_random_port=get_random_port_for_server,
                 )
