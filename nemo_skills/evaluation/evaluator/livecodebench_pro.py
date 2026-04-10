@@ -731,10 +731,11 @@ def _log_first_cpp_compile_failure(msg: str, *, client: GoJudgeClient | None = N
     if "Connection refused" in msg or "Errno 111" in msg:
         ep = client.base_url if client is not None else "http://127.0.0.1:5050"
         conn_hint = (
-            f" Connection refused to {ep}: go-judge is not running or not reachable from this job. "
-            "Start go-judge (e.g. docker run --privileged ... criyle/go-judge) on a host the eval task can reach; "
-            "set NEMO_SKILLS_GO_JUDGE_HOST / _PORT or ++eval_config.go_judge.host if not localhost. "
-            "With REQUIRES_SANDBOX=False, NeMo-Skills does not start go-judge for you."
+            f" Connection refused to {ep}: go-judge is not listening. "
+            "For auto-start: use a nemo-skills image built with go-judge (Dockerfile.nemo-skills) and packaged code "
+            "that defines livecodebench-pro INSTALLATION_COMMAND; check Slurm logs for the install step and /tmp/go-judge.log. "
+            "If the binary is missing, the job should fail at install—otherwise go-judge may have exited (e.g. cgroup read-only in Pyxis). "
+            "Otherwise run go-judge externally and set NEMO_SKILLS_GO_JUDGE_HOST / _PORT (and NEMO_SKILLS_SKIP_AUTO_GO_JUDGE=1)."
         )
     LOG.warning(
         "LiveCodeBench-Pro: first C++ compile failure via go-judge "
