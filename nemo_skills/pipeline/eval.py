@@ -155,11 +155,6 @@ def eval(
     server_gpus: int = typer.Option(None, help="Number of GPUs to use if hosting the model"),
     server_nodes: int = typer.Option(1, help="Number of nodes to use if hosting the model"),
     server_args: str = typer.Option("", help="Additional arguments for the server"),
-    server_listen_port: Optional[int] = typer.Option(
-        None,
-        help="TCP port for the self-hosted inference server when --server-gpus is set. "
-        "If omitted, port selection follows job settings (random or 5000).",
-    ),
     server_entrypoint: str = typer.Option(
         None,
         help="Path to the entrypoint of the server. "
@@ -358,7 +353,6 @@ def eval(
         "server_args": server_args,
         "server_entrypoint": server_entrypoint,
         "server_container": server_container,
-        "server_listen_port": server_listen_port,
     }
     cli_judge_pipeline_args = {
         "model": judge_model,

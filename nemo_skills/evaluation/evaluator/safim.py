@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by law or agreed to in writing, software
+# Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
@@ -85,136 +85,12 @@ def _fence_language(dataset_language: str) -> str:
     return lang
 
 
-def _safim_infill_parts(sample: dict) -> tuple[str, str]:
-    """Return ``(text_before_hole, text_after_hole)`` for the completion slot.
-
-    Prefer ``eval_prompt`` + ``{{completion}}`` split when present (upstream SAFIM); otherwise
-    use ``prefix`` / ``suffix`` (NeMo FIM JSONL). No redundant join+split in the latter case.
-    """
-    if "eval_prompt" in sample:
-        parts = str(sample["eval_prompt"]).split("{{completion}}")
-        if len(parts) != 2:
-            raise ValueError(
-                f"eval_prompt must contain exactly one '{{{{completion}}}}' marker (got {len(parts) - 1} split(s))"
-            )
-        return parts[0], parts[1]
-    if "prefix" in sample and "suffix" in sample:
-        return str(sample["prefix"]), str(sample["suffix"])
-    raise KeyError("sample must include 'eval_prompt' or both 'prefix' and 'suffix'")
-
-
-def _safim_lang(sample: dict) -> str:
-    raw = sample.get("lang") or sample.get("language")
-    if raw is None:
-        raise KeyError("sample must include 'lang' or 'language'")
-    return _fence_language(str(raw))
-
-
-def truncate_to_first_line(code: str) -> str:
-    """Return the first non-empty line (used by :func:`truncate_control` for Python)."""
-    lines = code.splitlines()
-    for line in lines:
-        if line.strip():
-            return line
-    return ""
-
-
-def match_prefix_and_suffix(l1: list, l2: list) -> tuple[int, int]:
-    """Match equal prefixes and suffixes between two sequences; return ``(p, q)`` slice indices (``q`` negative)."""
-    p = 0
-    while p < len(l1) and p < len(l2):
-        if l1[p] == l2[p]:
-            p += 1
-        else:
-            break
-    q = 0
-    while -q < len(l1) and -q < len(l2):
-        if l1[q - 1] == l2[q - 1]:
-            q -= 1
-        else:
-            break
-    return p, q
-
-
-def truncate_line_until_block(sample: dict, code: str) -> str:
-    """Pop trailing lines from ``code`` until tree-sitter parse matches baseline structure (upstream SAFIM)."""
-    from nemo_skills.evaluation.evaluator.safim_utils import ErrorCheckVisitor, get_parser
-
-    lang = _safim_lang(sample)
-    parser = get_parser(lang)
-    lines = code.splitlines(keepends=True)
-    eval_prefix, eval_suffix = _safim_infill_parts(sample)
-    eval_prefix_b = eval_prefix.encode("utf-8")
-    eval_suffix_b = eval_suffix.encode("utf-8")
-    while lines:
-        completion = "".join(lines).encode("utf-8")
-        if lang == "python":
-            code_bytes_0 = eval_prefix_b + b"pass" + eval_suffix_b
-        else:
-            code_bytes_0 = eval_prefix_b + eval_suffix_b
-        code_bytes_1 = eval_prefix_b + completion + eval_suffix_b
-
-        visitor = ErrorCheckVisitor(with_ndtypes=True)
-        tree = parser.parse(code_bytes_1)
-        visitor(tree)
-        if visitor.error_cnt > 0:
-            lines.pop()
-            continue
-        visitor_trace_1 = [(x, y) for _, x, y in visitor.ndtypes]
-
-        visitor = ErrorCheckVisitor(with_ndtypes=True)
-        tree = parser.parse(code_bytes_0)
-        visitor(tree)
-        assert visitor.error_cnt == 0
-        visitor_trace_0 = [(x, y) for _, x, y in visitor.ndtypes]
-        if len(visitor_trace_0) > len(visitor_trace_1):
-            lines.pop()
-            continue
-
-        prefix_matched, suffix_matched = match_prefix_and_suffix(visitor_trace_0, visitor_trace_1)
-        matched_diff = len(visitor_trace_0) - (prefix_matched - suffix_matched)
-        if lang == "python":
-            matched_diff -= 4
-        if matched_diff == 0:
-            break
-        lines.pop()
-    return "".join(lines)
-
-
-def truncate_control(sample: dict, completion: str) -> str:
-    """Keep only the first line for Python; for other languages, trim past unmatched ``)`` (upstream SAFIM)."""
-    if _safim_lang(sample) == "python":
-        return truncate_to_first_line(completion)
-    depth = 0
-    for i, ch in enumerate(completion):
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-        if depth == -1:
-            return completion[:i]
-    return completion
-
-
-def truncate_api_call(completion: str) -> str:
-    """Truncate after the closing ``)`` of the outermost call (upstream SAFIM)."""
-    depth = 0
-    for i, ch in enumerate(completion):
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth <= 0:
-                return completion[: i + 1]
-    return completion
-
-
 @nested_dataclass(kw_only=True)
 class SafimEvaluatorConfig(BaseEvaluatorConfig):
     """Configuration for SAFIM via ``safim.evaluate`` in the sandbox."""
 
     sandbox: dict = field(default_factory=lambda: {"sandbox_type": "local"})
-    # HuggingFace subset: api | block | control (passed to ``safim.evaluate``).
+    # HuggingFace subset: api | block | control (passed to ``safim.evaluate`` as ``completion_type``).
     subset: str = "api"
     # Optional filter; ``None`` evaluates all languages in the subset.
     language: str | None = None
@@ -224,8 +100,8 @@ class SafimEvaluatorConfig(BaseEvaluatorConfig):
     max_workers: int = 16
     num_retries: int = 3
     eval_timeout_buffer_s: float = 120.0
-    # ``None``: no extra post-processing. ``basic``: FIM overlap trim. ``advanced``: subset-based
-    # truncation (``truncate_api_call`` / ``truncate_line_until_block`` / ``truncate_control``).
+    # ``None``: fence/thinking cleanup only. ``basic``: FIM overlap trim (NeMo-side). ``advanced``:
+    # pass ``post_process=True`` into ``safim.evaluate`` (subset-specific rules in installed safim).
     postprocess: str | None = None
     safim_git_url: str = SAFIM_GIT_URL
 
@@ -233,17 +109,6 @@ class SafimEvaluatorConfig(BaseEvaluatorConfig):
 def _safim_cfg_subset(cfg: dict) -> dict:
     allowed = {f.name for f in fields(SafimEvaluatorConfig)}
     return {k: v for k, v in cfg.items() if k in allowed}
-
-
-def _safim_advanced_preprocess_needs_tree_sitter(postprocess: str | None, subset: str) -> bool:
-    """True when JSONL preprocessing will call tree-sitter (needs grammar .so or ``ast_utils``)."""
-    try:
-        pp = _normalize_safim_postprocess(postprocess)
-    except (TypeError, ValueError):
-        return True
-    if pp != "advanced":
-        return False
-    return subset in ("api", "block", "control")
 
 
 def _normalize_safim_postprocess(mode: str | None) -> str | None:
@@ -260,19 +125,28 @@ def _normalize_safim_postprocess(mode: str | None) -> str | None:
     return key
 
 
-def _preprocess_safim_jsonl(
-    jsonl_file: str,
-    postprocess: str | None,
-    subset: str,
-) -> list[dict]:
-    """Read JSONL, fence-extract completion, optional post-processing; write back."""
-    pp = _normalize_safim_postprocess(postprocess)
-    if pp == "advanced" and subset not in ("api", "block", "control"):
+def _post_process_flag(pp: str | None, subset: str) -> bool:
+    """Whether to pass ``post_process=True`` into ``safim.evaluate`` (``pp`` already normalized)."""
+    if pp != "advanced":
+        return False
+    if subset not in ("api", "block", "control"):
         LOG.warning(
-            "postprocess=advanced has no truncator for subset %r (expected api, block, or control); skipping",
+            "postprocess=advanced is only supported for subset api, block, or control (got %r); "
+            "running evaluate with post_process=False.",
             subset,
         )
-        pp = None
+        return False
+    return True
+
+
+def _preprocess_safim_jsonl(
+    jsonl_file: str,
+    pp: str | None,
+) -> list[dict]:
+    """Read JSONL, fence-extract completion, optional NeMo-only basic FIM trim; write back.
+
+    ``pp`` must be the return value of :func:`_normalize_safim_postprocess` (``None``, ``basic``, or ``advanced``).
+    """
     path = Path(jsonl_file)
     with open(path, encoding="utf-8") as fh:
         raw = [json.loads(line) for line in fh]
@@ -289,13 +163,6 @@ def _preprocess_safim_jsonl(
         row = preprocess_code(row, language=fence_lang, strip_whitespace=False)
         if pp == "basic":
             row = _fim_postprocess(row)
-        elif pp == "advanced":
-            if subset == "api":
-                row["completion"] = truncate_api_call(row["completion"])
-            elif subset == "block":
-                row["completion"] = truncate_line_until_block(row, row["completion"])
-            elif subset == "control":
-                row["completion"] = truncate_control(row, row["completion"])
         tid = str(row.get("task_id", f"row-{idx}"))
         row["task_id"] = tid
         if tid in seen:
@@ -354,75 +221,22 @@ async def _install_safim_in_sandbox(sandbox, eval_config: SafimEvaluatorConfig) 
     return True
 
 
-async def _preprocess_safim_jsonl_in_sandbox(
-    sandbox,
-    jsonl_file: str,
-    postprocess: str | None,
-    subset: str,
-    num_retries: int,
-    timeout: float,
-) -> list[dict] | None:
-    """Run :func:`_preprocess_safim_jsonl` inside the sandbox (tree-sitter + ``/nemo_run/code``).
-
-    Requires ``keep_mounts_for_sandbox`` so the sandbox sees the JSONL path and packaged NeMo-Skills code.
-    """
-    py = (
-        "from nemo_skills.evaluation.evaluator.safim import _preprocess_safim_jsonl as _p; "
-        f"_p({json.dumps(jsonl_file)}, {repr(postprocess)}, {repr(subset)})"
-    )
-    cmd = (
-        f"cd {_SAFIM_SANDBOX_CWD} && export PYTHONPATH=/nemo_run/code:${{PYTHONPATH:-}} && python -c {shlex.quote(py)}"
-    )
-    out, _ = await execute_in_sandbox_with_retries(sandbox, num_retries, cmd, language="shell", timeout=timeout)
-    if out.get("process_status") != "completed":
-        LOG.error(
-            "SAFIM preprocessing in sandbox failed (stderr): %s",
-            out.get("stderr", "")[:8000],
-        )
-        return None
-    samples: list[dict] = []
-    with open(jsonl_file, encoding="utf-8") as fh:
-        for line in fh:
-            samples.append(json.loads(line))
-    return samples
-
-
 async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
     async with sandbox_context(eval_config.sandbox) as sandbox:
         if not await _install_safim_in_sandbox(sandbox, eval_config):
             return
 
-        jsonl_file = str(Path(eval_config.input_file).resolve())
-        preprocess_timeout = max(300.0, eval_config.eval_timeout_buffer_s * 2)
+        jsonl_path = Path(eval_config.input_file).resolve()
+        jsonl_file = str(jsonl_path)
         try:
-            samples = _preprocess_safim_jsonl(jsonl_file, eval_config.postprocess, eval_config.subset)
-        except ImportError as err:
-            if _safim_advanced_preprocess_needs_tree_sitter(eval_config.postprocess, eval_config.subset):
-                LOG.warning(
-                    "SAFIM preprocessing needs tree-sitter on the main task (%s). "
-                    "Retrying preprocessing inside the sandbox (needs keep_mounts_for_sandbox / shared JSONL path).",
-                    err,
-                )
-                samples = await _preprocess_safim_jsonl_in_sandbox(
-                    sandbox,
-                    jsonl_file,
-                    eval_config.postprocess,
-                    eval_config.subset,
-                    eval_config.num_retries,
-                    preprocess_timeout,
-                )
-                if samples is None:
-                    return
-            else:
-                LOG.error("%s", err)
-                return
+            pp = _normalize_safim_postprocess(eval_config.postprocess)
         except (TypeError, ValueError) as e:
             LOG.error("%s", e)
             return
-
-        jsonl_path = Path(jsonl_file)
+        samples = _preprocess_safim_jsonl(jsonl_file, pp)
         output_json = str(jsonl_path.with_name(jsonl_path.stem + "_eval_results.json"))
         lang_repr = "None" if eval_config.language is None else repr(eval_config.language)
+        post_process = _post_process_flag(pp, eval_config.subset)
         eval_code = textwrap.dedent(
             f"""
             from safim.evaluate import evaluate
@@ -430,6 +244,7 @@ async def eval_safim_async(eval_config: SafimEvaluatorConfig) -> None:
                 {repr(eval_config.subset)},
                 {repr(jsonl_file)},
                 {repr(output_json)},
+                post_process={repr(post_process)},
                 language={lang_repr},
                 port={int(eval_config.execeval_port)},
                 max_workers={int(eval_config.max_workers)},
