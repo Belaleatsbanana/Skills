@@ -49,20 +49,6 @@ RUN apt-get update && \
     rm /tmp/pypy.tar.bz2 && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
-# go-judge HTTP sandbox for LiveCodeBench-Pro (and similar) /run grading; started by start-with-nginx.sh
-ARG GO_JUDGE_VERSION=1.9.0
-RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
-    case "$arch" in \
-        amd64) gj_asset="go-judge_${GO_JUDGE_VERSION}_linux_amd64v3.tar.gz" ;; \
-        arm64) gj_asset="go-judge_${GO_JUDGE_VERSION}_linux_arm64.tar.gz" ;; \
-        *) echo "unsupported arch for go-judge: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL -o /tmp/gj.tgz "https://github.com/criyle/go-judge/releases/download/v${GO_JUDGE_VERSION}/${gj_asset}"; \
-    tar -xzf /tmp/gj.tgz -C /usr/local/bin go-judge; \
-    chmod +x /usr/local/bin/go-judge; \
-    rm /tmp/gj.tgz
-
 # Install Lean 4 toolchain
 RUN curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y && \
     /root/.elan/bin/elan toolchain install leanprover/lean4:v4.12.0 && \
