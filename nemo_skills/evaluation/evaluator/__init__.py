@@ -17,8 +17,11 @@ import importlib
 import inspect
 from typing import Any, Callable, Dict
 
-from nemo_skills.dataset.utils import locate
 from nemo_skills.evaluation.evaluator.base import BaseEvaluator
+
+# Import ``locate`` only for dynamic ``eval_type`` paths (``::``). Eager import pulls
+# ``dataset.utils`` → ``math_grader`` → ``latex2sympy2_extended``, which the execeval
+# sandbox image does not install (e.g. SAFIM JSONL preprocessing via ``python -c``).
 
 # Lazy evaluator registry — stores dotted paths instead of eagerly importing
 # every evaluator (which would pull in benchmark-specific deps like func_timeout,
@@ -112,6 +115,8 @@ def _resolve_eval_type(eval_type: str):
     Returns (None, False) if eval_type is a plain string not found in either map.
     """
     if "::" in eval_type:
+        from nemo_skills.dataset.utils import locate
+
         obj = locate(eval_type)
         is_class = inspect.isclass(obj) and issubclass(obj, BaseEvaluator)
         return obj, is_class

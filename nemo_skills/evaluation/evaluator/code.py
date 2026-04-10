@@ -24,8 +24,7 @@ from dataclasses import field
 from omegaconf import OmegaConf
 
 from nemo_skills.code_execution.sandbox import get_sandbox
-from nemo_skills.evaluation.evaluator import BaseEvaluator
-from nemo_skills.evaluation.evaluator.base import BaseEvaluatorConfig
+from nemo_skills.evaluation.evaluator.base import BaseEvaluator, BaseEvaluatorConfig
 from nemo_skills.utils import get_logger_name, nested_dataclass
 
 LOG = logging.getLogger(get_logger_name(__file__))
