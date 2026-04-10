@@ -21,9 +21,6 @@ import sys
 from argparse import Namespace
 from dataclasses import field
 
-from omegaconf import OmegaConf
-
-from nemo_skills.code_execution.sandbox import get_sandbox
 from nemo_skills.evaluation.evaluator.base import BaseEvaluator, BaseEvaluatorConfig
 from nemo_skills.utils import get_logger_name, nested_dataclass
 
@@ -45,6 +42,8 @@ class CodeExecEvaluatorConfig:
 
 class CodeExecEvaluator(BaseEvaluator):
     def __init__(self, config: dict, num_parallel_requests: int = 12):
+        from nemo_skills.code_execution.sandbox import get_sandbox
+
         super().__init__(config, num_parallel_requests)
         self.eval_config = CodeExecEvaluatorConfig(**self.config)
         LOG.info(
@@ -187,6 +186,8 @@ class EvalPlusEvaluatorConfig(BaseEvaluatorConfig):
 
 
 def eval_evalplus(cfg):
+    from omegaconf import OmegaConf
+
     cfg = EvalPlusEvaluatorConfig(**cfg)
     # TODO: need to move it to a separate docker (either our sandbox or separate srun)
     from evalplus.evaluate import evaluate

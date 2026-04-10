@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -22,14 +24,16 @@ import sys
 import textwrap
 from contextlib import asynccontextmanager
 from dataclasses import field
-from typing import Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import httpx
 
-from nemo_skills.code_execution.sandbox import Sandbox, get_sandbox
 from nemo_skills.evaluation.evaluator.base import BaseEvaluatorConfig
 from nemo_skills.evaluation.evaluator.code import preprocess_code
 from nemo_skills.utils import get_logger_name, nested_dataclass
+
+if TYPE_CHECKING:
+    from nemo_skills.code_execution.sandbox import Sandbox
 
 LOG = logging.getLogger(get_logger_name(__file__))
 
@@ -51,6 +55,8 @@ class LiveCodeBenchEvaluatorConfig(BaseEvaluatorConfig):
 @asynccontextmanager
 async def sandbox_context(config: dict):
     """Provides a managed sandbox instance."""
+    from nemo_skills.code_execution.sandbox import get_sandbox
+
     sandbox = get_sandbox(**config)
     try:
         yield sandbox
