@@ -307,7 +307,9 @@ def eval_safim(cfg: dict) -> dict[str, Any]:
     if not sandbox_is_ready:
         raise RuntimeError(
             "SAFIM evaluation requires a reachable NeMo code sandbox. "
-            "Start the sandbox service and ensure eval_config.sandbox (host, port, ssh_server, …) is correct."
+            "Start the sandbox sidecar and set host/port (e.g. Hydra ++sandbox.host, ++sandbox.port, "
+            "or eval_config.sandbox). Batch eval from generate.py merges top-level sandbox into "
+            "eval_config for eval_type=safim."
         )
 
     asyncio.run(eval_safim_async(eval_cfg))

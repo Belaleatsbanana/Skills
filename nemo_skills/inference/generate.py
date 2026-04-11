@@ -62,6 +62,35 @@ from nemo_skills.utils import (
 LOG = logging.getLogger(get_logger_name(__file__))
 
 
+def _mapping_to_plain_dict(obj: Any) -> dict:
+    if obj is None:
+        return {}
+    if isinstance(obj, DictConfig):
+        return dict(OmegaConf.to_container(obj, resolve=True))
+    if isinstance(obj, dict):
+        return dict(obj)
+    return {}
+
+
+def _merge_sandbox_into_eval_for_safim(cfg: Any) -> None:
+    """Reuse top-level ``cfg.sandbox`` for SAFIM ``eval_config`` (batch eval after generation).
+
+    Hydra typically sets ``++sandbox.host=...`` for the code sandbox; ``eval_config`` alone
+    defaults to localhost and ``is_sandbox_available`` fails in the main job on clusters.
+    Keys in ``eval_config.sandbox`` still override generation defaults.
+    """
+    gen_sandbox = _mapping_to_plain_dict(getattr(cfg, "sandbox", None))
+    ec = cfg.eval_config
+    eval_sandbox = _mapping_to_plain_dict(ec.get("sandbox") if hasattr(ec, "get") else ec["sandbox"])
+    merged = {**gen_sandbox, **eval_sandbox}
+    if isinstance(ec, DictConfig):
+        ec["sandbox"] = OmegaConf.create(merged)
+    else:
+        ec["sandbox"] = merged
+    if merged:
+        LOG.info("SAFIM batch eval: merged generation sandbox into eval_config.sandbox: %s", merged)
+
+
 @nested_dataclass(kw_only=True)
 class InferenceConfig:
     # Type of completion to generate when using OpenAI
@@ -564,6 +593,8 @@ class GenerationTask:
     def run_batch_evaluation(self):
         """Run final evaluation consuming all data together if configured."""
         self.cfg.eval_config["input_file"] = self.cfg.output_file
+        if self.cfg.eval_type == "safim":
+            _merge_sandbox_into_eval_for_safim(self.cfg)
         evaluate(self.cfg.eval_type, self.cfg.eval_config)
 
     def skip_completed_samples(self, data):
