@@ -253,20 +253,25 @@ def get_executor(
     if cluster_config["executor"] == "local":
         env_vars["PYTHONUNBUFFERED"] = "1"  # this makes sure logs are streamed right away
         resolved_container = resolve_container_image(container, cluster_config)
+        additional_kwargs: dict = {"entrypoint": ""}
+        # ExecEval (SAFIM) uses prlimit(RLIMIT_RSS); CAP_SYS_RESOURCE is enough for many setups.
+        _cap = os.getenv("NEMO_SKILLS_SANDBOX_CAP_SYS_RESOURCE", "")
+        if str(_cap).lower() in ("1", "true", "yes"):
+            additional_kwargs["cap_add"] = ["SYS_RESOURCE"]
         return DockerExecutor(
             container_image=resolved_container,
             packager=packager,
             ipc_mode="host",
             volumes=mounts,
             ntasks_per_node=1,
-            privileged=bool(os.getenv("NEMO_SKILLS_PRIVILEGED_DOCKER", 0)),
+            privileged=bool(int(os.getenv("NEMO_SKILLS_PRIVILEGED_DOCKER", "0") or "0")),
             # locally we are always asking for all GPUs to be able to select a subset with CUDA_VISIBLE_DEVICES
             # NOTE(agronskiy): it seems that interchangeability of `0` and `None` for `num_gpus`
             # in various context up- and downstream from here, consider unification.
             num_gpus=-1 if gpus_per_node else None,
             network="host",
             env_vars=env_vars,
-            additional_kwargs={"entrypoint": ""},
+            additional_kwargs=additional_kwargs,
         )
 
     if not heterogeneous:
@@ -462,6 +467,7 @@ def add_task(
     skip_hf_home_check: bool | None = None,
     dry_run: bool = False,
     sandbox_env_overrides: list[str] | None = None,
+    sandbox_extra_srun_args: list[str] | None = None,
     ray_template: str | None = None,
 ):
     """Wrapper for nemo-run exp.add to help setting up executors and dependencies.
@@ -692,7 +698,11 @@ def add_task(
                 extra_srun_args=[
                     "--kill-on-bad-exit=0",
                     "--mpi=none",
-                    *(cluster_config.get("sandbox_extra_srun_args") or []),
+                    *(
+                        cluster_srun
+                        if (cluster_srun := (cluster_config.get("sandbox_extra_srun_args") or []))
+                        else (sandbox_extra_srun_args or [])
+                    ),
                 ],
             )
             executors.append(sandbox_executor)

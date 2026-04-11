@@ -50,6 +50,8 @@ class BenchmarkArgs:
     remaining_jobs: list[dict] = field(default_factory=list)
     # Per-benchmark sandbox environment overrides in KEY=VALUE form
     sandbox_env_overrides: list[str] = field(default_factory=list)
+    # Extra srun flags for the sandbox Slurm step only (e.g. Pyxis --cap-add for ExecEval prlimit).
+    sandbox_extra_srun_args: list[str] = field(default_factory=list)
 
     @property
     def requires_judge(self):
@@ -154,6 +156,9 @@ def get_benchmark_args_from_module(
     # Collect any benchmark-specific environment variables
     env_vars_from_module = getattr(benchmark_module, "SANDBOX_ENV_VARS", [])
     sandbox_env_overrides = list(env_vars_from_module) if env_vars_from_module else []
+    sandbox_extra_srun_args = list(
+        get_arg_from_module_or_dict(benchmark_module, "SANDBOX_EXTRA_SRUN_ARGS", [], override_dict)
+    )
 
     generation_module = get_arg_from_module_or_dict(
         benchmark_module, "GENERATION_MODULE", "nemo_skills.inference.generate", override_dict
@@ -178,24 +183,18 @@ def get_benchmark_args_from_module(
         eval_subfolder += f"{benchmark_group}/"
     eval_subfolder += benchmark
 
-    # Local Docker only: privileged container so nested tooling can set resource limits.
-    # - swe-bench: apptainer inside docker
-    # - safim: ExecEval uses prlimit (e.g. RLIMIT_RSS); without extra caps this often returns EPERM
-    # TODO: is there a better way to handle this?
-    # TODO: handle properly without polluting environment for future calls
-    if cluster_config["executor"] == "local" and benchmark in ("swe-bench", "safim"):
-        LOG.info(
-            "%s requires extra docker privileges, setting NEMO_SKILLS_PRIVILEGED_DOCKER=1",
-            benchmark,
-        )
+    # Local Docker: extra capabilities for nested tools (see exp.get_executor DockerExecutor).
+    # - swe-bench: full privileged (apptainer inside docker)
+    # - safim: CAP_SYS_RESOURCE via cap_add (ExecEval prlimit RLIMIT_RSS); narrower than privileged
+    if cluster_config["executor"] == "local" and benchmark == "swe-bench":
+        LOG.info("swe-bench requires privileged Docker; setting NEMO_SKILLS_PRIVILEGED_DOCKER=1")
         os.environ["NEMO_SKILLS_PRIVILEGED_DOCKER"] = "1"
-    elif cluster_config["executor"] == "slurm" and benchmark == "safim":
+    elif cluster_config["executor"] == "local" and benchmark == "safim":
         LOG.info(
-            "SAFIM sandbox runs ExecEval, which uses prlimit (RLIMIT_RSS). If you see "
-            "'prlimit: ... RSS ... Operation not permitted', add site-specific flags under "
-            "`sandbox_extra_srun_args` in your cluster YAML (e.g. extra Pyxis/enroot capabilities); "
-            "local runs use NEMO_SKILLS_PRIVILEGED_DOCKER=1 automatically."
+            "safim / ExecEval needs CAP_SYS_RESOURCE in the sandbox container; "
+            "setting NEMO_SKILLS_SANDBOX_CAP_SYS_RESOURCE=1"
         )
+        os.environ["NEMO_SKILLS_SANDBOX_CAP_SYS_RESOURCE"] = "1"
 
     metrics_type = get_arg_from_module_or_dict(benchmark_module, "METRICS_TYPE", None, override_dict)
 
@@ -214,6 +213,7 @@ def get_benchmark_args_from_module(
         benchmark_group=benchmark_group,
         metrics_type=metrics_type,
         sandbox_env_overrides=sandbox_env_overrides,
+        sandbox_extra_srun_args=sandbox_extra_srun_args,
     )
 
 
@@ -516,6 +516,14 @@ def prepare_eval_commands(
                             env_source[key] = b
                     job_sandbox_env_overrides = [f"{k}={v}" for k, v in env_map.items()]
 
+                    srun_seen: set[str] = set()
+                    job_sandbox_extra_srun: list[str] = []
+                    for b in ordered_benchmarks:
+                        for arg in benchmarks_dict[b].sandbox_extra_srun_args:
+                            if arg not in srun_seen:
+                                srun_seen.add(arg)
+                                job_sandbox_extra_srun.append(arg)
+
                     # TODO: move to a dataclass
                     job_batches.append(
                         (
@@ -528,6 +536,7 @@ def prepare_eval_commands(
                             # a check above guarantees that this is the same for all tasks in a job
                             generation_task.get_server_command_fn(),
                             job_sandbox_env_overrides,
+                            job_sandbox_extra_srun,
                         )
                     )
                     job_server_config, job_server_address, job_extra_arguments = pipeline_utils.configure_client(

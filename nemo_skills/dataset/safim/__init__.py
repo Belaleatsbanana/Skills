@@ -26,7 +26,9 @@ REQUIRES_SANDBOX = True
 # (set as ``SAFIM_TREE_SITTER_SO`` in execeval Docker) or ``++eval_config.tree_sitter_so=...`` for custom images.
 # Mounts must be shared so the sandbox can read the JSONL path from the main job.
 KEEP_MOUNTS_FOR_SANDBOX = True
-# ExecEval (inside the sandbox image) uses prlimit for RSS limits. On Slurm+Pyxis, if you see
-# "prlimit: failed to set the RSS resource limit: Operation not permitted", set
-# ``sandbox_extra_srun_args`` in cluster YAML (site-specific) or use a sandbox policy with
-# CAP_SYS_RESOURCE. Local Docker eval sets privileged automatically for safim.
+# Slurm+Pyxis: default sandbox srun flags so ExecEval can call prlimit(RLIMIT_RSS). If your site uses
+# different Pyxis syntax, set ``sandbox_extra_srun_args`` in cluster YAML (then this list is ignored).
+SANDBOX_EXTRA_SRUN_ARGS = [
+    "--container-options=--cap-add=SYS_RESOURCE",
+]
+# Local Docker: eval sets NEMO_SKILLS_SANDBOX_CAP_SYS_RESOURCE for the sandbox container (cap_add).
