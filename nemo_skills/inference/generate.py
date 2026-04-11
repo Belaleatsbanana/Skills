@@ -15,6 +15,7 @@
 import asyncio
 import json
 import logging
+import os
 import random
 import shutil
 import subprocess
@@ -65,30 +66,45 @@ LOG = logging.getLogger(get_logger_name(__file__))
 def _mapping_to_plain_dict(obj: Any) -> dict:
     if obj is None:
         return {}
-    if isinstance(obj, DictConfig):
-        return dict(OmegaConf.to_container(obj, resolve=True))
+    if OmegaConf.is_config(obj):
+        c = OmegaConf.to_container(obj, resolve=True)
+        return dict(c) if isinstance(c, dict) else {}
     if isinstance(obj, dict):
         return dict(obj)
     return {}
 
 
-def _merge_sandbox_into_eval_for_safim(cfg: Any) -> None:
-    """Reuse top-level ``cfg.sandbox`` for SAFIM ``eval_config`` (batch eval after generation).
+def _runtime_sandbox_env_overrides() -> dict[str, Any]:
+    """Env vars that :class:`~nemo_skills.code_execution.sandbox.Sandbox` consults (see its docstring)."""
+    out: dict[str, Any] = {}
+    if h := os.environ.get("NEMO_SKILLS_SANDBOX_HOST"):
+        out["host"] = h
+    if p := os.environ.get("NEMO_SKILLS_SANDBOX_PORT"):
+        out["port"] = p
+    if s := os.environ.get("NEMO_SKILLS_SSH_SERVER"):
+        out["ssh_server"] = s
+    if k := os.environ.get("NEMO_SKILLS_SSH_KEY_PATH"):
+        out["ssh_key_path"] = k
+    return out
 
-    Hydra typically sets ``++sandbox.host=...`` for the code sandbox; ``eval_config`` alone
-    defaults to localhost and ``is_sandbox_available`` fails in the main job on clusters.
-    Keys in ``eval_config.sandbox`` still override generation defaults.
+
+def _merge_sandbox_into_eval_for_safim(cfg: Any) -> None:
+    """Align SAFIM batch ``eval_config.sandbox`` with how generation reaches the sidecar.
+
+    ``eval_config`` often carries Hydra defaults (e.g. ``host: 127.0.0.1``). Those must not
+    overwrite job-level ``++sandbox.*`` or ``NEMO_SKILLS_SANDBOX_*`` used during generation.
+    Merge order: ``eval_config`` base, then ``cfg.sandbox``, then env overrides (last wins).
     """
     gen_sandbox = _mapping_to_plain_dict(getattr(cfg, "sandbox", None))
     ec = cfg.eval_config
-    eval_sandbox = _mapping_to_plain_dict(ec.get("sandbox") if hasattr(ec, "get") else ec["sandbox"])
-    merged = {**gen_sandbox, **eval_sandbox}
+    eval_sandbox = _mapping_to_plain_dict(ec.get("sandbox") if hasattr(ec, "get") else None)
+    merged = {**eval_sandbox, **gen_sandbox, **_runtime_sandbox_env_overrides()}
     if isinstance(ec, DictConfig):
         ec["sandbox"] = OmegaConf.create(merged)
     else:
         ec["sandbox"] = merged
     if merged:
-        LOG.info("SAFIM batch eval: merged generation sandbox into eval_config.sandbox: %s", merged)
+        LOG.info("SAFIM batch eval: merged sandbox into eval_config.sandbox: %s", merged)
 
 
 @nested_dataclass(kw_only=True)
