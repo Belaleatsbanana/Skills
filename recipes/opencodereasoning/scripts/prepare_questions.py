@@ -95,25 +95,29 @@ if __name__ == "__main__":
     cache_dir = args.cache_dir or os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface/datasets")
 
     # [ACTION] Load the main OCR2 mapping dataset
-    # This file contains the "instructions" on which questions to take from other datasets.
     print("[STEP 1] Loading OpenCodeReasoning-2 'cpp' split...")
-    # Loading the full dataset dictionary and then extracting the split
     ocr2_full = load_dataset("nvidia/OpenCodeReasoning-2")
     
     if "cpp" in ocr2_full:
         ocr2_dataset = ocr2_full["cpp"]
     else:
-        # Fallback for different dataset versions
         print("[WARN] 'cpp' split not found, checking for 'train'...")
         ocr2_dataset = ocr2_full["train"]
     
     unique_values = set()
     first_occurrence_indices = []
 
-    # [ACTION] Sort items by dataset name
-    # We must convert the Dataset object to a list of dictionaries to allow sorting by string keys.
-    print("[STEP 2] Converting dataset to list and sorting to optimize disk cleanup...")
-    items = sorted([dict(row) for row in ocr2_dataset], key=lambda x: x["dataset"])
+    # [ACTION] Use Pandas for high-speed sorting
+    # Converting directly to a list of dicts can be slow for millions of rows.
+    # Pandas handles this mapping efficiently.
+    print("[STEP 2] Using Pandas to sort questions by dataset for disk cleanup...")
+    import pandas as pd
+    df = ocr2_dataset.to_pandas()
+    df = df.sort_values(by="dataset")
+    items = df.to_dict('records')
+    # Free up dataframe memory immediately
+    del df
+    gc.collect()
     
     current_dataset_name = None
     loaded_datasets = {}
