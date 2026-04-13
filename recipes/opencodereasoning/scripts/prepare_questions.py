@@ -98,7 +98,7 @@ if __name__ == "__main__":
     # This file contains the "instructions" on which questions to take from other datasets.
     print("[STEP 1] Loading OpenCodeReasoning-2 'cpp' split...")
     # Passing "cpp" as the second argument correctly selects the subset.
-    ocr2_dataset = load_dataset("nvidia/OpenCodeReasoning-2", "cpp")
+    ocr2_dataset = load_dataset("nvidia/OpenCodeReasoning-2")
     
     unique_values = set()
     first_occurrence_indices = []
