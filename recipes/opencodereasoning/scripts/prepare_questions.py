@@ -97,22 +97,28 @@ if __name__ == "__main__":
     # [ACTION] Load the main OCR2 mapping dataset
     # This file contains the "instructions" on which questions to take from other datasets.
     print("[STEP 1] Loading OpenCodeReasoning-2 'cpp' split...")
-    # Passing "cpp" as the second argument correctly selects the subset.
-    ocr2_dataset = load_dataset("nvidia/OpenCodeReasoning-2")
+    # Loading the full dataset dictionary and then extracting the split
+    ocr2_full = load_dataset("nvidia/OpenCodeReasoning-2")
+    
+    if "cpp" in ocr2_full:
+        ocr2_dataset = ocr2_full["cpp"]
+    else:
+        # Fallback for different dataset versions
+        print("[WARN] 'cpp' split not found, checking for 'train'...")
+        ocr2_dataset = ocr2_full["train"]
     
     unique_values = set()
     first_occurrence_indices = []
 
     # [ACTION] Sort items by dataset name
-    # This ensures we process all 'apps' questions, then all 'taco' questions, etc.
-    # This allows us to delete the 'apps' cache from disk as soon as we move to 'taco'.
-    print("[STEP 2] Sorting questions to optimize disk cleanup...")
-    items = sorted(list(ocr2_dataset), key=lambda x: x["dataset"])
+    # We must convert the Dataset object to a list of dictionaries to allow sorting by string keys.
+    print("[STEP 2] Converting dataset to list and sorting to optimize disk cleanup...")
+    items = sorted([dict(row) for row in ocr2_dataset], key=lambda x: x["dataset"])
     
     current_dataset_name = None
     loaded_datasets = {}
 
-    print(f"[STEP 3] Starting extraction of {len(items)} C++ questions...")
+    print(f"[STEP 3] Starting extraction of {len(items)} questions...")
     for ocr2_ds_item in tqdm(items, desc="Processing Questions"):
         ds_name = ocr2_ds_item["dataset"]
         
