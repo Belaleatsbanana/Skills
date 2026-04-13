@@ -86,56 +86,55 @@ if __name__ == "__main__":
     # Use default HF cache if not specified
     cache_dir = args.cache_dir or os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface/datasets")
 
-    ocr2_dataset = load_dataset("nvidia/OpenCodeReasoning-2")
+    # Load only the 'cpp' split to save time and bandwidth
+    print("Loading OpenCodeReasoning-2 (cpp split)...")
+    ocr2_dataset = load_dataset("nvidia/OpenCodeReasoning-2", split="cpp")
+    
     unique_values = set()
     first_occurrence_indices = []
 
-    for split_name in ["cpp"]:
-        if split_name not in ocr2_dataset:
-            continue
-            
-        ocr2_ds = ocr2_dataset[split_name]
-        items = sorted(list(ocr2_ds), key=lambda x: x["dataset"])
+    # Sort by dataset to facilitate cache clearing logic
+    items = sorted(list(ocr2_dataset), key=lambda x: x["dataset"])
+    
+    current_dataset_name = None
+    loaded_datasets = {}
+
+    for ocr2_ds_item in tqdm(items):
+        ds_name = ocr2_ds_item["dataset"]
         
-        current_dataset_name = None
-        loaded_datasets = {}
+        if ds_name != current_dataset_name:
+            if current_dataset_name is not None:
+                print(f"Clearing and deleting disk cache for: {current_dataset_name}")
+                del loaded_datasets[current_dataset_name]
+                gc.collect()
+                # Delete the specific dataset folder from cache to save space
+                for root, dirs, files in os.walk(cache_dir):
+                    for d in dirs:
+                        if current_dataset_name.replace("/", "___") in d or current_dataset_name.split("/")[-1] in d:
+                            shutil.rmtree(os.path.join(root, d), ignore_errors=True)
 
-        for ocr2_ds_item in tqdm(items):
-            ds_name = ocr2_ds_item["dataset"]
-            
-            if ds_name != current_dataset_name:
-                if current_dataset_name is not None:
-                    print(f"Clearing and deleting disk cache for: {current_dataset_name}")
-                    del loaded_datasets[current_dataset_name]
-                    gc.collect()
-                    # Delete the specific dataset folder from cache to save space
-                    # Note: This is aggressive and might require re-downloading if interrupted
-                    for root, dirs, files in os.walk(cache_dir):
-                        for d in dirs:
-                            if ds_name.replace("/", "___") in d or ds_name.split("/")[-1] in d:
-                                shutil.rmtree(os.path.join(root, d), ignore_errors=True)
+            current_dataset_name = ds_name
 
-                current_dataset_name = ds_name
-
-            question, solution = get_question_and_solution(
-                ds_name, ocr2_ds_item["split"], ocr2_ds_item["index"], 
-                loaded_datasets, use_dataset_solution=args.use_dataset_solution
-            )
-            
-            if question:
-                ocr2_ds_item["question"] = question
-                if args.use_dataset_solution:
-                    ocr2_ds_item["solution"] = solution
-                else:
-                    ocr2_ds_item["solution"] = ""
-
-                ocr2_ds_item["r1_generation"] = ""
-                ocr2_ds_item["qwq_critique"] = ""
-
-                if ocr2_ds_item["question_id"] not in unique_values:
-                    unique_values.add(ocr2_ds_item["question_id"])
-                    first_occurrence_indices.append(copy.deepcopy(ocr2_ds_item))
+        question, solution = get_question_and_solution(
+            ds_name, ocr2_ds_item["split"], ocr2_ds_item["index"], 
+            loaded_datasets, use_dataset_solution=args.use_dataset_solution
+        )
         
+        if question:
+            ocr2_ds_item["question"] = question
+            if args.use_dataset_solution:
+                ocr2_ds_item["solution"] = solution
+            else:
+                ocr2_ds_item["solution"] = ""
+
+            ocr2_ds_item["r1_generation"] = ""
+            ocr2_ds_item["qwq_critique"] = ""
+
+            if ocr2_ds_item["question_id"] not in unique_values:
+                unique_values.add(ocr2_ds_item["question_id"])
+                first_occurrence_indices.append(copy.deepcopy(ocr2_ds_item))
+    
+    if loaded_datasets:
         loaded_datasets.clear()
         gc.collect()
 
