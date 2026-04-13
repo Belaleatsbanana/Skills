@@ -27,12 +27,12 @@ stages:
   generate_solutions:
     output_dir: ${directories.step-1-generate-solutions}
     input_file: ${input_file}
-    language: python  # Language of the solutions to generate
+    language: cpp  # Language of the solutions to generate
     # Arguments passed inside the generate context string (e.g., ++param=value)
-    inline_args: "++inference.tokens_to_generate=8192 ++generation_key='output' ++inference.temperature=0.6"
+    inline_args: "++inference.tokens_to_generate=16384 ++generation_key='output' ++inference.temperature=0.6"
     # Arguments passed as kwargs to the pipeline function (e.g. generate())
     stage_kwargs:
-      model: deepseek-ai/deepseek-r1-distill-qwen-32b
+      model: deepseek-ai/deepseek-r1
       server_type: openai
       server_address: https://integrate.api.nvidia.com/v1
       num_random_seeds: ${num_random_seeds_to_generate}
