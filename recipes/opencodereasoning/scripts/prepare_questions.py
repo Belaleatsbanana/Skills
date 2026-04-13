@@ -10,32 +10,39 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 def get_question_and_solution(ds_name, ds_split, ds_index, loaded_datasets, use_dataset_solution=False):
+    """
+    Helper to fetch the actual question text from the source datasets (TACO, APPS, etc.)
+    using the index mapping provided by OpenCodeReasoning-2.
+    """
     if ds_name not in loaded_datasets:
-        print(f"Loading dataset: {ds_name}")
+        # --- TRIGGERED ON DATASET CHANGE ---
+        # This block runs when we move to a new source dataset (e.g., from 'apps' to 'taco')
+        print(f"\n[STEP] Fetching source dataset from HuggingFace: {ds_name}")
+        
         if ds_name == "taco":
             loaded_datasets[ds_name] = load_dataset("BAAI/TACO", trust_remote_code=True)
         elif ds_name == "apps":
             loaded_datasets[ds_name] = load_dataset("codeparrot/apps", trust_remote_code=True)
         elif ds_name == "code_contests":
+            # NOTE: CodeContests is huge (~100GB+). This is where the most disk space is used.
             loaded_datasets[ds_name] = load_dataset("deepmind/code_contests")
         elif ds_name == "open-r1/codeforces":
             loaded_datasets[ds_name] = load_dataset("open-r1/codeforces")
         else:
             return None, None
 
+    # Access the specific question using the index from OCR2
     benchmark = loaded_datasets[ds_name][ds_split][int(ds_index)]
     question = None
     solution = ""
 
+    # Extracting logic varies per dataset schema
     if ds_name == "code_contests":
         question = benchmark.get("description")
         if use_dataset_solution and benchmark.get("solutions"):
-            # Try to find a C++ solution if available
-            cpp_solutions = [s["solution"] for s in benchmark["solutions"] if s.get("language") == 2] # 2 is often C++ in CC
-            if cpp_solutions:
-                solution = cpp_solutions[0]
-            elif benchmark["solutions"]:
-                solution = benchmark["solutions"][0]["solution"]
+            # Language 2 is C++ in CodeContests
+            cpp_solutions = [s["solution"] for s in benchmark["solutions"] if s.get("language") == 2]
+            solution = cpp_solutions[0] if cpp_solutions else benchmark["solutions"][0]["solution"]
     elif ds_name == "taco":
         question = benchmark.get("question")
         if use_dataset_solution and benchmark.get("solutions"):
@@ -51,6 +58,7 @@ def get_question_and_solution(ds_name, ds_split, ds_index, loaded_datasets, use_
                 if sols: solution = sols[0]
             except: pass
     elif ds_name == "open-r1/codeforces":
+        # Codeforces requires concatenating multiple fields for a full prompt
         question = benchmark.get("description", "")
         if benchmark.get("input_format"):
             question += "\n\nInput\n\n" + benchmark["input_format"]
@@ -83,64 +91,88 @@ if __name__ == "__main__":
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Use default HF cache if not specified
+    # Resolve HF cache directory for cleanup
     cache_dir = args.cache_dir or os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface/datasets")
 
-    # Load only the 'cpp' split to save time and bandwidth
-    print("Loading OpenCodeReasoning-2 (cpp split)...")
-    ocr2_dataset = load_dataset("nvidia/OpenCodeReasoning-2", split="cpp")
+    # [ACTION] Load the main OCR2 mapping dataset
+    # This file contains the "instructions" on which questions to take from other datasets.
+    print("[STEP 1] Loading OpenCodeReasoning-2 'cpp' split...")
+    # Passing "cpp" as the second argument correctly selects the subset.
+    ocr2_dataset = load_dataset("nvidia/OpenCodeReasoning-2", "cpp")
     
     unique_values = set()
     first_occurrence_indices = []
 
-    # Sort by dataset to facilitate cache clearing logic
+    # [ACTION] Sort items by dataset name
+    # This ensures we process all 'apps' questions, then all 'taco' questions, etc.
+    # This allows us to delete the 'apps' cache from disk as soon as we move to 'taco'.
+    print("[STEP 2] Sorting questions to optimize disk cleanup...")
     items = sorted(list(ocr2_dataset), key=lambda x: x["dataset"])
     
     current_dataset_name = None
     loaded_datasets = {}
 
-    for ocr2_ds_item in tqdm(items):
+    print(f"[STEP 3] Starting extraction of {len(items)} C++ questions...")
+    for ocr2_ds_item in tqdm(items, desc="Processing Questions"):
         ds_name = ocr2_ds_item["dataset"]
         
+        # Check if we have switched to a new source dataset
         if ds_name != current_dataset_name:
             if current_dataset_name is not None:
-                print(f"Clearing and deleting disk cache for: {current_dataset_name}")
-                del loaded_datasets[current_dataset_name]
+                # --- MEMORY & DISK CLEANUP ---
+                print(f"\n[CLEANUP] Finished {current_dataset_name}. Clearing memory and disk cache...")
+                
+                # 1. Remove from RAM
+                if current_dataset_name in loaded_datasets:
+                    del loaded_datasets[current_dataset_name]
                 gc.collect()
-                # Delete the specific dataset folder from cache to save space
+                
+                # 2. Remove from Disk
+                # We look for the folder name in the HF cache that matches the dataset name
                 for root, dirs, files in os.walk(cache_dir):
                     for d in dirs:
-                        if current_dataset_name.replace("/", "___") in d or current_dataset_name.split("/")[-1] in d:
-                            shutil.rmtree(os.path.join(root, d), ignore_errors=True)
+                        # HF names folders like 'BAAI___TACO' or 'codeparrot___apps'
+                        search_term = current_dataset_name.replace("/", "___")
+                        if search_term in d or current_dataset_name.split("/")[-1] in d:
+                            target = os.path.join(root, d)
+                            print(f"[DISK] Deleting cache folder: {target}")
+                            shutil.rmtree(target, ignore_errors=True)
 
             current_dataset_name = ds_name
 
+        # [ACTION] Fetch question text from the source dataset
         question, solution = get_question_and_solution(
             ds_name, ocr2_ds_item["split"], ocr2_ds_item["index"], 
             loaded_datasets, use_dataset_solution=args.use_dataset_solution
         )
         
         if question:
+            # Add the full question text to the OCR2 metadata object
             ocr2_ds_item["question"] = question
             if args.use_dataset_solution:
                 ocr2_ds_item["solution"] = solution
             else:
                 ocr2_ds_item["solution"] = ""
 
+            # Placeholders for the next stages in the pipeline
             ocr2_ds_item["r1_generation"] = ""
             ocr2_ds_item["qwq_critique"] = ""
 
+            # Deduplication check
             if ocr2_ds_item["question_id"] not in unique_values:
                 unique_values.add(ocr2_ds_item["question_id"])
                 first_occurrence_indices.append(copy.deepcopy(ocr2_ds_item))
     
+    # Final cleanup for the last dataset processed
     if loaded_datasets:
         loaded_datasets.clear()
         gc.collect()
 
+    # [STEP 4] Save the final compiled dataset
     output_filepath = os.path.join(output_dir, "open_code_reasoning_questions.jsonl")
+    print(f"[STEP 4] Saving {len(first_occurrence_indices)} unique questions to {output_filepath}")
     with open(output_filepath, "w") as f:
         for item in first_occurrence_indices:
             f.write(json.dumps(item) + "\n")
 
-    print(f"Prepared questions saved to {output_filepath}")
+    print("\n[SUCCESS] Pipeline step 'Prepare Questions' complete.")
