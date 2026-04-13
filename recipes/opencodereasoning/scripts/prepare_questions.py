@@ -96,7 +96,11 @@ if __name__ == "__main__":
 
     # [ACTION] Load the main OCR2 mapping dataset
     print("[STEP 1] Loading OpenCodeReasoning-2 'cpp' split...")
-    ocr2_dataset = load_dataset("nvidia/OpenCodeReasoning-2", "cpp")["train"]
+    ocr2_dataset = load_dataset(
+        "nvidia/OpenCodeReasoning-2",
+        name="train",  # The subset name
+        split="cpp",   # The split within the subset (cpp or python)
+    )
 
     unique_values = set()
     first_occurrence_indices = []
