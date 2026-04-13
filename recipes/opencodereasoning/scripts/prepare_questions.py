@@ -16,23 +16,29 @@ def get_question_and_solution(ds_name, ds_split, ds_index, loaded_datasets, use_
     """
     if ds_name not in loaded_datasets:
         # --- TRIGGERED ON DATASET CHANGE ---
-        # This block runs when we move to a new source dataset (e.g., from 'apps' to 'taco')
-        print(f"\n[STEP] Fetching source dataset from HuggingFace: {ds_name}")
+        print(f"\n[STEP] Fetching source dataset from HuggingFace (Streaming): {ds_name}")
         
+        # We use streaming=True to avoid the "Not enough disk space" error on CodeContests
         if ds_name == "taco":
-            loaded_datasets[ds_name] = load_dataset("BAAI/TACO", trust_remote_code=True)
+            loaded_datasets[ds_name] = load_dataset("BAAI/TACO", trust_remote_code=True, streaming=True)
         elif ds_name == "apps":
-            loaded_datasets[ds_name] = load_dataset("codeparrot/apps", trust_remote_code=True)
+            loaded_datasets[ds_name] = load_dataset("codeparrot/apps", trust_remote_code=True, streaming=True)
         elif ds_name == "code_contests":
-            # NOTE: CodeContests is huge (~100GB+). This is where the most disk space is used.
-            loaded_datasets[ds_name] = load_dataset("deepmind/code_contests")
+            loaded_datasets[ds_name] = load_dataset("deepmind/code_contests", streaming=True)
         elif ds_name == "open-r1/codeforces":
-            loaded_datasets[ds_name] = load_dataset("open-r1/codeforces")
+            loaded_datasets[ds_name] = load_dataset("open-r1/codeforces", streaming=True)
         else:
             return None, None
 
-    # Access the specific question using the index from OCR2
-    benchmark = loaded_datasets[ds_name][ds_split][int(ds_index)]
+    # In streaming mode, we can't do direct indexing [ds_split][int(ds_index)]
+    # We have to iterate or use a specialized skip/take approach.
+    # To keep it efficient, we convert the stream to a list of questions once.
+    if not isinstance(loaded_datasets[ds_name], dict):
+        # We only need the specific split (e.g., 'train')
+        print(f"[INFO] Converting {ds_name} split '{ds_split}' stream to list...")
+        loaded_datasets[ds_name] = list(loaded_datasets[ds_name][ds_split])
+
+    benchmark = loaded_datasets[ds_name][int(ds_index)]
     question = None
     solution = ""
 
@@ -95,32 +101,31 @@ if __name__ == "__main__":
     cache_dir = args.cache_dir or os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface/datasets")
 
     # [ACTION] Load the main OCR2 mapping dataset
-    print("[STEP 1] Loading OpenCodeReasoning-2 'cpp' split...")
+    # Based on the user's reference script:
+    # Subset: "train" (the HuggingFace subset name)
+    # Split: "cpp" or "python" (within the train subset)
+    print("[STEP 1] Loading OpenCodeReasoning-2 (subset='train', split='cpp')...")
     ocr2_dataset = load_dataset(
         "nvidia/OpenCodeReasoning-2",
         name="train",  # The subset name
-        split="cpp",   # The split within the subset (cpp or python)
+        split="cpp"    # The split within the subset (cpp or python)
     )
-
+    
     unique_values = set()
     first_occurrence_indices = []
 
-    # [ACTION] Extremely fast sorting using Arrow
-    # We avoid converting to Pandas or Python lists here. 
-    # Arrow (the backend of datasets) can sort the table on disk/memory very efficiently.
-    print("[STEP 2] Sorting questions by dataset using Arrow (High Speed)...")
-    # This keeps the data in the optimized Arrow format while sorting
+    # [ACTION] Sorting questions by dataset for sequential disk cleanup
+    print("[STEP 2] Sorting questions by source dataset using Arrow (High Speed)...")
     ocr2_dataset = ocr2_dataset.sort("dataset")
     
     current_dataset_name = None
     loaded_datasets = {}
 
-    # We iterate directly over the dataset object to avoid any large memory conversions
     print(f"[STEP 3] Starting extraction of {len(ocr2_dataset)} questions...")
     for ocr2_ds_item in tqdm(ocr2_dataset, desc="Processing Questions"):
         ds_name = ocr2_ds_item["dataset"]
         
-        # Check if we have switched to a new source dataset
+        # Check if we have switched to a new source dataset (e.g. from apps to taco)
         if ds_name != current_dataset_name:
             if current_dataset_name is not None:
                 # --- MEMORY & DISK CLEANUP ---
