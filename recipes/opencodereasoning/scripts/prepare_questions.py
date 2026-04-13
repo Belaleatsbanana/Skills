@@ -96,34 +96,25 @@ if __name__ == "__main__":
 
     # [ACTION] Load the main OCR2 mapping dataset
     print("[STEP 1] Loading OpenCodeReasoning-2 'cpp' split...")
-    ocr2_full = load_dataset("nvidia/OpenCodeReasoning-2")
-    
-    if "cpp" in ocr2_full:
-        ocr2_dataset = ocr2_full["cpp"]
-    else:
-        print("[WARN] 'cpp' split not found, checking for 'train'...")
-        ocr2_dataset = ocr2_full["train"]
+    # Loading ONLY the 'train' split of the 'cpp' configuration to be as fast as possible
+    ocr2_dataset = load_dataset("nvidia/OpenCodeReasoning-2", name="cpp", split="train")
     
     unique_values = set()
     first_occurrence_indices = []
 
-    # [ACTION] Use Pandas for high-speed sorting
-    # Converting directly to a list of dicts can be slow for millions of rows.
-    # Pandas handles this mapping efficiently.
-    print("[STEP 2] Using Pandas to sort questions by dataset for disk cleanup...")
-    import pandas as pd
-    df = ocr2_dataset.to_pandas()
-    df = df.sort_values(by="dataset")
-    items = df.to_dict('records')
-    # Free up dataframe memory immediately
-    del df
-    gc.collect()
+    # [ACTION] Extremely fast sorting using Arrow
+    # We avoid converting to Pandas or Python lists here. 
+    # Arrow (the backend of datasets) can sort the table on disk/memory very efficiently.
+    print("[STEP 2] Sorting questions by dataset using Arrow (High Speed)...")
+    # This keeps the data in the optimized Arrow format while sorting
+    ocr2_dataset = ocr2_dataset.sort("dataset")
     
     current_dataset_name = None
     loaded_datasets = {}
 
-    print(f"[STEP 3] Starting extraction of {len(items)} questions...")
-    for ocr2_ds_item in tqdm(items, desc="Processing Questions"):
+    # We iterate directly over the dataset object to avoid any large memory conversions
+    print(f"[STEP 3] Starting extraction of {len(ocr2_dataset)} questions...")
+    for ocr2_ds_item in tqdm(ocr2_dataset, desc="Processing Questions"):
         ds_name = ocr2_ds_item["dataset"]
         
         # Check if we have switched to a new source dataset
